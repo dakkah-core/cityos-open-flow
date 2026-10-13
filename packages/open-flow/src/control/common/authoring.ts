@@ -15,6 +15,7 @@ import type { AuthoringRead, AuthoringRequest, AuthoringSearch, AuthoringSource,
 import type { AuthoringAgentTool } from './authoringTools.ts'
 
 import { dequal } from 'dequal/lite'
+import { connectorOutputMode } from '../../connector/common/actionSchema.ts'
 import { decisionTask } from '../../decision/common/decision.ts'
 import { applyFlowChanges, decodeChangeOperations } from '../../flow/common/change.ts'
 import { nodeInputMappings } from '../../flow/common/condition.ts'
@@ -123,6 +124,9 @@ export function authoringNode(content: RevisionContent, ref: string) {
         const { inputDefinitions: _definitions, ...noticeSettings } = notification
         config.notification = noticeSettings
       }
+    } else if (task.executor.kind == 'connector') {
+      const { kind: _kind, outputMode: _outputMode, ...settings } = task.executor
+      config = settings
     } else if (task.executor.kind == 'llm')
       config = {
         ...llmConfigurationView(task),
@@ -359,7 +363,12 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
     const action = await host.action(String(config.action))
     return {
       name,
-      executor: { kind: 'connector', action: action.actionId, ...(config.connectionId == null ? {} : { connectionId: String(config.connectionId) }) },
+      executor: {
+        kind: 'connector',
+        action: action.actionId,
+        ...(config.connectionId == null ? {} : { connectionId: String(config.connectionId) }),
+        ...(action.outputSchema !== undefined && connectorOutputMode(action.outputSchema) == 'value' ? { outputMode: 'value' as const } : {}),
+      },
       inputs: Object.entries(action.inputs).map(([handle, port]) => Object.assign({ handle }, port)),
       outputs: Object.entries(action.outputs).map(([handle, port]) => Object.assign({ handle }, port)),
     }
@@ -424,10 +433,10 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
       const before = node.task
       let task: ManagedTaskDefinition
       if (type == 'connector') {
-        task =
-          config.action == (before.executor.kind == 'connector' ? before.executor.action : '')
-            ? ({ ...before, name: String(update.name), executor: { kind: 'connector', ...config } } as ManagedTaskDefinition)
-            : await connectorTask(config, String(update.name))
+        if (before.executor.kind == 'connector' && config.action == before.executor.action) {
+          const { connectionId: _connectionId, ...executor } = before.executor
+          task = { ...before, name: String(update.name), executor: { ...executor, ...config } } as ManagedTaskDefinition
+        } else task = await connectorTask(config, String(update.name))
       } else if (type == 'decision') task = decisionTask(config.questions as Parameters<typeof decisionTask>[0], String(update.name))
       else if (type == 'openapi') {
         task = await prepareOpenApiTask(config as AuthoringOpenApiConfig, before, (url) => host.openapi(url), String(update.name), {
