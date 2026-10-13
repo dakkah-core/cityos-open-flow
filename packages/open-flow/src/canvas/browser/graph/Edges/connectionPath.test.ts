@@ -76,6 +76,24 @@ describe('connection routing', () => {
     expect(getConnectionPath({ ...backward, targetBounds: { x: 0, y: 420, width: 1200, height: 1000 } })).toEqual(getConnectionPath(backward))
   })
 
+  it('routes a wrapped connection above the lower row in either drag direction', () => {
+    const params = {
+      ...backward,
+      sourceX: 1500,
+      sourceY: 40,
+      targetX: 0,
+      targetY: 440,
+      sourceBounds: { x: 1180, y: 0, width: 320, height: 90 },
+      targetBounds: { x: 0, y: 400, width: 320, height: 90 },
+    }
+    for (const p of [params, reversed(params)]) {
+      const [, , laneY] = getConnectionPath(p)
+      expect(laneY).toBe(360)
+      expect(laneY).toBeGreaterThan(240) // Clears a taller parallel branch in the upper row.
+      expect(laneY).toBeLessThan(params.targetBounds.y)
+    }
+  })
+
   it('moves only the bottom lane when the output card expands', () => {
     const before = getConnectionPath(backward)
     const after = getConnectionPath({ ...backward, sourceBounds: { ...backward.sourceBounds!, height: 400 } })

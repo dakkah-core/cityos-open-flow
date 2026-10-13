@@ -15,6 +15,7 @@ import type { Point, DesignerViewport } from './canvasPresentation.ts'
 import type { ConnectionCatalog, ConnectorActionView } from './connectionCatalog.ts'
 import type { ResolvedNode, ResolvedSelection, RevisionView } from './revisionView.ts'
 
+import { wrapLayout } from '../../../canvas/browser/base/wrapLayout.ts'
 import { resolutionOutputPorts } from '../../../flow/common/graph.ts'
 import { sourceOutputLabel } from '../../../flow/common/sourceField.ts'
 import { triggerOutputPorts } from '../../../trigger/common/contract.ts'
@@ -641,12 +642,17 @@ export function designerGraph(
     t,
   }
   const rows = new Map<number, number>()
+  const automaticPositions = wrapLayout(
+    layout.ordered.map((nodeId) => {
+      const column = layout.depth.get(nodeId) ?? 0
+      const row = rows.get(column) ?? 0
+      rows.set(column, row + 1)
+      return { id: nodeId, column, x: 80 + column * 500, y: 80 + row * 240, height: 240 }
+    }),
+  )
   const nodes: DesignerNode[] = []
   for (const nodeId of layout.ordered) {
-    const column = layout.depth.get(nodeId) ?? 0
-    const row = rows.get(column) ?? 0
-    rows.set(column, row + 1)
-    const position = positions[nodeId] ?? { x: 80 + column * 500, y: 80 + row * 240 }
+    const position = positions[nodeId] ?? automaticPositions[nodeId]!
     const resolved = definitions.get(nodeId)!
     if (resolved.kind == 'trigger') {
       nodes.push({

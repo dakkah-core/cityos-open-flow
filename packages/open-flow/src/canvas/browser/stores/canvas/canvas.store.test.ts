@@ -269,6 +269,47 @@ describe('CanvasStore layout', () => {
     setup.dispose()
   })
 
+  it('wraps measured dependency columns together on initial and requested layout', async () => {
+    const ids = Array.from({ length: 10 }, (_, i) => `step-${i}` as NodeId)
+    const branchId = 'parallel' as NodeId
+    const setup = createTestSetup(
+      val<readonly FlowCanvasViewEdge[]>([
+        ...ids.slice(1).map((target, i) => ({
+          id: `edge-${i}`,
+          source: ids[i]!,
+          target,
+          sourceHandle: '$out',
+          targetHandle: '$in',
+        })),
+        { id: 'split', source: ids[2]!, target: branchId, sourceHandle: '$out', targetHandle: '$in' },
+        { id: 'join', source: branchId, target: ids[4]!, sourceHandle: '$out', targetHandle: '$in' },
+      ]),
+    )
+    const nodes = ids.map((id) => {
+      const node = setup.createNode(id)
+      setup.nodes.set(id, node)
+      node.$$.rfNode.set({ ...node.$.rfNode.value, measured: { width: 300, height: 120 } })
+      return node
+    })
+    const branch = setup.createNode(branchId)
+    setup.nodes.set(branchId, branch)
+    branch.$$.rfNode.set({ ...branch.$.rfNode.value, measured: { width: 520, height: 360 } })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(setup.store.completeLayout()).toBe('relayout')
+    const positions = nodes.map((node) => node.$.position.value)
+    const branchPosition = branch.$.position.value
+    expect(branchPosition.x + 520 / 2).toBe(positions[3]!.x + 300 / 2)
+    expect(positions[4]!.x).toBe(positions[0]!.x)
+    expect(positions[4]!.y).toBeGreaterThan(positions[3]!.y + 120)
+    expect(positions[4]!.y).toBeGreaterThan(branchPosition.y + 360)
+    expect(positions[8]!.y).toBeGreaterThan(positions[7]!.y + 120)
+    nodes[0]!.$$.position.set({ x: 5000, y: 5000 })
+    setup.store.onRelayout()
+    expect(nodes.map((node) => node.$.position.value)).toEqual(positions)
+    expect(branch.$.position.value).toEqual(branchPosition)
+    setup.dispose()
+  })
+
   it('finalizes an unmeasured layout after bounded attempts', async () => {
     const setup = createTestSetup()
     const node = setup.createNode('node' as NodeId)

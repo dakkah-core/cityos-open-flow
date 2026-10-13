@@ -15,7 +15,7 @@ export function connectionPortIndex(node: InternalNode | undefined | null, handl
   return handles.filter((item) => item.position === handle.position && item.y < handle.y).length
 }
 
-/** A return loop belongs to its output: fixed side offsets and a lane below that card. */
+/** Return connections use fixed side offsets and a lane below the output or above a lower row. */
 export function getConnectionPath({
   sourceBounds,
   targetBounds,
@@ -38,11 +38,14 @@ export function getConnectionPath({
   const radius = 16
   // Normalize input-origin drags to the output-to-input direction.
   const outputBounds = reverse ? targetBounds : sourceBounds
+  const inputBounds = reverse ? sourceBounds : targetBounds
   const rightY = reverse ? targetY : sourceY
   const leftY = reverse ? sourceY : targetY
   const right = rightX + clearance
   const left = leftX - clearance
-  const laneY = Math.max(rightY, outputBounds ? outputBounds.y + outputBounds.height : rightY) + clearance
+  const outputLane = Math.max(rightY, outputBounds ? outputBounds.y + outputBounds.height : rightY) + clearance
+  // A wrapped row returns through the gap above its destination, below parallel branches.
+  const laneY = Math.max(outputLane, inputBounds ? inputBounds.y - clearance : outputLane)
   const points = [
     { x: rightX, y: rightY },
     { x: right, y: rightY },

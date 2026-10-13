@@ -10,6 +10,44 @@ import { createI18n } from './i18n.ts'
 import { providerIcon } from './providerIcon.ts'
 import { designerGraph } from './workspace.ts'
 
+it('wraps CLI-created chains without replacing saved node positions or execution edges', () => {
+  const ids = Array.from({ length: 10 }, (_, i) => `step-${i}`)
+  const edges = ids.slice(1).map((target, i) => ({ source: ids[i]!, target }))
+  const draft: NonNullable<Parameters<typeof designerGraph>[0]> = {
+    actorId: 'actor',
+    createdAt: '2026-10-13T00:00:00Z',
+    digest: 'digest',
+    flowId: 'flow',
+    modelVersion: currentFlowModelVersion,
+    parentRevisionId: null,
+    revisionId: 'revision',
+    version: 1,
+    content: {
+      modelVersion: currentFlowModelVersion,
+      modules: { code: { name: 'Code', source: 'export default () => ({})', imports: [] } },
+      document: {
+        bindings: {},
+        graph: {
+          nodes: Object.fromEntries(
+            ids.map((id) => [id, { kind: 'task', name: id, inputs: {}, task: { name: 'Step', moduleId: 'code', inputs: [], outputs: [] } }]),
+          ),
+          edges,
+        },
+      },
+    },
+  }
+  const graph = designerGraph(draft)
+  const positions = Object.fromEntries(graph.nodes.map((node) => [node.id, node.position]))
+  expect(positions['step-4']!.x).toBe(positions['step-0']!.x)
+  expect(positions['step-4']!.y).toBeGreaterThan(positions['step-3']!.y)
+  expect(positions['step-8']!.y).toBeGreaterThan(positions['step-7']!.y)
+  expect(graph.edges.map(({ source, target }) => ({ source, target }))).toEqual(edges)
+  const saved = { x: 2500, y: -100 }
+  const reopened = designerGraph(draft, setNodePositions({}, { 'step-4': saved }))
+  expect(reopened.nodes.find((node) => node.id == 'step-4')!.position).toEqual(saved)
+  expect(reopened.nodes.find((node) => node.id == 'step-5')!.position).toEqual(positions['step-5'])
+})
+
 describe('Designer port projection', () => {
   it('uses the disconnected state only for the Code node with an account diagnostic', () => {
     const code = {

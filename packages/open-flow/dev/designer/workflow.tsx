@@ -25,6 +25,7 @@ import { providerIcon } from '../../src/workbench/browser/runtime/providerIcon.t
 import { RunControl } from '../../src/workbench/browser/runtime/runs/runControl.tsx'
 import { WorkspaceNavigationIsland } from '../../src/workbench/browser/runtime/shell/workspaceNavigationIsland.tsx'
 import { WorkspacePublishIsland } from '../../src/workbench/browser/runtime/shell/workspacePublishIsland.tsx'
+import { designerGraph } from '../../src/workbench/browser/runtime/workspace.ts'
 import { useStoryActions } from './storyActions.tsx'
 
 const pickerDraft: Draft = {
@@ -40,6 +41,36 @@ const pickerDraft: Draft = {
 }
 
 const workflowViewport = { x: 35, y: 40, zoom: 0.9 }
+const longChainIds = Array.from({ length: 12 }, (_, index) => `step-${index + 1}`)
+const longChain = designerGraph({
+  ...pickerDraft,
+  content: {
+    ...pickerDraft.content,
+    modules: { code: { name: 'Step', source: 'export default () => ({})', imports: [] } },
+    document: {
+      bindings: {},
+      graph: {
+        nodes: Object.fromEntries(
+          [...longChainIds, 'parallel'].map((id) => [
+            id,
+            {
+              kind: 'task',
+              name: id == 'parallel' ? '4b · Parallel step' : `${id.replace('step-', '')} · Process records`,
+              inputs: {},
+              task: { name: 'Step', moduleId: 'code', inputs: [], outputs: [] },
+            },
+          ]),
+        ),
+        edges: [
+          ...longChainIds.slice(1).map((target, index) => ({ source: longChainIds[index]!, target })),
+          { source: 'step-3', target: 'parallel' },
+          { source: 'parallel', target: 'step-5' },
+        ],
+      },
+    },
+  },
+})
+const longChainModel = { ...longChain, viewport: { x: 60, y: 40, zoom: 0.5 } }
 const workflowPositions = {
   trigger: { x: 0, y: 0 },
   task: { x: 430, y: 0 },
@@ -376,6 +407,15 @@ const edgeColors: FlowCanvasViewModel = {
 }
 
 export const workflowStories: readonly FrontendStory[] = [
+  {
+    group: 'Workbench',
+    id: 'wrapped-layout',
+    title: 'Long workflow layout',
+    description:
+      'A twelve-step flow without saved positions wraps after four dependency columns. Inspect the parallel fourth step and return connections between rows. Use Re-layout to compare measured node spacing, then Reset samples to restore the default layout.',
+    standalone: true,
+    render: (log, dark, language) => <WorkflowStory dark={dark} language={language} log={log} model={longChainModel} initialSelectedNodeId="step-1" />,
+  },
   {
     group: 'Workbench',
     id: 'workspace-navigation-island',

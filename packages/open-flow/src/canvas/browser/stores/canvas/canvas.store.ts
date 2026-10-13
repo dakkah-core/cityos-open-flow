@@ -5,7 +5,7 @@ import type { ReadonlyVal, Val } from 'value-enhancer'
 import type { ReactiveMap, ReadonlyReactiveMap } from 'value-enhancer/collections'
 import type { NodeId } from '../../../../schema/index.ts'
 import type { AddNodeType } from '../../base/dragNDrop.ts'
-import type { RFConnection, RFEdge, RFNode, RFNodeId } from '../../base/rfHelpers.ts'
+import type { RFConnection, RFEdge, RFNode } from '../../base/rfHelpers.ts'
 import type { ToReadonly$Group } from '../../base/val.ts'
 import type { FlowCanvasViewEdge, FlowCanvasViewModel, FlowCanvasViewPosition, FlowCanvasViewViewport, ViewCallbacks } from '../../graph/FlowCanvas/model.ts'
 import type { NodeEntry } from '../../graph/FlowCanvas/node.tsx'
@@ -20,8 +20,9 @@ import { compute, derive, val } from 'value-enhancer'
 import { reactiveMap } from 'value-enhancer/collections'
 import { isSameViewport } from '../../base/compare.ts'
 import { isInside, isMac } from '../../base/dom.ts'
-import { applyEdgeChanges, applyNodeChanges, getRFNodeType, RF_NODE_TYPE, toManifestHandleName, toManifestNodeId } from '../../base/rfHelpers.ts'
+import { applyEdgeChanges, applyNodeChanges, toManifestHandleName, toManifestNodeId } from '../../base/rfHelpers.ts'
 import { coalesce } from '../../base/trivial.ts'
+import { wrapLayout } from '../../base/wrapLayout.ts'
 import { toViewEdge } from '../../graph/FlowCanvas/model.ts'
 import { createNodeEntry, createCommentNodeEntry, updateNodeEntry, updateCommentNodeEntry } from '../../graph/FlowCanvas/node.tsx'
 import { createI18n } from '../../i18n/index.ts'
@@ -294,19 +295,18 @@ export class CanvasStore {
 
   // https://reactflow.dev/learn/layouting/layouting#dagre
   private doRelayout() {
+    const nodes = this.allLayoutNodes()
     const g = new graphlib.Graph().setDefaultEdgeLabel(() => ({}))
     // Leave enough room for both ends of a smooth-step edge and a short middle segment.
     g.setGraph({ rankdir: 'LR', ranksep: 80 })
 
     const singles = new Set<string>()
-    for (const rfNode of this.$.rfNodes.value) {
-      // Comment nodes do not participate in layout.
-      if (getRFNodeType(rfNode.id as RFNodeId) === RF_NODE_TYPE.CommentNode) continue
-      singles.add(rfNode.id)
-      g.setNode(rfNode.id, {
-        ...rfNode,
-        width: rfNode.measured?.width ?? 0,
-        height: rfNode.measured?.height ?? 0,
+    for (const node of nodes) {
+      const { id, measured } = node.$.rfNode.value
+      singles.add(id)
+      g.setNode(id, {
+        width: measured?.width ?? 0,
+        height: measured?.height ?? 0,
       })
     }
 
@@ -327,17 +327,20 @@ export class CanvasStore {
 
     layout(g)
 
-    const updateNodePosition = (node: NodeStore): void => {
-      const { id, measured } = node.$.rfNode.value
-      const { x, y } = g.node(id)
-      node.$$.position.set({
-        x: x - (measured?.width ?? 0) / 2,
-        y: y - (measured?.height ?? 0) / 2,
-      })
-    }
-
-    this.$.nodes.forEach(updateNodePosition)
-    this.#callbacks.onMoveNodes(Object.fromEntries(this.allLayoutNodes().map((node) => [node.nodeId, node.$.position.value])))
+    const positions = wrapLayout(
+      nodes.map((node) => {
+        const { x, y, width, height, rank } = g.node(node.rfNodeId)
+        return {
+          id: node.nodeId,
+          column: rank,
+          x: x - width / 2,
+          y: y - height / 2,
+          height,
+        }
+      }),
+    )
+    for (const node of nodes) node.$$.position.set(positions[node.nodeId]!)
+    this.#callbacks.onMoveNodes(positions)
   }
 
   public duplicateNodes = async (nodeIds?: NodeId[], offset?: XYPosition): Promise<void> => {
