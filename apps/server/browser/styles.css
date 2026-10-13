@@ -279,31 +279,76 @@ body {
 }
 
 .settings-oomol {
+  display: grid;
+  gap: 20px;
+  padding-block: 8px;
+}
+
+.settings-oomol-status {
   display: flex;
-  flex-direction: column;
+  align-items: flex-start;
   gap: 12px;
 }
 
-.settings-oomol > p,
-.settings-oomol-status {
-  margin: 0;
+.settings-oomol-status-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--ui-radius);
+  background: var(--ui-muted);
   color: var(--ui-muted-foreground);
-  font-size: var(--ui-font-size);
-  line-height: 18px;
 }
 
-.settings-oomol .host-actions,
-.settings-oomol-status {
-  display: flex;
-  flex-wrap: wrap;
+.settings-oomol-heading {
+  margin: 0 0 4px;
+  font-size: var(--ui-font-size);
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.settings-oomol p {
+  margin: 0;
+}
+
+.settings-oomol-verification {
+  display: grid;
   gap: 8px;
 }
 
-.settings-oomol-status a {
-  color: var(--ui-primary);
+.settings-oomol-code {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  background: var(--ui-muted);
 }
 
-.settings-oomol > [role='alert'] {
+.settings-oomol-code code {
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 32px;
+  letter-spacing: 0.16em;
+}
+
+.settings-oomol-authorization-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--ui-primary);
+  font-weight: 500;
+  line-height: 32px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.settings-oomol-status[role='alert'] .settings-oomol-status-icon {
   color: var(--ui-destructive);
 }
 

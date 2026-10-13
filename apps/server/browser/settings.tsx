@@ -85,16 +85,22 @@ function randomCallbackKey(): string {
 }
 
 function OomolConnectorLogin({
-  children,
   disabled,
+  saveFailed,
+  onManual,
+  onRetrySave,
+  cancelRef,
   onPendingChange,
   onConflict,
   onAuthorized,
   onUnauthorized,
   revision,
 }: {
-  readonly children?: ReactElement
-  readonly disabled?: boolean
+  readonly disabled: boolean
+  readonly saveFailed: boolean
+  readonly onManual: () => void
+  readonly onRetrySave: () => Promise<void>
+  readonly cancelRef: { current: (() => void) | undefined }
   readonly onPendingChange: (pending: boolean) => void
   readonly onConflict: () => Promise<void>
   readonly onAuthorized: (value: { connectorOrigin: string; apiKey: string }) => void | Promise<void>
@@ -104,7 +110,14 @@ function OomolConnectorLogin({
   const [starting, setStarting] = useState(false)
   const [login, setLogin] = useState<{ readonly code: string; readonly url: string }>()
   const [error, setError] = useState<'expired' | 'failed'>()
-  const active = useRef<{ readonly controller: AbortController; id?: string }>()
+  const active = useRef<{ readonly controller: AbortController; readonly popup: Window | null; opened: boolean; id?: string }>()
+  const heading = useRef<HTMLHeadingElement>(null)
+  const primary = useRef<HTMLButtonElement>(null)
+  const phase = disabled ? 'saving' : saveFailed ? 'saveFailed' : (error ?? (starting ? 'starting' : login ? 'waiting' : 'idle'))
+  useEffect(() => {
+    if (phase == 'idle') primary.current?.focus()
+    else heading.current?.focus()
+  }, [phase])
   const t = useTranslate()
   const endpoint = '/config/connector/oomol-login'
 
@@ -112,7 +125,10 @@ function OomolConnectorLogin({
     const operation = active.current
     active.current = undefined
     onPendingChange(false)
+    setStarting(false)
+    setLogin(undefined)
     operation?.controller.abort()
+    if (operation != null && !operation.opened) operation.popup?.close()
     if (operation?.id != null) {
       void fetch(endpoint, {
         body: JSON.stringify({ id: operation.id, version: 1 }),
@@ -124,13 +140,19 @@ function OomolConnectorLogin({
     }
   }, [onPendingChange])
 
-  useEffect(() => stop, [stop])
+  useEffect(() => {
+    cancelRef.current = stop
+    return () => {
+      cancelRef.current = undefined
+      stop()
+    }
+  }, [cancelRef, stop])
 
   async function connect(): Promise<void> {
     if (active.current != null) return
     const popup = window.open('about:blank', '_blank')
     if (popup != null) popup.opener = null
-    const operation = { controller: new AbortController(), id: undefined as string | undefined }
+    const operation = { controller: new AbortController(), popup, opened: false, id: undefined as string | undefined }
     active.current = operation
     setStarting(true)
     onPendingChange(true)
@@ -173,7 +195,10 @@ function OomolConnectorLogin({
       operation.id = session.id
       setLogin({ code: session.code, url: session.url })
       setStarting(false)
-      if (popup != null) popup.location.replace(session.url)
+      if (popup != null) {
+        popup.location.replace(session.url)
+        operation.opened = true
+      }
       while (!operation.controller.signal.aborted) {
         const result = await request('PUT', { id: session.id })
         if (operation.controller.signal.aborted) return
@@ -189,54 +214,94 @@ function OomolConnectorLogin({
         await new Promise((resolve) => setTimeout(resolve, 2_000))
       }
     } catch {
-      if (operation.id == null) popup?.close()
       if (!operation.controller.signal.aborted) {
         setError((current) => current ?? 'failed')
       }
     } finally {
       if (active.current === operation) {
         stop()
-        setStarting(false)
-        setLogin(undefined)
       }
     }
   }
 
+  const busy = starting || login != null
+  const waiting = login != null && !disabled && !saveFailed
+  const failed = !disabled && (error != null || saveFailed)
+  const title = {
+    idle: 'settings.oomolAutoAuthorize',
+    starting: 'settings.oomolStarting',
+    waiting: 'settings.oomolWaiting',
+    saving: 'settings.oomolSaving',
+    saveFailed: 'settings.oomolSaveFailed',
+    expired: 'settings.oomolExpired',
+    failed: 'settings.oomolFailed',
+  } as const
   return (
-    <div className="settings-oomol">
-      <div className="flex items-center gap-2">
-        {children}
-        <Button variant="default" disabled={disabled || starting || login != null} onClick={() => void connect()} type="button">
-          <i aria-hidden="true" data-icon="inline-start" className="i-lucide-light:key-round size-4 shrink-0" />
-          {t(starting ? 'settings.oomolStarting' : 'settings.oomolAutoAuthorize')}
-        </Button>
-        {(starting || login != null) && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              stop()
-              setStarting(false)
-              setLogin(undefined)
-            }}
-            type="button"
-          >
-            {t('settings.cancel')}
-          </Button>
+    <>
+      <div className="settings-oomol">
+        <div className="settings-oomol-status" role={failed ? 'alert' : 'status'}>
+          <div className="settings-oomol-status-icon" aria-hidden="true">
+            <i
+              className={
+                failed
+                  ? 'i-lucide-light:circle-alert size-5'
+                  : busy || disabled
+                    ? 'i-lucide-light:loader-circle size-5 motion-safe:animate-spin'
+                    : 'i-lucide-light:key-round size-5'
+              }
+            />
+          </div>
+          <div className="min-w-0">
+            <h3 ref={heading} tabIndex={-1} className="settings-oomol-heading">
+              {t(title[phase])}
+            </h3>
+            <p className="host-hint">
+              {t(
+                disabled
+                  ? 'settings.oomolSavingHint'
+                  : saveFailed
+                    ? 'settings.oomolSaveFailedHint'
+                    : waiting
+                      ? 'settings.oomolAuthorizeHint'
+                      : 'settings.oomolAutoAuthorizeHint',
+              )}
+            </p>
+          </div>
+        </div>
+        {waiting && (
+          <div className="settings-oomol-verification">
+            <div className="settings-oomol-code">
+              <span className="host-hint">{t('settings.oomolCode')}</span>
+              <code>{login.code}</code>
+            </div>
+            <p className="host-hint">{t('settings.oomolAutoSaveHint')}</p>
+          </div>
         )}
       </div>
-      {login != null && (
-        <div className="settings-oomol-status" role="status">
-          <span>
-            {t('settings.oomolWaiting')} <code>{login.code}</code>
-          </span>
-          <a href={login.url} rel="noopener noreferrer" target="_blank">
-            {t('settings.oomolOpenAuthorization')}
-          </a>
-        </div>
+      {!disabled && (
+        <DialogFooter className={saveFailed ? undefined : 'sm:flex-wrap sm:justify-between'}>
+          {busy ? (
+            <Button variant="outline" onClick={stop} type="button">
+              {t('settings.oomolCancelAuthorization')}
+            </Button>
+          ) : !saveFailed ? (
+            <Button variant="ghost" onClick={onManual} type="button">
+              {t('settings.oomolManualKey')}
+            </Button>
+          ) : null}
+          {waiting ? (
+            <a className="settings-oomol-authorization-link" href={login.url} rel="noopener noreferrer" target="_blank">
+              {t('settings.oomolOpenAuthorization')}
+              <i aria-hidden="true" data-icon="inline-end" className="i-lucide-light:arrow-up-right size-4" />
+            </a>
+          ) : !busy ? (
+            <Button ref={primary} onClick={() => void (saveFailed ? onRetrySave() : connect())} type="button">
+              {t(saveFailed ? 'settings.oomolRetrySave' : error ? 'settings.oomolRetryAuthorize' : 'settings.oomolAutoAuthorize')}
+            </Button>
+          ) : null}
+        </DialogFooter>
       )}
-      {error != null && <p role="alert">{t(error == 'expired' ? 'settings.oomolExpired' : 'settings.oomolFailed')}</p>}
-    </div>
+    </>
   )
 }
 
@@ -488,16 +553,21 @@ function ServiceEditor({
   const [pending, setPending] = useState(false)
   const [authorizing, setAuthorizing] = useState(false)
   const [keyCleared, setKeyCleared] = useState(false)
+  const [manual, setManual] = useState(false)
+  const [authorizedDraft, setAuthorizedDraft] = useState<ServiceProfileDraft>()
+  const cancelAuthorization = useRef<() => void>()
+  const automatic = mode == 'oomol' && ['https://connector.oomol.com', 'https://connector.oomol.dev'].includes(new URL(draft.connectorOrigin).origin)
   const errors = validateServiceProfile(mode, {
     ...draft,
     connectorToken: draft.connectorToken || (profile.connectorTokenConfigured && !keyCleared ? 'stored' : ''),
     llmToken: draft.llmToken || (profile.llmTokenConfigured ? 'stored' : ''),
   })
-  const dirty = keyCleared || Object.keys(draft).some((key) => draft[key as keyof typeof draft] != initial.current[key as keyof typeof draft])
+  const dirty =
+    authorizedDraft != null || keyCleared || Object.keys(draft).some((key) => draft[key as keyof typeof draft] != initial.current[key as keyof typeof draft])
   const { guard, confirmation } = useUnsavedChanges({ dirty, pending, save, container })
   async function save(): Promise<boolean> {
     if (authorizing) return false
-    return persist(draft)
+    return persist(authorizedDraft ?? draft)
   }
   async function persist(nextDraft: ServiceProfileDraft): Promise<boolean> {
     const issues = validateServiceProfile(mode, nextDraft)
@@ -541,7 +611,7 @@ function ServiceEditor({
       ? ([
           [
             'connectorToken',
-            'API key',
+            'API Key',
             <Trans message={t('settings.oomolKeyHelp')}>
               <a href="https://console.oomol.com/api-key" target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2">
                 OOMOL API key
@@ -563,110 +633,125 @@ function ServiceEditor({
       <Dialog
         open
         onOpenChange={(open) => {
-          if (!open) guard(onClose)
+          if (!open && !pending) {
+            cancelAuthorization.current?.()
+            guard(onClose)
+          }
         }}
       >
         <DialogContent
           container={container}
           closeLabel={t('settings.cancel')}
           showCloseButton={!pending}
-          className="sm:max-w-xl max-h-[calc(100dvh-2rem)] overflow-y-auto"
+          className={`max-h-[calc(100dvh-2rem)] overflow-y-auto ${mode == 'oomol' ? 'sm:max-w-md' : 'sm:max-w-xl'}`}
         >
           <DialogHeader>
             <DialogTitle>{t(mode == 'oomol' ? 'settings.oomolHosted' : 'settings.connectorCustom')}</DialogTitle>
           </DialogHeader>
-          <form
-            noValidate
-            className="host-field-feedback-scope grid gap-4"
-            onSubmit={(event) => {
-              event.preventDefault()
-              void save().then((saved) => {
-                if (saved) onClose()
-              })
-            }}
-          >
-            {fields.map(([key, label, description, type, placeholder]) => {
-              const stored = key == 'connectorToken' ? profile.connectorTokenConfigured && !keyCleared : key == 'llmToken' && profile.llmTokenConfigured
-              const input = (
-                <div className="host-field-control group/api-key flex-1 min-w-0">
-                  <Input
-                    id={`service-${key}`}
-                    name={key}
-                    aria-invalid={errors[key] != null}
-                    aria-describedby={`service-${key}-description${errors[key] ? ` service-${key}-error` : ''}`}
-                    type={type}
-                    value={draft[key]}
-                    placeholder={stored ? '••••••••' : placeholder}
-                    autoComplete={type == 'password' ? 'off' : 'url'}
-                    disabled={pending || authorizing}
-                    className={mode == 'oomol' ? 'pr-9' : undefined}
-                    required={
-                      key == 'connectorOrigin' ||
-                      (key == 'connectorToken' && mode == 'oomol' && !stored) ||
-                      (key == 'llmToken' && draft.llmOrigin != '' && !stored)
-                    }
-                    onChange={(event) => setDraft({ ...draft, [key]: event.currentTarget.value })}
-                  />
-                  {mode == 'oomol' && (draft.connectorToken != '' || stored) && (
-                    <HostTooltip label={t('settings.clearApiKey')}>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        className="absolute right-0.5 inset-y-0 my-auto invisible group-hover/api-key:visible group-focus-within/api-key:visible"
-                        aria-label={t('settings.clearApiKey')}
+          {automatic && !manual ? (
+            <OomolConnectorLogin
+              disabled={pending}
+              saveFailed={authorizedDraft != null && !pending}
+              cancelRef={cancelAuthorization}
+              revision={current.revision}
+              onConflict={onConflict}
+              onUnauthorized={onUnauthorized}
+              onPendingChange={setAuthorizing}
+              onManual={() => setManual(true)}
+              onRetrySave={async () => {
+                if (await save()) onClose()
+              }}
+              onAuthorized={async ({ connectorOrigin, apiKey }) => {
+                const nextDraft = { ...draft, connectorOrigin, connectorToken: apiKey }
+                setAuthorizedDraft(nextDraft)
+                if (await persist(nextDraft)) onClose()
+              }}
+            />
+          ) : (
+            <form
+              noValidate
+              className="host-field-feedback-scope grid gap-4"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void save().then((saved) => {
+                  if (saved) onClose()
+                })
+              }}
+            >
+              <div className={`grid gap-4 ${mode == 'oomol' ? 'py-2' : ''}`}>
+                {fields.map(([key, label, description, type, placeholder]) => {
+                  const stored = key == 'connectorToken' ? profile.connectorTokenConfigured && !keyCleared : key == 'llmToken' && profile.llmTokenConfigured
+                  const input = (
+                    <div className="host-field-control group/api-key flex-1 min-w-0">
+                      <Input
+                        id={`service-${key}`}
+                        name={key}
+                        aria-invalid={errors[key] != null}
+                        aria-describedby={`service-${key}-description${errors[key] ? ` service-${key}-error` : ''}`}
+                        type={type}
+                        autoFocus={mode == 'oomol'}
+                        value={draft[key]}
+                        placeholder={stored ? '••••••••' : placeholder}
+                        autoComplete={type == 'password' ? 'off' : 'url'}
                         disabled={pending || authorizing}
-                        onClick={() => {
-                          setKeyCleared(profile.connectorTokenConfigured)
-                          setDraft({ ...draft, connectorToken: '' })
-                        }}
-                      >
-                        <i aria-hidden="true" className="i-lucide-light:x size-4" />
-                      </Button>
-                    </HostTooltip>
-                  )}
-                  {errors[key] && (
-                    <p className="host-field-error" id={`service-${key}-error`} role="alert">
-                      {t(`settings.validation.${errors[key]}`)}
-                    </p>
-                  )}
-                </div>
-              )
-              const automatic =
-                mode == 'oomol' && ['https://connector.oomol.com', 'https://connector.oomol.dev'].includes(new URL(draft.connectorOrigin).origin)
-              return (
-                <HostField key={key} id={`service-${key}`} label={label} description={description}>
-                  {automatic ? (
-                    <OomolConnectorLogin
-                      disabled={pending}
-                      revision={current.revision}
-                      onConflict={onConflict}
-                      onUnauthorized={onUnauthorized}
-                      onPendingChange={setAuthorizing}
-                      onAuthorized={async ({ connectorOrigin, apiKey }) => {
-                        const authorizedDraft = { ...draft, connectorOrigin, connectorToken: apiKey }
-                        setKeyCleared(false)
-                        setDraft(authorizedDraft)
-                        if (await persist(authorizedDraft)) onClose()
-                      }}
-                    >
+                        className={mode == 'oomol' ? 'pr-9' : undefined}
+                        required={
+                          key == 'connectorOrigin' ||
+                          (key == 'connectorToken' && mode == 'oomol' && !stored) ||
+                          (key == 'llmToken' && draft.llmOrigin != '' && !stored)
+                        }
+                        onChange={(event) => setDraft({ ...draft, [key]: event.currentTarget.value })}
+                      />
+                      {mode == 'oomol' && (draft.connectorToken != '' || stored) && (
+                        <HostTooltip label={t('settings.clearApiKey')}>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            className="absolute right-0.5 inset-y-0 my-auto invisible group-hover/api-key:visible group-focus-within/api-key:visible"
+                            aria-label={t('settings.clearApiKey')}
+                            disabled={pending || authorizing}
+                            onClick={() => {
+                              setKeyCleared(profile.connectorTokenConfigured)
+                              setDraft({ ...draft, connectorToken: '' })
+                            }}
+                          >
+                            <i aria-hidden="true" className="i-lucide-light:x size-4" />
+                          </Button>
+                        </HostTooltip>
+                      )}
+                      {errors[key] && (
+                        <p className="host-field-error" id={`service-${key}-error`} role="alert">
+                          {t(`settings.validation.${errors[key]}`)}
+                        </p>
+                      )}
+                    </div>
+                  )
+                  return (
+                    <HostField key={key} id={`service-${key}`} label={label} description={description}>
                       {input}
-                    </OomolConnectorLogin>
-                  ) : (
-                    input
-                  )}
-                </HostField>
-              )
-            })}
-            <DialogFooter className="py-2">
-              <Button type="button" variant="outline" disabled={pending} onClick={() => guard(onClose)}>
-                {t('settings.cancel')}
-              </Button>
-              <Button type="submit" disabled={pending || authorizing}>
-                {t('settings.save')}
-              </Button>
-            </DialogFooter>
-          </form>
+                    </HostField>
+                  )
+                })}
+              </div>
+              <DialogFooter className={mode == 'oomol' ? 'sm:flex-wrap' : 'py-2'}>
+                {automatic && (
+                  <Button type="button" variant="ghost" className="sm:mr-auto" disabled={pending} onClick={() => setManual(false)}>
+                    <i aria-hidden="true" data-icon="inline-start" className="i-lucide-light:arrow-left size-4" />
+                    {t('settings.oomolBackToAuthorization')}
+                  </Button>
+                )}
+                <div className={mode == 'oomol' ? 'flex flex-col-reverse gap-2 sm:ml-auto sm:flex-row' : 'contents'}>
+                  <Button type="button" variant="outline" disabled={pending} onClick={() => guard(onClose)}>
+                    {t('settings.cancel')}
+                  </Button>
+                  <Button type="submit" disabled={pending || authorizing}>
+                    {t('settings.save')}
+                  </Button>
+                </div>
+              </DialogFooter>
+            </form>
+          )}
         </DialogContent>
         {confirmation}
       </Dialog>

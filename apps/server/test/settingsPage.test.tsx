@@ -1,7 +1,7 @@
 import type { FormEvent, ReactElement, ReactNode } from 'react'
 import type { SessionUser } from '../common/users.ts'
 
-import { Dialog, Input } from '@oomol-lab/open-flow/ui'
+import { Button, Dialog, Input } from '@oomol-lab/open-flow/ui'
 import { Children, isValidElement } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { SessionCard, MemberSettingsPage, SettingsPage as SettingsView, useConfiguration, serviceConfigurationMissing } from '../browser/settings.tsx'
@@ -93,7 +93,7 @@ function connectorSettings(current = config(1)) {
   return { changed, render, unauthorized }
 }
 
-function serviceEditor(mode: 'oomol' | 'custom', current = config(1)) {
+function serviceEditor(mode: 'oomol' | 'custom', current = config(1), automatic = false) {
   const { render, changed, unauthorized } = connectorSettings(current)
   const view = render()
   const option = find(
@@ -116,23 +116,32 @@ function serviceEditor(mode: 'oomol' | 'custom', current = config(1)) {
     hooks.refIndex = 0
     return (item.type as (props: typeof item.props) => ReactElement)(props)
   }
+  if (mode == 'oomol' && !automatic) {
+    find(editor(), (element) => typeof element.props.onManual == 'function')?.props.onManual()
+  }
   return { item, editor, changed, unauthorized }
 }
 
 function oomolLogin() {
-  const { changed, editor, unauthorized } = serviceEditor('oomol')
+  const { changed, editor, unauthorized } = serviceEditor('oomol', config(1), true)
   const item = find(editor(), (element) => typeof element.props.onAuthorized == 'function')
   if (item == null || typeof item.type != 'function') throw new Error('OOMOL connection is missing.')
   const conflicted = vi.fn().mockResolvedValue(undefined)
   hooks.states = [false, undefined, undefined]
   hooks.refs = []
   hooks.effects = true
-  const render = (): ReactElement => {
+  const render = (overrides: Record<string, unknown> = {}): ReactElement => {
     hooks.stateIndex = 0
     hooks.refIndex = 0
-    return (item.type as (props: typeof item.props) => ReactElement)({ ...item.props, onConflict: conflicted, onAuthorized: changed, onPendingChange: vi.fn() })
+    return (item.type as (props: typeof item.props) => ReactElement)({
+      ...item.props,
+      onConflict: conflicted,
+      onAuthorized: changed,
+      onPendingChange: vi.fn(),
+      ...overrides,
+    })
   }
-  return { changed, conflicted, render, unauthorized }
+  return { changed, conflicted, render, unauthorized, cancelRef: item.props.cancelRef }
 }
 
 it('connects OOMOL automatically when a popup is blocked', async () => {
@@ -143,7 +152,7 @@ it('connects OOMOL automatically when a popup is blocked', async () => {
   vi.stubGlobal('fetch', fetcher)
   vi.stubGlobal('window', { open: vi.fn().mockReturnValue(null) })
   const { render, changed } = oomolLogin()
-  const button = find(render(), (element) => Children.toArray(element.props.children).includes('settings.oomolAutoAuthorize'))
+  const button = find(render(), (element) => element.type == Button && Children.toArray(element.props.children).includes('settings.oomolAutoAuthorize'))
   button?.props.onClick()
   await vi.waitFor(() => expect(changed).toHaveBeenCalledOnce())
   expect(fetcher.mock.calls.map((call) => call[1].method)).toEqual(['POST', 'PUT'])
@@ -157,7 +166,7 @@ it.each(['https://connector.oomol.com', 'https://connector.oomol.dev'])('saves a
   current.services.mode = 'custom'
   current.services.profiles.oomol.connectorOrigin = origin
   const { editor, item, changed } = serviceEditor('oomol', current)
-  hooks.states = [{ connectorOrigin: origin, connectorToken: 'oomol-key', consoleOrigin: '', llmOrigin: '', llmToken: '' }, false]
+  hooks.states = [{ connectorOrigin: origin, connectorToken: 'oomol-key', consoleOrigin: '', llmOrigin: '', llmToken: '' }, false, false, false, true]
   const form = find(editor({ ...item.props, onSaved: changed }), (element) => element.type == 'form')!
   const fetcher = vi.fn().mockResolvedValue(Response.json(config(2)))
   vi.stubGlobal('fetch', fetcher)
@@ -210,11 +219,15 @@ it('offers an authorization link and ignores a completed request after cancellat
   vi.stubGlobal('fetch', fetcher)
   vi.stubGlobal('window', { open: vi.fn().mockReturnValue(null) })
   const { render, changed } = oomolLogin()
-  find(render(), (element) => Children.toArray(element.props.children).includes('settings.oomolAutoAuthorize'))?.props.onClick()
+  find(render(), (element) => element.type == Button && Children.toArray(element.props.children).includes('settings.oomolAutoAuthorize'))?.props.onClick()
   await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2))
   const waiting = render()
+  expect(find(waiting, (element) => element.type == Input)).toBeUndefined()
+  expect(find(waiting, (element) => element.props.children == 'settings.save')).toBeUndefined()
+  expect(find(waiting, (element) => element.props.children == 'settings.cancel')).toBeUndefined()
+  expect(text(waiting)).toContain('ABC123')
   expect(find(waiting, (element) => element.type == 'a')?.props.href).toBe('https://console.oomol.com/login/device?user_code=ABC123')
-  find(waiting, (element) => element.props.children == 'settings.cancel')?.props.onClick()
+  find(waiting, (element) => element.props.children == 'settings.oomolCancelAuthorization')?.props.onClick()
   expect(fetcher.mock.calls[1]![1].signal.aborted).toBe(true)
   expect(fetcher.mock.calls[2]![1].method).toBe('DELETE')
   pending.resolve(Response.json({ connectorOrigin: 'https://connector.oomol.com', apiKey: 'authorized-key', status: 'authorized', version: 1 }))
@@ -234,14 +247,16 @@ it('shows an expired authorization and allows another attempt', async () => {
   vi.stubGlobal('fetch', fetcher)
   vi.stubGlobal('window', { open: vi.fn().mockReturnValue(popup) })
   const { render, changed } = oomolLogin()
-  find(render(), (element) => Children.toArray(element.props.children).includes('settings.oomolAutoAuthorize'))?.props.onClick()
+  find(render(), (element) => element.type == Button && Children.toArray(element.props.children).includes('settings.oomolAutoAuthorize'))?.props.onClick()
   await vi.waitFor(() => expect(hooks.states).toEqual([false, undefined, 'expired']))
   expect(popup.opener).toBeNull()
   expect(popup.location.replace).toHaveBeenCalledWith('https://console.oomol.com/login/device?user_code=ABC123')
-  expect(find(render(), (element) => element.props.role == 'alert' && element.props.children == 'settings.oomolExpired')?.props.children).toBe(
-    'settings.oomolExpired',
-  )
+  expect(text(find(render(), (element) => element.props.role == 'alert'))).toContain('settings.oomolExpired')
   expect(changed).not.toHaveBeenCalled()
+  fetcher.mockResolvedValueOnce(Response.json({ code: 'NEW123', id: 'new-login', url: 'https://console.oomol.com/login/device?user_code=NEW123', version: 1 }))
+  fetcher.mockResolvedValueOnce(Response.json({ connectorOrigin: 'https://connector.oomol.com', apiKey: 'authorized-key', status: 'authorized', version: 1 }))
+  find(render(), (element) => element.type == Button && Children.toArray(element.props.children).includes('settings.oomolRetryAuthorize'))!.props.onClick()
+  await vi.waitFor(() => expect(changed).toHaveBeenCalledOnce())
 })
 
 it.each([401, 409])('resets OOMOL authorization after a session or configuration error: %s', async (status) => {
@@ -249,7 +264,7 @@ it.each([401, 409])('resets OOMOL authorization after a session or configuration
   const popup = { opener: {}, close: vi.fn() }
   vi.stubGlobal('window', { open: vi.fn().mockReturnValue(popup) })
   const { render, conflicted, unauthorized } = oomolLogin()
-  find(render(), (element) => Children.toArray(element.props.children).includes('settings.oomolAutoAuthorize'))?.props.onClick()
+  find(render(), (element) => element.type == Button && Children.toArray(element.props.children).includes('settings.oomolAutoAuthorize'))?.props.onClick()
   await vi.waitFor(() => expect(popup.close).toHaveBeenCalledOnce())
   expect(hooks.states).toEqual([false, undefined, undefined])
   expect(unauthorized).toHaveBeenCalledTimes(status == 401 ? 1 : 0)
@@ -437,22 +452,31 @@ it.each(['oomol', 'custom'] as const)('shows field errors immediately in an empt
 })
 
 it.each([200, 500])('saves the authorized API key and closes only after a successful save (%s)', async (status) => {
-  const { editor, item } = serviceEditor('oomol')
+  const { editor, item } = serviceEditor('oomol', config(1), true)
   const saved = vi.fn()
   const closed = vi.fn()
   const props = { ...item.props, onSaved: saved, onClose: closed }
   const fetcher = vi.fn().mockResolvedValue(Response.json(config(2), { status }))
   vi.stubGlobal('fetch', fetcher)
-  const view = editor(props)
-  const authorization = find(view, (element) => typeof element.props.onAuthorized == 'function')!
-  authorization.props.onAuthorized({ connectorOrigin: 'https://connector.oomol.dev', apiKey: 'new-key' })
-  const filled = editor(props)
-  expect(find(filled, (element) => element.type == Input && element.props.id == 'service-connectorToken')?.props.value).toBe('new-key')
+  const authorization = find(editor(props), (element) => typeof element.props.onAuthorized == 'function')!
+  const saving = authorization.props.onAuthorized({ connectorOrigin: 'https://connector.oomol.dev', apiKey: 'new-key' })
+  expect(find(editor(props), (element) => typeof element.props.onAuthorized == 'function')?.props.disabled).toBe(true)
+  expect(find(editor(props), (element) => element.type == Input)).toBeUndefined()
   expect(closed).not.toHaveBeenCalled()
-  await vi.waitFor(() => expect(hooks.states[1]).toBe(false))
+  await saving
   expect(JSON.parse(fetcher.mock.calls[0]![1].body)).toMatchObject({ connectorOrigin: 'https://connector.oomol.dev', connectorToken: 'new-key' })
   expect(saved).toHaveBeenCalledTimes(status == 200 ? 1 : 0)
   expect(closed).toHaveBeenCalledTimes(status == 200 ? 1 : 0)
+  if (status == 500) {
+    const failed = find(editor(props), (element) => typeof element.props.onAuthorized == 'function')!
+    expect(failed.props.saveFailed).toBe(true)
+    fetcher.mockResolvedValue(Response.json(config(2)))
+    await failed.props.onRetrySave()
+    expect(fetcher.mock.calls.map((call) => call[0])).toEqual(['/config/services/oomol', '/config/services/oomol'])
+    expect(fetcher.mock.calls[1]![1].body).toBe(fetcher.mock.calls[0]![1].body)
+    expect(saved).toHaveBeenCalledOnce()
+    expect(closed).toHaveBeenCalledOnce()
+  }
 })
 
 it('clears a stored API key into an invalid draft instead of silently retaining it', () => {
@@ -526,7 +550,7 @@ it('saves and closes once when confirming unsaved service edits', async () => {
 })
 
 it('validates an authorization result through the same persistence rules as manual edits', async () => {
-  const { editor, item } = serviceEditor('oomol')
+  const { editor, item } = serviceEditor('oomol', config(1), true)
   const closed = vi.fn()
   const fetcher = vi.fn()
   vi.stubGlobal('fetch', fetcher)
@@ -534,4 +558,95 @@ it('validates an authorization result through the same persistence rules as manu
   await authorization.props.onAuthorized({ connectorOrigin: 'https://unrelated.example.com', apiKey: 'new-key' })
   expect(fetcher).not.toHaveBeenCalled()
   expect(closed).not.toHaveBeenCalled()
+})
+
+it('defaults to automatic authorization and preserves the manual draft across mode changes', () => {
+  const { editor } = serviceEditor('oomol', config(1), true)
+  const fetcher = vi.fn()
+  vi.stubGlobal('fetch', fetcher)
+  const automatic = editor()
+  expect(find(automatic, (element) => element.type == Input)).toBeUndefined()
+  expect(find(automatic, (element) => element.type == 'form')).toBeUndefined()
+  find(automatic, (element) => typeof element.props.onManual == 'function')!.props.onManual()
+  const manual = editor()
+  expect(find(manual, (element) => typeof element.props.onAuthorized == 'function')).toBeUndefined()
+  find(manual, (element) => element.type == Input)!.props.onChange({ currentTarget: { value: 'manual-draft' } })
+  find(editor(), (element) => element.type == Button && text(element) == 'settings.oomolBackToAuthorization')!.props.onClick()
+  expect(find(editor(), (element) => element.type == Input)).toBeUndefined()
+  find(editor(), (element) => typeof element.props.onManual == 'function')!.props.onManual()
+  expect(find(editor(), (element) => element.type == Input)?.props.value).toBe('manual-draft')
+  expect(fetcher).not.toHaveBeenCalled()
+})
+
+it('opens the manual form directly when the hosted origin does not support automatic authorization', () => {
+  const current = config(1)
+  current.services.profiles.oomol.connectorOrigin = 'https://hosted.example.com'
+  const { editor } = serviceEditor('oomol', current, true)
+  expect(find(editor(), (element) => element.type == Input)).toBeDefined()
+  expect(find(editor(), (element) => typeof element.props.onAuthorized == 'function')).toBeUndefined()
+  expect(find(editor(), (element) => element.type == Button && text(element) == 'settings.oomolBackToAuthorization')).toBeUndefined()
+})
+
+it.each(['cancel', 'unmount'] as const)('cancels a starting authorization on %s and ignores its late response', async (action) => {
+  const pending = Promise.withResolvers<Response>()
+  const fetcher = vi.fn().mockReturnValue(pending.promise)
+  const popup = { opener: {}, close: vi.fn() }
+  vi.stubGlobal('fetch', fetcher)
+  vi.stubGlobal('window', { open: vi.fn().mockReturnValue(popup) })
+  const { render, changed } = oomolLogin()
+  find(render(), (element) => element.type == Button && Children.toArray(element.props.children).includes('settings.oomolAutoAuthorize'))!.props.onClick()
+  const starting = render()
+  expect(text(starting)).toContain('settings.oomolStarting')
+  expect(find(starting, (element) => typeof element.props.onManual == 'function')).toBeUndefined()
+  if (action == 'cancel') find(starting, (element) => element.props.children == 'settings.oomolCancelAuthorization')!.props.onClick()
+  else hooks.cleanup?.()
+  expect(fetcher.mock.calls[0]![1].signal.aborted).toBe(true)
+  expect(popup.close).toHaveBeenCalledOnce()
+  pending.resolve(Response.json({ code: 'ABC123', id: 'late-login', url: 'https://console.oomol.com/login/device?user_code=ABC123', version: 1 }))
+  await pending.promise
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(changed).not.toHaveBeenCalled()
+  expect(fetcher).toHaveBeenCalledOnce()
+  expect(text(render())).toContain('settings.oomolAutoAuthorize')
+})
+
+it('replaces the authorization controls while saving and offers a save-only retry on failure', () => {
+  const { render } = oomolLogin()
+  const saving = render({ disabled: true })
+  expect(text(saving)).toContain('settings.oomolSaving')
+  expect(find(saving, (element) => typeof element.props.onClick == 'function')).toBeUndefined()
+  const retry = vi.fn()
+  const failed = render({ saveFailed: true, onRetrySave: retry })
+  expect(text(find(failed, (element) => element.props.role == 'alert'))).toContain('settings.oomolSaveFailed')
+  find(failed, (element) => Children.toArray(element.props.children).includes('settings.oomolRetrySave'))!.props.onClick()
+  expect(retry).toHaveBeenCalledOnce()
+})
+
+it('stops authorization before showing the unsaved-draft close confirmation', () => {
+  const { editor, item } = serviceEditor('oomol')
+  const closed = vi.fn()
+  const props = { ...item.props, onClose: closed }
+  find(editor(props), (element) => element.type == Input)!.props.onChange({ currentTarget: { value: 'manual-draft' } })
+  find(editor(props), (element) => element.type == Button && text(element) == 'settings.oomolBackToAuthorization')!.props.onClick()
+  const view = editor(props)
+  const login = find(view, (element) => typeof element.props.onAuthorized == 'function')!
+  const cancel = vi.fn()
+  login.props.cancelRef.current = cancel
+  login.props.onPendingChange(true)
+  find(editor(props), (element) => element.type == Dialog)!.props.onOpenChange(false)
+  expect(cancel).toHaveBeenCalledOnce()
+  expect(closed).not.toHaveBeenCalled()
+  expect(find(editor(props), (element) => element.props.children == 'settings.discardChanges')).toBeDefined()
+})
+
+it.each([false, true])('preserves or explicitly clears a stored key when saving manually (clear: %s)', async (clear) => {
+  const current = config(1)
+  current.services.profiles.oomol.connectorTokenConfigured = true
+  const { editor } = serviceEditor('oomol', current)
+  const fetcher = vi.fn().mockResolvedValue(Response.json(config(2)))
+  vi.stubGlobal('fetch', fetcher)
+  if (clear) find(editor(), (element) => element.props['aria-label'] == 'settings.clearApiKey')!.props.onClick()
+  find(editor(), (element) => element.type == 'form')!.props.onSubmit({ preventDefault: vi.fn() })
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce())
+  expect(JSON.parse(fetcher.mock.calls[0]![1].body).connectorToken).toBe(clear ? '' : null)
 })
