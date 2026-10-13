@@ -53,7 +53,7 @@ import {
   ViewportPortal,
 } from '@xyflow/react'
 import { clsx } from 'clsx'
-import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useContext, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useVal } from 'use-value-enhancer'
 import { I18nProvider, useTranslate } from 'val-i18n-react'
 import { combine, derive } from 'value-enhancer'
@@ -73,6 +73,7 @@ import { CanvasTooltip } from '../../components/tooltip.tsx'
 import { CommentNodeStore } from '../../stores/node/commentNode.store.ts'
 import { FITTING_VIEW_CLASSNAME } from '../../stores/node/constants.ts'
 import { NodeStore } from '../../stores/node/node.store.ts'
+import { CanvasAnnotationContext } from '../annotations.tsx'
 import { InspectSelectionButton } from '../inspectSelection.tsx'
 import { NodePlaceholder, NodePlaceholderQueue } from '../Nodes/useNodePlaceholder.ts'
 import { getPaneRect, PaneRectContext } from '../Nodes/usePaneRect.ts'
@@ -80,6 +81,7 @@ import { CanvasBottomRightControls, CanvasTopLeftControls, CanvasToolbar, Canvas
 import { ConnectionLine } from './ConnectingLine.tsx'
 import { CornerControls } from './CornerControls.tsx'
 import { HelperLines, useHelperLines } from './HelperLines/index.ts'
+import { SelectionAnnotation } from './selectionAnnotation.tsx'
 import { GetPopupContainerContext, useGetStaticPopupContainer } from './useGetPopupContainer.ts'
 
 // Mouse buttons.
@@ -305,6 +307,7 @@ interface SelectionContextMenuData {
 
 // Isolate the inner component because React Flow updates frequently.
 const ReactFlowContainerInner = (props: ReactFlowContainerProps) => {
+  const annotationContext = useContext(CanvasAnnotationContext)
   const flowState = useStoreApi()
   const selecting = useRef(false)
   const selectionEnd = useRef(props.onSelectionEnd)
@@ -607,6 +610,7 @@ const ReactFlowContainerInner = (props: ReactFlowContainerProps) => {
     <NodePlaceholder.Provider value={queue}>
       <PaneRectContext.Provider value={paneRect$}>
         <ReactFlow
+          oai-annotation-container={annotationContext == null ? undefined : ''}
           onKeyDown={(event) => {
             if ((event.key === 'Enter' || event.key === ' ') && event.target instanceof Element && event.target.matches('.react-flow__node')) {
               props.onActivateSelection?.()
@@ -729,6 +733,7 @@ const ReactFlowContainerInner = (props: ReactFlowContainerProps) => {
           connectionLineComponent={ConnectionLine}
           aria-readonly={!editable}
         >
+          <SelectionAnnotation nodes={selectedNodes} />
           {(props.canDeleteNodes ?? true) && !selectionInProgress && (
             <SelectionFloatBar editable={!!editable} nodes={selectedNodes} onDelete={deleteSelectedNodes} duplicateNodes={props.duplicateNodes} />
           )}

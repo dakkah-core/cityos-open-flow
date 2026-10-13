@@ -156,6 +156,21 @@ describe('FlowCanvasView model synchronization', () => {
     hooks.refs = []
   })
 
+  it('forwards updated annotation context without creating a new canvas store or changing selection', () => {
+    const initial = props(model([source]), {
+      annotationContext: { flowId: 'flow', revisionId: 'r1', syncState: 'saved' },
+      selectedNodeIds: ['source'],
+      onSelectionChange: vi.fn(),
+    })
+    const first = FlowCanvasView(initial) as React.ReactElement<FlowCanvasProps>
+    const next = { ...initial, annotationContext: { flowId: 'flow', revisionId: 'r2', syncState: 'dirty' as const } }
+    const second = FlowCanvasView(next) as React.ReactElement<FlowCanvasProps>
+    expect(second.props.annotationContext).toEqual(next.annotationContext)
+    expect(second.props.flowCanvasStore).toBe(first.props.flowCanvasStore)
+    expect(initial.onSelectionChange).not.toHaveBeenCalled()
+    expect(second.props.flowCanvasStore.$.rfNodes.value.find((node) => node.data.store?.nodeId == 'source')?.selected).toBe(true)
+  })
+
   it('keeps a host-owned interaction mode when the canvas identity changes', () => {
     const interactiveMode$ = val<'mouse' | 'touchpad'>('mouse')
     const first = FlowCanvasView(props(model([]), { interactiveMode$ })) as React.ReactElement<FlowCanvasProps>

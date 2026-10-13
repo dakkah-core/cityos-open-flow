@@ -1,4 +1,8 @@
 {
+  "annotation": {
+    "selectedNodes": "已选择 {{count}} 个节点",
+    "selectionTooLarge": "所选节点超出单条注记容量，请减少选择后重新注记。"
+  },
   "contextMenu": {
     "addNode": "添加节点",
     "paste": "粘贴"

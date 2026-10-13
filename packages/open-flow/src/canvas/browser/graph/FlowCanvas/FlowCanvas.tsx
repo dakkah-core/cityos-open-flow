@@ -6,6 +6,7 @@ import type { FlowCanvasViewProps } from './model.ts'
 import { useEffect } from 'react'
 import { useVal } from 'use-value-enhancer'
 import { NodeMiniMapProvider } from '../../components/minimap.tsx'
+import { CanvasAnnotationContext } from '../annotations.tsx'
 import { CanvasStoreProvider } from '../CanvasStoreContext.tsx'
 import { EDGE_TYPES, NODE_TYPES } from '../constants.tsx'
 import { fitViewOptions } from '../FlowCanvas/constants.ts'
@@ -13,6 +14,7 @@ import { InspectSelectionContext } from '../inspectSelection.tsx'
 import { ReactFlowContainer } from '../ReactFlowContainer/ReactFlowContainer.tsx'
 
 export interface FlowCanvasProps {
+  annotationContext?: FlowCanvasViewProps['annotationContext']
   onActivateSelection?: () => void
   onSelectionStart?: () => void
   onSelectionEnd?: () => void
@@ -43,6 +45,7 @@ export interface FlowCanvasProps {
 
 export const FlowCanvas: React.FC<FlowCanvasProps> = ({
   flowCanvasStore,
+  annotationContext,
   onActivateSelection,
   onSelectionStart,
   onSelectionEnd,
@@ -75,60 +78,62 @@ export const FlowCanvas: React.FC<FlowCanvasProps> = ({
   useEffect(flowCanvasStore.setupForceDelete, [])
 
   return (
-    <InspectSelectionContext.Provider value={{ onInspect: onInspectSelection, expanded: inspectorOpen }}>
-      <CanvasStoreProvider value={flowCanvasStore} dark={dark}>
-        <NodeMiniMapProvider value={nodeMiniMapPhase}>
-          <ReactFlowContainer
-            cornerTools={cornerTools}
-            cornerLeading={cornerLeading}
-            topLeftTools={topLeftTools}
-            bottomRightTools={bottomRightTools}
-            toolbar={toolbar}
-            editable={editable}
-            nodesDraggable={nodesDraggable ?? editable}
-            className={className}
-            i18n={flowCanvasStore.i18n}
-            dark={dark}
-            dottedBackground={dottedBackground ?? editable}
-            fitView={fitView ?? !editable}
-            fitViewOptions={fitViewOptions}
-            layoutMotion={layoutMotion}
-            nodeTypes={NODE_TYPES}
-            edgeTypes={EDGE_TYPES}
-            miniMapExpanded$={flowCanvasStore.$$.miniMapExpanded}
-            interactiveMode$={flowCanvasStore.$$.interactiveMode}
-            nodes$={flowCanvasStore.$.rfNodes}
-            edges$={flowCanvasStore.$.rfEdges}
-            viewport$={flowCanvasStore.$$.viewport}
-            onRequestAddNode={onRequestAddNode}
-            addNodeRequest={addNodeRequest}
-            addItemRequest={addItemRequest}
-            onAddNode={flowCanvasStore.onAddNode}
-            onBeforeDelete={flowCanvasStore.onBeforeDelete}
-            onNodesChange={flowCanvasStore.handleNodesChange}
-            onEdgesChange={flowCanvasStore.handleEdgesChange}
-            onConnect={flowCanvasStore.onRFConnect}
-            onMove={onMove}
-            onMoveEnd={onMoveEnd}
-            onNodeDragStop={onNodeDragStop}
-            onSelectionChange={onSelectionChange}
-            onActivateSelection={onActivateSelection}
-            onInspectSelection={onInspectSelection}
-            onSelectionStart={onSelectionStart}
-            onSelectionEnd={onSelectionEnd}
-            isValidConnection={isValidConnection}
-            onDropAddItem={onDropAddItem}
-            onRelayout={editable ? flowCanvasStore.onRelayout : undefined}
-            onLayoutMeasured={flowCanvasStore.completeLayout}
-            onInstance={flowCanvasStore.rfCommand.onRFInstance}
-            onInit={flowCanvasStore.onInit}
-            onCopy={flowCanvasStore.onCopy}
-            onPaste={flowCanvasStore.onPaste}
-            waitNode={flowCanvasStore.waitNode}
-            duplicateNodes={flowCanvasStore.duplicateNodes}
-          ></ReactFlowContainer>
-        </NodeMiniMapProvider>
-      </CanvasStoreProvider>
-    </InspectSelectionContext.Provider>
+    <CanvasAnnotationContext.Provider value={annotationContext}>
+      <InspectSelectionContext.Provider value={{ onInspect: onInspectSelection, expanded: inspectorOpen }}>
+        <CanvasStoreProvider value={flowCanvasStore} dark={dark}>
+          <NodeMiniMapProvider value={nodeMiniMapPhase}>
+            <ReactFlowContainer
+              cornerTools={cornerTools}
+              cornerLeading={cornerLeading}
+              topLeftTools={topLeftTools}
+              bottomRightTools={bottomRightTools}
+              toolbar={toolbar}
+              editable={editable}
+              nodesDraggable={nodesDraggable ?? editable}
+              className={className}
+              i18n={flowCanvasStore.i18n}
+              dark={dark}
+              dottedBackground={dottedBackground ?? editable}
+              fitView={fitView ?? !editable}
+              fitViewOptions={fitViewOptions}
+              layoutMotion={layoutMotion}
+              nodeTypes={NODE_TYPES}
+              edgeTypes={EDGE_TYPES}
+              miniMapExpanded$={flowCanvasStore.$$.miniMapExpanded}
+              interactiveMode$={flowCanvasStore.$$.interactiveMode}
+              nodes$={flowCanvasStore.$.rfNodes}
+              edges$={flowCanvasStore.$.rfEdges}
+              viewport$={flowCanvasStore.$$.viewport}
+              onRequestAddNode={onRequestAddNode}
+              addNodeRequest={addNodeRequest}
+              addItemRequest={addItemRequest}
+              onAddNode={flowCanvasStore.onAddNode}
+              onBeforeDelete={flowCanvasStore.onBeforeDelete}
+              onNodesChange={flowCanvasStore.handleNodesChange}
+              onEdgesChange={flowCanvasStore.handleEdgesChange}
+              onConnect={flowCanvasStore.onRFConnect}
+              onMove={onMove}
+              onMoveEnd={onMoveEnd}
+              onNodeDragStop={onNodeDragStop}
+              onSelectionChange={onSelectionChange}
+              onActivateSelection={onActivateSelection}
+              onInspectSelection={onInspectSelection}
+              onSelectionStart={onSelectionStart}
+              onSelectionEnd={onSelectionEnd}
+              isValidConnection={isValidConnection}
+              onDropAddItem={onDropAddItem}
+              onRelayout={editable ? flowCanvasStore.onRelayout : undefined}
+              onLayoutMeasured={flowCanvasStore.completeLayout}
+              onInstance={flowCanvasStore.rfCommand.onRFInstance}
+              onInit={flowCanvasStore.onInit}
+              onCopy={flowCanvasStore.onCopy}
+              onPaste={flowCanvasStore.onPaste}
+              waitNode={flowCanvasStore.waitNode}
+              duplicateNodes={flowCanvasStore.duplicateNodes}
+            ></ReactFlowContainer>
+          </NodeMiniMapProvider>
+        </CanvasStoreProvider>
+      </InspectSelectionContext.Provider>
+    </CanvasAnnotationContext.Provider>
   )
 }

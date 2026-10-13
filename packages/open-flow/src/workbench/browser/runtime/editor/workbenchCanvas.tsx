@@ -21,6 +21,7 @@ import { CanvasNodePicker } from './nodePickerPopover.tsx'
 import { WorkbenchInspectorToggle } from './workbenchInspectorToggle.tsx'
 
 interface Props {
+  readonly annotationContext?: FlowCanvasViewProps['annotationContext']
   readonly nodePicker?: Pick<
     BlockLibraryProps,
     'connections' | 'loadConnections' | 'browseOptions' | 'provideChoices' | 'catalogFailed' | 'refreshCatalog' | 'initialTab'
@@ -83,6 +84,7 @@ function focusPanel(event: PointerEvent<HTMLElement>): void {
 export const WorkbenchCanvas = forwardRef<WorkbenchCanvasHandle, Props>(function WorkbenchCanvas(
   {
     nodePicker,
+    annotationContext,
     addNodeControl,
     addNodeOptions,
     history,
@@ -293,6 +295,7 @@ export const WorkbenchCanvas = forwardRef<WorkbenchCanvasHandle, Props>(function
       tabIndex={0}
     >
       <FlowCanvasView
+        annotationContext={annotationContext}
         onRequestAddNode={(request) => {
           if (addNodeRequest == null) setPickerCentered(false)
           setPickerRequest(request)

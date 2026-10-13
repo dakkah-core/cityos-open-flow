@@ -1,4 +1,8 @@
 {
+  "annotation": {
+    "selectedNodes": "{{count}} nœuds sélectionnés",
+    "selectionTooLarge": "Trop de nœuds pour une annotation. Sélectionnez moins de nœuds, puis réessayez."
+  },
   "contextMenu": {
     "addNode": "Ajouter un nœud",
     "paste": "Coller"

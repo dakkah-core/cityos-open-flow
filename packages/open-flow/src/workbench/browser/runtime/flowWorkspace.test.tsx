@@ -8,6 +8,7 @@ import { I18nProvider } from 'val-i18n-react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ConnectorAccount } from './editor/connectionSettings.tsx'
 import { NodeInspector } from './editor/nodeInspector.tsx'
+import { WorkbenchCanvas } from './editor/workbenchCanvas.tsx'
 import FlowWorkspace, { FlowEditor } from './flowWorkspace.tsx'
 import { createI18n } from './i18n.ts'
 import { RevisionView } from './revisionView.ts'
@@ -139,7 +140,8 @@ function renderWorkspace(busy?: string, withTrigger = true, invalid = false, sel
         addNodeOptions: value([]),
         checkLoading: value(false),
         diagnosticFocus: value(undefined),
-        draft: value({ revisionId: 'revision' }),
+        draft: value({ flowId: 'flow', revisionId: 'revision' }),
+        moduleEditor: value(undefined),
         flow: value({ flowId: 'flow', name: 'Example flow' }),
         flowId: value('flow'),
         live: value({ hasUnpublishedChanges }),
@@ -179,6 +181,24 @@ describe('FlowWorkspace run drawer', () => {
     mocks.setRunDrawerOpen.mockReset()
     mocks.stateCall = 0
     mocks.stateValues.clear()
+  })
+
+  it('passes the current Draft and unsaved code state into the production canvas boundary', () => {
+    const { editor, store } = renderWorkspace()
+    const context = () => {
+      const tree = FlowEditor(editor.props as Parameters<typeof FlowEditor>[0])
+      const canvas = find(tree, (item) => item.type == WorkbenchCanvas)
+      expect(canvas).toBeDefined()
+      return (canvas!.props as { annotationContext?: unknown }).annotationContext
+    }
+    expect(context()).toMatchObject({ flowId: 'flow', revisionId: 'revision', syncState: 'saved' })
+    Object.assign(store.workspace.$.moduleEditor, { value: { status: 'dirty' } })
+    expect(context()).toMatchObject({ flowId: 'flow', revisionId: 'revision', syncState: 'dirty' })
+    Object.assign(store.workspace.$.draft, { value: { flowId: 'flow', revisionId: 'next-revision' } })
+    Object.assign(store.workspace.$.moduleEditor, { value: undefined })
+    expect(context()).toMatchObject({ flowId: 'flow', revisionId: 'next-revision', syncState: 'saved' })
+    Object.assign(store.workspace.$.flowId, { value: 'other-flow' })
+    expect(context()).toBeUndefined()
   })
 
   it('keeps the expired account name and recovery message after assignable accounts finish loading', () => {

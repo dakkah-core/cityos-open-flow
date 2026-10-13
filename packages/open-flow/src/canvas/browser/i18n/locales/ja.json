@@ -1,4 +1,8 @@
 {
+  "annotation": {
+    "selectedNodes": "{{count}} 個のノードを選択",
+    "selectionTooLarge": "選択したノードが注釈の容量を超えています。選択を減らして再度注釈を付けてください。"
+  },
   "contextMenu": {
     "addNode": "ノードを追加",
     "paste": "貼り付け"

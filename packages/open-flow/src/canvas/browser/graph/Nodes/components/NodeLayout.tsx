@@ -22,6 +22,7 @@ import { NODE_MINIMAP_PHASE1_CLASSNAME, NODE_MINIMAP_PHASE2_CLASSNAME } from '..
 import { CommentNodeStore } from '../../../stores/node/commentNode.store.ts'
 import { FITTING_VIEW_CLASSNAME, NODE_TYPE } from '../../../stores/node/constants.ts'
 import { NodeStore } from '../../../stores/node/node.store.ts'
+import { useNodeAnnotation } from '../../annotations.tsx'
 import { conditionBranchSummary, conditionCaseHasExpressions, conditionGroupNeedsParentheses, conditionOperatorSummary } from '../../FlowCanvas/cardContent.ts'
 import { NodeStoreContext } from '../NodeStoreContext.tsx'
 import { CanvasNode } from './CanvasNode.tsx'
@@ -75,6 +76,7 @@ function ConditionRule({ item, t }: { readonly item: FlowCanvasViewConditionCase
 export const NodeLayout: React.FC<NodeLayoutProps> = /* @__PURE__ */ memo(({ canvasStore, nodeStore, visible }) => {
   const t = useTranslate()
   const modelNode = useVal(NodeStore.to(nodeStore)?.content$)
+  const annotation = useNodeAnnotation(modelNode)
 
   const branches =
     modelNode?.kind == 'condition' || modelNode?.kind == 'approval' || modelNode?.kind == 'wait'
@@ -177,6 +179,7 @@ export const NodeLayout: React.FC<NodeLayoutProps> = /* @__PURE__ */ memo(({ can
     <NodeMiniMapProvider value={nodeMiniMapPhase}>
       <NodeStoreContext.Provider value={nodeStore}>
         <div
+          {...annotation}
           className={clsx(
             styles.outerContainer,
             animateEntry && styles.enter,

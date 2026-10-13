@@ -13,6 +13,7 @@ import { useIgnoredNodes } from '../../../canvas/browser/useIgnoredNodes.ts'
 import { nodeNameIssue } from '../../../flow/common/change.ts'
 import { Empty, EmptyHeader, EmptyTitle } from '../../../ui/browser/empty.tsx'
 import { IconifyProvider } from '../../../ui/browser/icons/iconifyContext.tsx'
+import { canvasAnnotations } from './editor/canvasAnnotations.ts'
 import { CanvasHistoryScope } from './editor/canvasHistoryScope.tsx'
 import { CommentInspector } from './editor/commentInspector.tsx'
 import { ConnectionUsageButton } from './editor/connectorAccessSettings.tsx'
@@ -295,6 +296,8 @@ export function FlowEditor({
   const selectedDesignerNode = useVal(store.$.selectedDesignerNode)
   const selection = useVal(store.workspace.$.selection)
   const selectedNodeIds = useVal(store.workspace.$.selectedNodeIds)
+  const workspaceStatus = useVal(store.workspace.$.status)
+  const moduleEditor = useVal(store.workspace.$.moduleEditor)
   const initialAddNodeTab = triggers.length == 0 ? 'triggers' : 'nodes'
   const { ignoredNodeIds, onIgnoreNodes } = useIgnoredNodes(flowId ?? '')
   const panel = useInspectorPanel({
@@ -534,6 +537,7 @@ export function FlowEditor({
         focusNodeRequest={diagnosticFocus ?? nodeFocus}
         inspectorOpen={contextPanelVisible}
         model={designer}
+        annotationContext={canvasAnnotations(flowId, draft, workspaceStatus, moduleEditor?.status, history.failed)}
         onAddNode={async (option, position, connection) => {
           const nodeId = await store.addNode(option, position, connection)
           if (nodeId != null && panel.open) panel.activate([nodeId])

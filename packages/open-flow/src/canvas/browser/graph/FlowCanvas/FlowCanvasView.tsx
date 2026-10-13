@@ -130,6 +130,7 @@ export function FlowCanvasView(props: FlowCanvasViewProps): ReactElement {
 
   return (
     <FlowCanvas
+      annotationContext={props.annotationContext}
       cornerTools={props.cornerTools}
       cornerLeading={props.cornerLeading}
       topLeftTools={props.topLeftTools}

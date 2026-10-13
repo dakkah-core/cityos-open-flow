@@ -410,3 +410,32 @@ current online entries. The MCP equivalent is `flow_live({ flowId })`.
 A useful completion report identifies the Flow and Revision, what changed,
 what was actually checked or executed, and any remaining blocker. Its detail
 should match the task.
+
+## Workbench node annotations
+
+Node annotations from the Codex browser show the node title as the annotation name.
+Metadata contains `flowId`, `revisionId`, `nodeId`, and `syncState`, plus `description`
+when nonempty. The identity fields are never truncated; `revisionId` identifies the
+saved Revision. Descriptions may be shortened with an ellipsis to fit the annotation
+limits; read full content
+through the public API. The browser supplies the source page URL separately. Continue
+using the configured deployment and verify it matches the referenced Flow.
+Read the referenced node with the public read command before acting. Before editing,
+read the current Draft and use its revision checks; a captured annotation may be older
+than the current Draft. If the node no longer exists, report that instead of choosing
+another node by name.
+
+`syncState` describes the Workbench's known save state (`saved`, `dirty`, `saving`, or
+`failed`). The revision always identifies saved data; pending local changes, including
+unsaved code, are not part of that snapshot. An annotation does not save those changes
+or establish a CLI/MCP connection. Missing or invalid metadata is not sufficient to
+identify a node for editing.
+
+A multi-node annotation carries the same `flowId`, `revisionId`, and `syncState`,
+with `nodeIds` instead of `nodeId`. Parse `nodeIds` as a JSON-encoded string array
+and read every referenced node. The group contains business nodes and Triggers;
+Comment cards have no authoring node identity and are not included in this feature.
+If the complete list exceeds the annotation limits, metadata contains `nodeCount`
+and `error` instead of `nodeIds`. Ask for a smaller selection; never infer a partial
+list or treat a missing list as the whole Flow. The annotation captures the selection
+at creation time, not whichever nodes happen to be selected when the agent acts.

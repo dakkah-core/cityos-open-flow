@@ -1,4 +1,8 @@
 {
+  "annotation": {
+    "selectedNodes": "노드 {{count}}개 선택됨",
+    "selectionTooLarge": "선택한 노드가 주석 용량을 초과합니다. 선택을 줄이고 다시 주석을 추가하세요."
+  },
   "contextMenu": {
     "addNode": "노드 추가",
     "paste": "붙여넣기"

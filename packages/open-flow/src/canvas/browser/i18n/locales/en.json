@@ -1,4 +1,8 @@
 {
+  "annotation": {
+    "selectedNodes": "{{count}} selected nodes",
+    "selectionTooLarge": "Too many nodes for one annotation. Select fewer nodes and annotate again."
+  },
   "contextMenu": {
     "addNode": "Add node",
     "paste": "Paste"

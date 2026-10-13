@@ -1,4 +1,8 @@
 {
+  "annotation": {
+    "selectedNodes": "Выбрано узлов: {{count}}",
+    "selectionTooLarge": "Слишком много узлов для одной аннотации. Выберите меньше узлов и повторите."
+  },
   "contextMenu": {
     "addNode": "Добавить узел",
     "paste": "Вставить"

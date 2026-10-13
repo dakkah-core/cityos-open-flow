@@ -3,6 +3,7 @@ import type { Val } from 'value-enhancer'
 import type { GroupDividerDef } from '../../../../schema/index.ts'
 import type { CanvasCommandSubscriber } from '../../../common/commands.ts'
 import type { InteractiveMode } from '../../stores/canvas/canvas.store.ts'
+import type { CanvasAnnotationContext } from '../annotations.tsx'
 
 export interface FlowCanvasViewSource {
   readonly nodeId: string
@@ -190,6 +191,7 @@ export interface FlowCanvasViewEdge {
 }
 
 export interface FlowCanvasViewProps {
+  readonly annotationContext?: CanvasAnnotationContext
   readonly onRequestAddNode?: (request: {
     readonly position: FlowCanvasViewPosition
     readonly screenPosition: FlowCanvasViewPosition

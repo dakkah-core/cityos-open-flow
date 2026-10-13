@@ -5,6 +5,7 @@ import type { FrontendStory, LogAction } from './stories.tsx'
 import { useState } from 'react'
 import { FlowCanvasView } from '../../src/canvas/browser/graph/FlowCanvas/FlowCanvasView.tsx'
 import { useIgnoredNodes } from '../../src/canvas/browser/useIgnoredNodes.ts'
+import { canvasAnnotations } from '../../src/workbench/browser/runtime/editor/canvasAnnotations.ts'
 import { useStoryActions } from './storyActions.tsx'
 
 const longInput = 'customer_lifetime_value_across_all_completed_orders'
@@ -384,12 +385,14 @@ function NodeContentStory({
   log,
   initialModel = valueModel,
   initialSelection = 'primitives',
+  annotations = false,
 }: {
   readonly dark: boolean
   readonly language: UiLanguage
   readonly log: LogAction
   readonly initialModel?: FlowCanvasViewModel
   readonly initialSelection?: string
+  readonly annotations?: boolean
 }) {
   const { ignoredNodeIds, onIgnoreNodes } = useIgnoredNodes(initialSelection)
   const [selected, setSelected] = useState<readonly string[]>([initialSelection])
@@ -397,7 +400,15 @@ function NodeContentStory({
   const [inspectorOpen, setInspectorOpen] = useState(false)
   const [model, setModel] = useState(initialModel)
   const [generation, setGeneration] = useState(0)
+  const [annotationRevision, setAnnotationRevision] = useState(1)
+  const [annotationDirty, setAnnotationDirty] = useState(false)
   useStoryActions([
+    ...(annotations
+      ? [
+          { label: 'Advance saved revision', onClick: () => setAnnotationRevision((value) => value + 1) },
+          { label: annotationDirty ? 'Mark code saved' : 'Mark code dirty', onClick: () => setAnnotationDirty((value) => !value) },
+        ]
+      : []),
     {
       label: 'Toggle all content',
       onClick: () => setModel((value) => ({ ...value, nodes: value.nodes.map((node) => ({ ...node, contentHidden: !node.contentHidden })) })),
@@ -418,6 +429,8 @@ function NodeContentStory({
         setSelected([initialSelection])
         setEditable(true)
         setInspectorOpen(false)
+        setAnnotationRevision(1)
+        setAnnotationDirty(false)
         setModel(initialModel)
         onIgnoreNodes(ignoredNodeIds, false)
         setGeneration((value) => value + 1)
@@ -429,6 +442,17 @@ function NodeContentStory({
       <div className="workflow-canvas">
         <FlowCanvasView
           key={generation}
+          annotationContext={
+            annotations
+              ? canvasAnnotations(
+                  'lab-annotations',
+                  { flowId: 'lab-annotations', revisionId: `lab-r${annotationRevision}` },
+                  'saved',
+                  annotationDirty ? 'dirty' : 'saved',
+                  false,
+                )
+              : undefined
+          }
           identity="lab:node-cases:value"
           inspectorOpen={inspectorOpen}
           onInspectSelection={() => {
@@ -471,7 +495,7 @@ function NodeContentStory({
 }
 
 const contentModel: FlowCanvasViewModel = {
-  edges: [{ id: 'schedule-values', source: 'schedule', sourceHandle: '$out', target: 'values', targetHandle: '$in' }],
+  edges: [{ id: 'schedule-task', source: 'schedule', sourceHandle: '$out', target: 'task', targetHandle: '$in' }],
   viewport: { x: 46, y: 76, zoom: 0.65 },
   nodes: [
     {
@@ -603,6 +627,17 @@ function NodeZoomStory({ dark, language, log }: { readonly dark: boolean; readon
 }
 
 export const nodeStories: readonly FrontendStory[] = [
+  {
+    group: 'Canvas',
+    id: 'node-annotations',
+    title: 'Node annotations',
+    description:
+      'In the Codex browser, enter Annotation mode and pick a node. The node title appears as the annotation name; metadata contains its description, Flow/node IDs, saved revision and sync state. Drag a selection box around multiple business nodes to annotate the group. Collapse nodes or zoom out to check whole-node picking. Sample identities are synthetic; ordinary selection remains local.',
+    standalone: true,
+    render: (log, dark, language) => (
+      <NodeContentStory dark={dark} language={language} log={log} initialModel={contentModel} initialSelection="schedule" annotations />
+    ),
+  },
   {
     group: 'Canvas',
     id: 'node-zoom',

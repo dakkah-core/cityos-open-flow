@@ -142,3 +142,9 @@ Publications fixture. Test temporary movement/restoration, properties, theme/lan
 missing layout, and a narrow host. The Shadow DOM host is Lab-only and copies the loaded Lab
 stylesheets, including production CSS modules; independent published-CSS verification must use
 the packaged `preview.css` without Lab styles.
+
+`?story=node-annotations` exercises whole-node browser annotations with production
+canvas components. Use Codex's Annotation mode, collapse nodes, and change zoom;
+the sample actions advance the saved revision or mark code dirty. Its Flow and
+Revision IDs are synthetic. Verify real CLI reads against a Workbench deployment,
+not these sample identities.
