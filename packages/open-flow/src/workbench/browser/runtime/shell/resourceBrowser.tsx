@@ -35,7 +35,6 @@ const CreateResourceDialog = lazy(() => import('./createResourceDialog.tsx'))
 
 const flowIdTooltipAlignOffset = 44
 const renamePopoverAlignOffset = -12
-const renamePopoverVerticalShift = 8
 
 interface LanguageSelectProps {
   readonly language: WorkbenchLanguage
@@ -229,35 +228,38 @@ function FlowItem({ showTeam, badge, busy, flow, href, onSelect, store }: FlowIt
                     finalFocus={actionsButton}
                     positionMethod="fixed"
                     side="top"
-                    sideOffset={({ anchor, positioner }) => -(anchor.height + positioner.height) / 2 - renamePopoverVerticalShift}
+                    sideOffset={({ anchor, positioner }) => -(anchor.height + positioner.height) / 2}
                   >
                     <PopoverTitle className="sr-only">{t('sidebar.renameFlow', { name: flow.name })}</PopoverTitle>
-                    <form className="resource-rename-form" onSubmit={(event) => void rename(event)}>
-                      <Field className="min-w-0 flex-1" data-invalid={name.length > 0 && issue != null}>
+                    <form onSubmit={(event) => void rename(event)}>
+                      <Field data-invalid={name.length > 0 && issue != null}>
                         <FieldLabel className="sr-only" htmlFor={`rename-flow-${flow.flowId}`}>
                           {t('resource.flowName')}
                         </FieldLabel>
-                        <Input
-                          autoComplete="off"
-                          aria-invalid={name.length > 0 && issue != null}
-                          aria-describedby={name.length > 0 && issue != null ? `rename-error-${flow.flowId}` : undefined}
-                          id={`rename-flow-${flow.flowId}`}
-                          name="flow-name"
-                          onChange={(event) => setName(event.target.value)}
-                          ref={nameInput}
-                          required
-                          value={name}
-                        />
+                        <div className="resource-rename-form">
+                          <Input
+                            controlSize="field"
+                            autoComplete="off"
+                            aria-invalid={name.length > 0 && issue != null}
+                            aria-describedby={name.length > 0 && issue != null ? `rename-error-${flow.flowId}` : undefined}
+                            id={`rename-flow-${flow.flowId}`}
+                            name="flow-name"
+                            onChange={(event) => setName(event.target.value)}
+                            ref={nameInput}
+                            required
+                            value={name}
+                          />
+                          <Button onClick={() => setMode('idle')} size="sm" type="button" variant="ghost">
+                            {t('common.cancel')}
+                          </Button>
+                          <Button disabled={busy != null || issue != null} size="sm" type="submit">
+                            {t('common.save')}
+                          </Button>
+                        </div>
                         {name.length > 0 && issue != null && (
                           <FieldError id={`rename-error-${flow.flowId}`}>{t(`resource.nameIssue.${issue}`, { max: resourceNameMaxLength })}</FieldError>
                         )}
                       </Field>
-                      <Button onClick={() => setMode('idle')} size="sm" type="button" variant="ghost">
-                        {t('common.cancel')}
-                      </Button>
-                      <Button disabled={busy != null || issue != null} size="sm" type="submit">
-                        {t('common.save')}
-                      </Button>
                     </form>
                   </PopoverContent>
                 </Popover>

@@ -182,7 +182,7 @@
     border: 1px solid var(--ui-border);
     border-radius: var(--ui-control-radius, var(--ui-radius));
     color: var(--ui-muted-foreground);
-    font-size: 14px;
+    font-size: 12px;
   }
 
   .resource-primary-copy {
@@ -234,7 +234,7 @@
   }
 
   .resource-rename-popover {
-    width: 360px;
+    width: 320px;
     max-width: calc(100vw - 24px);
     padding: 8px;
     animation: none;
@@ -244,7 +244,7 @@
   .resource-rename-form {
     display: flex;
     min-width: 0;
-    align-items: flex-start;
+    align-items: center;
     gap: 6px;
   }
 
