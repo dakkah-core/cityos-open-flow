@@ -35,6 +35,53 @@ is not exported by this package.
 
 [Apache-2.0](LICENSE)
 
+## Open an import confirmation
+
+Hosts load external files and open the Flow list before calling the Workbench ref. Open Flow parses
+the text and uses the same confirmation dialog as local file imports. It does not fetch the source URL.
+
+```tsx
+import { useRef } from 'react'
+import { OpenFlowWorkbench, type OpenFlowWorkbenchHandle, type OpenFlowWorkbenchProps } from '@oomol-lab/open-flow/workbench'
+
+function Host(props: OpenFlowWorkbenchProps) {
+  const workbenchRef = useRef<OpenFlowWorkbenchHandle>(null)
+
+  async function openDownloadedFile(file: File) {
+    const text = await file.text()
+    const result = workbenchRef.current?.openImport({ text, fileName: file.name })
+    // Handle an unavailable Workbench in the host; this call is never queued.
+    return result
+  }
+
+  return (
+    <>
+      <input
+        type="file"
+        accept=".openflow.json,.json"
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          if (file != null) void openDownloadedFile(file)
+        }}
+      />
+      <OpenFlowWorkbench ref={workbenchRef} {...props} />
+    </>
+  )
+}
+```
+
+`openImport({ text, fileName?, sourceUrl? })` returns `opened` when confirmation opens,
+`invalid-file` when parsing fails (with visible error feedback), or `unavailable` when the
+Workbench is not on an initialized Flow list, is busy, or already has a creation/import dialog open.
+`opened` does not mean a Flow has been created. The optional `sourceUrl` is displayed in the dialog;
+only HTTP(S) URLs become links. The file's name takes precedence over `fileName`, with a localized
+fallback when neither exists.
+
+Cancel creates nothing. Confirmation uses the existing `importFlow` callback, or the deployment's
+Control API when no callback is supplied, and opens the new unpublished draft after success.
+The host owns download errors, login recovery, navigation, and processing a share link once.
+Do not cache handles across session changes; an old session's handle returns `unavailable`.
+
 ## Offline workflow preview
 
 `@oomol-lab/open-flow/preview` exports the same read-only viewer used in Publications,

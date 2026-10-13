@@ -142,6 +142,7 @@
     "effect": "4.0.0-rc.113",
     "fake-indexeddb": "^6.2.5",
     "fzf": "^0.5.2",
+    "happy-dom": "^21.0.1",
     "katex": "0.16.27",
     "lucide-react": "^0.468",
     "modern-tar": "0.7.6",

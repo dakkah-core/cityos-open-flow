@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslate } from 'val-i18n-react'
 import { resourceNameIssue, resourceNameMaxLength } from '../../../../flow/common/change.ts'
 import { Button } from '../../../../ui/browser/button.tsx'
-import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../../../ui/browser/dialog.tsx'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../../../ui/browser/dialog.tsx'
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '../../../../ui/browser/field.tsx'
 import { Input } from '../../../../ui/browser/input.tsx'
 import { Spinner } from '../../../../ui/browser/spinner.tsx'
@@ -23,6 +23,7 @@ export default function CreateResourceDialog({
   onSubmit,
   pending,
   submitLabel,
+  sourceUrl,
   title,
 }: {
   readonly disabled?: boolean | undefined
@@ -58,6 +59,7 @@ export default function CreateResourceDialog({
   readonly onNameChange: (name: string) => void
   readonly onOpenChange: (open: boolean) => void
   readonly onSubmit: (event: FormEvent) => void
+  readonly sourceUrl?: string | undefined
   readonly submitLabel?: string | undefined
   readonly pending: boolean
   readonly title: string
@@ -69,6 +71,15 @@ export default function CreateResourceDialog({
   const showIssue = name.length > 0 && issue != null
   const message = showIssue ? t(`resource.nameIssue.${issue}`, { max: resourceNameMaxLength }) : t('resource.nameHint', { max: resourceNameMaxLength })
   const messageId = `${id}-message`
+  let sourceHref: string | undefined
+  if (sourceUrl != null) {
+    try {
+      const url = new URL(sourceUrl)
+      if (url.protocol == 'https:' || url.protocol == 'http:') sourceHref = url.href
+    } catch {
+      /* Invalid addresses are displayed as text only. */
+    }
+  }
   const fieldId = `${id}-option`
   useEffect(() => setOpen(true), [])
   return (
@@ -83,11 +94,24 @@ export default function CreateResourceDialog({
       >
         <DialogContent container={portal.current} initialFocus={() => input.current} showCloseButton={false}>
           <form className="flex flex-col gap-4" onSubmit={onSubmit}>
-            <DialogHeader className="flex-row items-center justify-between">
-              <DialogTitle>{title}</DialogTitle>
-              <DialogClose aria-label={t('common.cancel')} render={<Button size="icon-sm" variant="ghost" />} type="button">
-                <Icon name="close" />
-              </DialogClose>
+            <DialogHeader>
+              <div className="flex items-center justify-between">
+                <DialogTitle>{title}</DialogTitle>
+                <DialogClose aria-label={t('common.cancel')} render={<Button size="icon-sm" variant="ghost" />} type="button">
+                  <Icon name="close" />
+                </DialogClose>
+              </div>
+              {sourceUrl != null && (
+                <DialogDescription className="break-all">
+                  {sourceHref == null ? (
+                    sourceUrl
+                  ) : (
+                    <a href={sourceHref} target="_blank" rel="noreferrer">
+                      {sourceUrl}
+                    </a>
+                  )}
+                </DialogDescription>
+              )}
             </DialogHeader>
             <FieldGroup className="gap-4">
               <Field data-invalid={showIssue}>

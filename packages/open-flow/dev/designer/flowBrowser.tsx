@@ -1,8 +1,10 @@
 import type { Flow } from '../../src/control/common/api.ts'
+import type { WorkflowFile } from '../../src/flow/common/workflowFile.ts'
 import type { UiLanguage } from '../../src/localization/common/languages.ts'
+import type { OpenFlowWorkbenchHandle } from '../../src/workbench/browser/runtime/contract.ts'
 import type { FrontendStory, LogAction } from './stories.tsx'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { I18nProvider } from 'val-i18n-react'
 import { WorkbenchClient } from '../../src/workbench/browser/runtime/api.ts'
 import { createI18n } from '../../src/workbench/browser/runtime/i18n.ts'
@@ -10,7 +12,19 @@ import { FlowBrowser } from '../../src/workbench/browser/runtime/shell/resourceB
 import { WorkbenchStore } from '../../src/workbench/browser/runtime/stores/workbenchStore.ts'
 import { useStoryActions } from './storyActions.tsx'
 
+const sampleWorkflow: WorkflowFile = {
+  kind: 'open-flow-workflow',
+  version: 1,
+  name: 'Sample workflow',
+  content: { modelVersion: 6, modules: {}, document: { bindings: {}, graph: { nodes: { start: { kind: 'manual', name: 'Start' } }, edges: [] } } },
+  presentation: {},
+}
+const sampleText = JSON.stringify({ ...sampleWorkflow, name: 'GitHub sample' })
+
 function FlowBrowserStory({ dark, language, log }: { dark: boolean; language: UiLanguage; log: LogAction }) {
+  const importRef = useRef<OpenFlowWorkbenchHandle>(null)
+  const [teamState, setTeamState] = useState<'ready' | 'loading' | 'disabled'>('ready')
+  const [failImport, setFailImport] = useState(false)
   const [single, setSingle] = useState(false)
   const [embedded, setEmbedded] = useState(false)
   const [teams, setTeams] = useState(false)
@@ -19,6 +33,17 @@ function FlowBrowserStory({ dark, language, log }: { dark: boolean; language: Ui
   const [connected, setConnected] = useState(false)
   const [session, setSession] = useState<{ connect: () => void; i18n: ReturnType<typeof createI18n>; store: WorkbenchStore }>()
   useStoryActions([
+    {
+      label: 'Import external file',
+      onClick: () =>
+        log(
+          'import.open',
+          importRef.current?.openImport({ text: sampleText, fileName: 'demo.openflow.json', sourceUrl: 'https://github.com/oomol-lab/open-flow' }),
+        ),
+    },
+    { label: 'Import invalid file', onClick: () => log('import.open', importRef.current?.openImport({ text: '{}' })) },
+    { label: failImport ? 'Allow import submission' : 'Fail import submission', onClick: () => setFailImport(!failImport) },
+    { label: 'Team: ' + teamState, onClick: () => setTeamState(teamState == 'ready' ? 'loading' : teamState == 'loading' ? 'disabled' : 'ready') },
     {
       label: single ? 'Show status examples' : 'Show single workflow',
       onClick: () => {
@@ -82,14 +107,7 @@ function FlowBrowserStory({ dark, language, log }: { dark: boolean; language: Ui
           log('flow.enabled', enabled)
           return Response.json(flows[index])
         }
-        if (url.endsWith('/export'))
-          return Response.json({
-            kind: 'open-flow-workflow',
-            version: 1,
-            name: 'Sample workflow',
-            content: { modelVersion: 6, modules: {}, document: { bindings: {}, graph: { nodes: { start: { kind: 'manual', name: 'Start' } }, edges: [] } } },
-            presentation: {},
-          })
+        if (url.endsWith('/export')) return Response.json(sampleWorkflow)
         if (url.endsWith('/error-listeners')) return Response.json({ version: 1, listeners: [] })
         if (String(path).split('?')[0] == '/v1/flows') {
           const catalog = reads++ == 0 ? flows : flows.map((item, position) => (position == 3 ? Object.assign({}, item, { name: 'Updated draft flow' }) : item))
@@ -113,16 +131,27 @@ function FlowBrowserStory({ dark, language, log }: { dark: boolean; language: Ui
     <I18nProvider i18n={session.i18n}>
       <div className="open-flow-workbench open-flow-theme h-[520px] w-full" data-theme={dark ? 'dark' : 'light'}>
         <FlowBrowser
+          ref={importRef}
           catalogWidth={embedded ? 'embedded' : undefined}
-          createFlowField={{
-            state: 'ready',
-            ariaLabel: 'Team',
-            label: 'Team',
-            description: 'The workflow uses this team after creation.',
-            options: [{ label: 'Sample team', value: 'sample-team' }],
-            value: 'sample-team',
-            onValueChange: () => {},
-          }}
+          createFlowDisabled={teamState != 'ready'}
+          createFlowField={
+            teamState == 'loading'
+              ? {
+                  state: 'loading',
+                  label: 'Team',
+                  description: 'The host is loading available teams.',
+                  status: 'Loading teams…',
+                }
+              : {
+                  state: 'ready',
+                  ariaLabel: 'Team',
+                  label: 'Team',
+                  description: 'The workflow uses this team after creation.',
+                  options: [{ label: 'Sample team', value: 'sample-team' }],
+                  value: 'sample-team',
+                  onValueChange: () => {},
+                }
+          }
           flowBadges={
             teams && single
               ? { flow_7a7ca0123456789abcdef67e0dd: 'crimx_team' }
@@ -137,7 +166,7 @@ function FlowBrowserStory({ dark, language, log }: { dark: boolean; language: Ui
           onCreateFlow={async () => false}
           onImportFlow={async (file, name, key) => {
             log('flow.import', { file, name, key })
-            return true
+            return !failImport
           }}
           onSelectFlow={(flow, view = 'design') => log('flow.open', { flowId: flow.flowId, view })}
         />
@@ -151,7 +180,7 @@ export const flowBrowserStory: FrontendStory = {
   id: 'flow-browser',
   title: 'Flow list',
   description:
-    'Show single workflow reproduces a short name, a full-length ID, and a team in an embedded list. Compare column spacing at wide and compact widths. Hover or focus a flow name to see its full text. Hover, focus, or click a Flow ID to inspect its full value and copy action; Escape closes the tooltip. Embedded layout leaves page width and spacing to the host. Show empty list to inspect the empty state. New Flow and Import workflow include a team field for checking modal controls. Import accepts .openflow.json files and logs the submitted content; malformed files show an error. Row menus export a deterministic sample file that can be imported again. The list loads before notifications connect. Connect notifications to refresh the Draft row without clearing the list. Show startup to inspect the skeleton. Use the row menu to rename a flow, start/stop its publication, or open publication and run history (logged with the target flow and view). Search for Published flow to verify the menu extends beyond a single-row table. Show teams to inspect the optional Team column. At compact widths, team names sit below flow names, unassigned teams are hidden, and status columns stay aligned across rows. Switch language and theme to inspect labels and menus.',
+    'Show single workflow reproduces a short name, a full-length ID, and a team in an embedded list. Compare column spacing at wide and compact widths; search and dialog inputs keep the same text size at both widths. Hover or focus a flow name to see its full text. Hover, focus, or click a Flow ID to inspect its full value and copy action; Escape closes the tooltip. Embedded layout leaves page width and spacing to the host. Show empty list to inspect the empty state. New Flow and Import workflow include a team field for checking modal controls. Import external file and Import invalid file exercise the production ref entry. The source link sits beneath the dialog title and uses the muted theme color. Fail import submission keeps the dialog open for retry; submitted keys are logged. Team cycles ready, loading and disabled submission states. Import accepts .openflow.json files and logs the submitted content; malformed files show an error. Row menus export a deterministic sample file that can be imported again. The list loads before notifications connect. Connect notifications to refresh the Draft row without clearing the list. Show startup to inspect the skeleton. Use the row menu to rename a flow, start/stop its publication, or open publication and run history (logged with the target flow and view). Search for Published flow to verify the menu extends beyond a single-row table. Show teams to inspect the optional Team column. At compact widths, team names sit below flow names, unassigned teams are hidden, and status columns stay aligned across rows. Switch language and theme to inspect labels and menus.',
   standalone: true,
   render: (log, dark, language) => <FlowBrowserStory dark={dark} language={language} log={log} />,
 }

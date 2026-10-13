@@ -1,17 +1,19 @@
 import type { ComponentProps, FormEvent, ReactElement } from 'react'
 import type { WorkflowFile } from '../../../../flow/common/workflowFile.ts'
 import type { ErrorListener, Flow } from '../api.ts'
-import type { WorkbenchLanguage, WorkbenchView } from '../contract.ts'
+import type { OpenFlowWorkbenchHandle, WorkbenchImportInput, WorkbenchLanguage, WorkbenchView } from '../contract.ts'
 import type { OpenFlowWorkbenchProps } from '../openFlowWorkbench.tsx'
 import type { WorkbenchStore } from '../stores/workbenchStore.ts'
 import type { WorkspaceBusy } from '../stores/workspaceModel.ts'
 
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { forwardRef, lazy, Suspense, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
 import { useVal } from 'use-value-enhancer'
 import { useLang, useTranslate } from 'val-i18n-react'
+import { val } from 'value-enhancer'
 import { randomId } from '../../../../control/common/random.ts'
 import { resourceNameIssue, resourceNameMaxLength } from '../../../../flow/common/change.ts'
 import { parseWorkflowFile, workflowNameFromFile } from '../../../../flow/common/workflowFile.ts'
+import { importedWorkflowName } from '../../../../localization/common/languages.ts'
 import { Badge } from '../../../../ui/browser/badge.tsx'
 import { Button } from '../../../../ui/browser/button.tsx'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../../../ui/browser/dialog.tsx'
@@ -405,6 +407,8 @@ function FlowSkeleton({ showTeam }: { readonly showTeam: boolean }): ReactElemen
   )
 }
 
+type FlowCreation = { readonly kind: 'create' } | { readonly kind: 'import'; readonly file: WorkflowFile; readonly key: string; readonly sourceUrl?: string }
+
 interface FlowBrowserProps extends LanguageSelectProps {
   readonly catalogWidth?: OpenFlowWorkbenchProps['catalogWidth']
   readonly createFlowDisabled?: boolean | undefined
@@ -418,18 +422,22 @@ interface FlowBrowserProps extends LanguageSelectProps {
   readonly store: WorkbenchStore
 }
 
-export function FlowBrowser({
-  catalogWidth,
-  createFlowDisabled,
-  createFlowField,
-  flowBadges,
-  hrefForFlow,
-  initializing = false,
-  onCreateFlow,
-  onImportFlow,
-  onSelectFlow,
-  store,
-}: FlowBrowserProps): ReactElement {
+export const FlowBrowser = forwardRef<OpenFlowWorkbenchHandle, FlowBrowserProps>(function FlowBrowser(
+  {
+    catalogWidth,
+    createFlowDisabled,
+    createFlowField,
+    flowBadges,
+    hrefForFlow,
+    initializing = false,
+    onCreateFlow,
+    onImportFlow,
+    onSelectFlow,
+    store,
+    language,
+  }: FlowBrowserProps,
+  ref,
+): ReactElement {
   const t = useTranslate()
   const busy = useVal(store.workspace.$.busy)
   const loadFailed = useVal(store.workspace.$.flowLoadFailed)
@@ -441,8 +449,9 @@ export function FlowBrowser({
   const refreshing = useVal(store.workspace.$.flowRefreshing)
   const flows = useVal(store.workspace.$.flows)
   const total = useVal(store.workspace.$.flowTotal)
-  const [creating, setCreating] = useState(false)
-  const [importing, setImporting] = useState<{ file: WorkflowFile; key: string }>()
+  // The command and React read the same state, including calls before React rerenders.
+  const [creation$] = useState(() => val<FlowCreation | undefined>(undefined))
+  const creation = useVal(creation$)
   const [importError, setImportError] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const [filter, setFilter] = useState('')
@@ -451,14 +460,44 @@ export function FlowBrowser({
   const normalized = filter.trim().toLocaleLowerCase()
   const visible = flows.filter((flow) => flow.name.toLocaleLowerCase().includes(normalized))
 
+  const command = useRef<OpenFlowWorkbenchHandle['openImport']>()
+  useImperativeHandle(ref, () => ({ openImport: (input) => command.current?.(input) ?? 'unavailable' }), [])
+  useLayoutEffect(() => {
+    command.current = openImport
+    return () => {
+      command.current = undefined
+    }
+  })
+
+  function openImport(input: WorkbenchImportInput): ReturnType<OpenFlowWorkbenchHandle['openImport']> {
+    if (initializing || store.workspace.$.busy.value != null || creation$.value != null || onImportFlow == null) return 'unavailable'
+    setImportError(false)
+    let file: WorkflowFile
+    try {
+      file = parseWorkflowFile(input.text)
+    } catch {
+      setImportError(true)
+      return 'invalid-file'
+    }
+    setName(file.name ?? (input.fileName == null ? importedWorkflowName(language) : workflowNameFromFile(input.fileName)))
+    creation$.set({ kind: 'import', file, key: randomId(), ...(input.sourceUrl == null ? {} : { sourceUrl: input.sourceUrl }) })
+    return 'opened'
+  }
+
+  function openCreate(): void {
+    if (creation$.value != null) return
+    setName('')
+    creation$.set({ kind: 'create' })
+  }
+
   async function create(event: FormEvent): Promise<void> {
     event.preventDefault()
+    const request = creation$.value
     const nextName = name.trim()
-    if (resourceNameIssue(nextName) != null) return
-    const success = importing == null ? await onCreateFlow(nextName) : await onImportFlow?.(importing.file, nextName, importing.key)
-    if (!success) return
-    setImporting(undefined)
-    setCreating(false)
+    if (request == null || resourceNameIssue(nextName) != null) return
+    const success = request.kind == 'create' ? await onCreateFlow(nextName) : await onImportFlow?.(request.file, nextName, request.key)
+    if (!success || command.current == null || creation$.value !== request) return
+    creation$.set(undefined)
     setName('')
   }
 
@@ -507,10 +546,7 @@ export function FlowBrowser({
                       void file
                         .text()
                         .then((text) => {
-                          const parsed = parseWorkflowFile(text)
-                          setImporting({ file: parsed, key: randomId() })
-                          setName(parsed.name ?? workflowNameFromFile(file.name))
-                          setCreating(true)
+                          command.current?.({ text, fileName: file.name })
                         })
                         .catch(() => setImportError(true))
                     }}
@@ -521,7 +557,7 @@ export function FlowBrowser({
                 </>
               )}
 
-              <Button className="pr-3" disabled={initializing || busy != null} onClick={() => setCreating(true)}>
+              <Button className="pr-3" disabled={initializing || busy != null} onClick={openCreate}>
                 <Icon data-icon="inline-start" name="plus" />
                 {t('resource.newFlow')}
               </Button>
@@ -570,7 +606,7 @@ export function FlowBrowser({
                     </EmptyHeader>
                     {normalized.length == 0 && (
                       <EmptyContent>
-                        <Button onClick={() => setCreating(true)} variant="outline">
+                        <Button onClick={openCreate} variant="outline">
                           <Icon data-icon="inline-start" name="plus" />
                           {t('resource.newFlow')}
                         </Button>
@@ -602,7 +638,7 @@ export function FlowBrowser({
             </div>
           )}
         </section>
-        {creating && (
+        {creation != null && (
           <Suspense fallback={null}>
             <CreateResourceDialog
               disabled={createFlowDisabled}
@@ -613,20 +649,20 @@ export function FlowBrowser({
               name={name}
               onNameChange={setName}
               onOpenChange={(open) => {
-                setCreating(open)
                 if (!open) {
-                  setImporting(undefined)
+                  creation$.set(undefined)
                   setName('')
                 }
               }}
               onSubmit={(event) => void create(event)}
               pending={busy == 'flow'}
-              submitLabel={importing == null ? undefined : t('resource.importFlow')}
-              title={t(importing == null ? 'resource.newFlow' : 'resource.importFlow')}
+              sourceUrl={creation.kind == 'import' ? creation.sourceUrl : undefined}
+              submitLabel={creation.kind == 'import' ? t('resource.importFlow') : undefined}
+              title={t(creation.kind == 'create' ? 'resource.newFlow' : 'resource.importFlow')}
             />
           </Suspense>
         )}
       </div>
     </main>
   )
-}
+})

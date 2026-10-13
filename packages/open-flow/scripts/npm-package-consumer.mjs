@@ -108,7 +108,31 @@ if (semantics.triggerOutputDefinitions(manual).length !== 0 || Object.keys(seman
 const localization = await import('@oomol-lab/open-flow/localization')
 if (localization.resolveUiLanguage(['zh-Hant-HK']) !== 'zh-TW') throw new Error('Missing UI language registry.')
 const workbench = await import('@oomol-lab/open-flow/workbench')
-if (typeof workbench.OpenFlowWorkbench !== 'function' || typeof workbench.OpenFlowSessionGate !== 'function') throw new Error('Missing Workbench runtime.')
+if (typeof workbench.OpenFlowSessionGate !== 'function') throw new Error('Missing Workbench session gate.')
+const { createElement, createRef } = await import('react')
+const { renderToStaticMarkup } = await import('react-dom/server')
+const workbenchMarkup = renderToStaticMarkup(
+  createElement(workbench.OpenFlowWorkbench, {
+    ref: createRef(),
+    host: {
+      request: async () => {
+        throw new Error('Unexpected server-render request.')
+      },
+      notify() {},
+      openExternalPage: async () => false,
+      subscribeFlow: () => ({ ready: Promise.resolve(), stop() {} }),
+      subscribeFlowCatalog: () => ({ ready: Promise.resolve(), stop() {} }),
+    },
+    hrefFor: () => '/',
+    language: 'en',
+    location: { view: 'design' },
+    onNavigate() {},
+    preferences: { getItem: () => null, setItem() {} },
+    sessionKey: 'package-consumer',
+    theme: 'light',
+  }),
+)
+assert.ok(workbenchMarkup.includes('Import workflow'), 'Packaged Workbench must render its import entry.')
 await import.meta.resolve('@oomol-lab/open-flow/workbench.css')
 await import.meta.resolve('@oomol-lab/open-flow/theme.css')
 await import.meta.resolve('@oomol-lab/open-flow/ui.css')

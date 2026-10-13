@@ -59,3 +59,15 @@ export interface WorkbenchPreferences {
 export type ConnectionHref = (flowId: string, providerId: string, connectionId?: string) => string | undefined
 
 /** Object values are complete response/ETag records; implementations must reject failures. */
+
+/** File content already loaded by the host; Open Flow never fetches sourceUrl. */
+export interface WorkbenchImportInput {
+  readonly text: string
+  readonly fileName?: string
+  readonly sourceUrl?: string
+}
+
+export interface OpenFlowWorkbenchHandle {
+  /** Opens confirmation on an idle, initialized Flow list. Does not create a Flow. */
+  openImport(input: WorkbenchImportInput): 'opened' | 'unavailable' | 'invalid-file'
+}

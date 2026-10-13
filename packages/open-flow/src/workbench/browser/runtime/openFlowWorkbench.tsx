@@ -2,9 +2,10 @@ import type { WorkflowFile } from '../../../flow/common/workflowFile.ts'
 
 import { IconThemeContext } from '../../../ui/browser/icons/iconTheme.ts'
 export { EventSourcesPage } from './eventSources.tsx'
-import type { FormEvent, ReactElement } from 'react'
+import type { FormEvent, ReactElement, Ref } from 'react'
 import type {
   ConnectionHref,
+  OpenFlowWorkbenchHandle,
   WorkbenchHost,
   WorkbenchLanguage,
   WorkbenchLocation,
@@ -13,7 +14,7 @@ import type {
   WorkbenchTheme,
 } from './contract.ts'
 
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { forwardRef, lazy, Suspense, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { useVal } from 'use-value-enhancer'
 import { I18nProvider } from 'val-i18n-react'
 import { randomId } from '../../../control/common/random.ts'
@@ -131,9 +132,10 @@ function FlowNameBridge({ store, onChange }: { readonly store: WorkbenchStore; r
 }
 
 interface WorkbenchProps {
+  readonly importRef: Ref<OpenFlowWorkbenchHandle> | undefined
   readonly catalogWidth?: OpenFlowWorkbenchProps['catalogWidth']
-  readonly importFlow?: ((file: WorkflowFile, name: string, idempotencyKey: string) => Promise<string>) | undefined
-  readonly createFlow?: ((name: string) => Promise<string>) | undefined
+  readonly importFlow?: OpenFlowWorkbenchProps['importFlow']
+  readonly createFlow?: OpenFlowWorkbenchProps['createFlow']
   readonly createFlowDisabled?: boolean | undefined
   readonly createFlowField?: OpenFlowWorkbenchProps['createFlowField']
   readonly connectionHref?: ConnectionHref | undefined
@@ -150,6 +152,7 @@ interface WorkbenchProps {
 }
 
 function Workbench({
+  importRef,
   catalogWidth,
   createFlow,
   importFlow,
@@ -172,6 +175,7 @@ function Workbench({
     <div className="app-shell">
       {flowId == null ? (
         <FlowBrowser
+          ref={importRef}
           catalogWidth={catalogWidth}
           createFlowDisabled={createFlowDisabled}
           createFlowField={createFlowField}
@@ -205,6 +209,8 @@ function Workbench({
 export type { WorkbenchActor } from './contract.ts'
 
 export type {
+  OpenFlowWorkbenchHandle,
+  WorkbenchImportInput,
   FlowCatalogEvent,
   FlowChangeEvent,
   WorkbenchHost,
@@ -275,28 +281,33 @@ export interface OpenFlowWorkbenchProps {
 
 type SessionProps = Omit<OpenFlowWorkbenchProps, 'sessionKey'> & { readonly sessionKey: string }
 
-function Session({
-  catalogWidth,
-  createFlow,
-  importFlow,
-  createFlowDisabled,
-  createFlowField,
-  flowBadges,
-  connectionHref,
-  host,
-  hrefFor,
-  language,
-  location,
-  onConfigureConnector,
-  onManageConnectorAccess,
-  onLanguageChange,
-  onNavigate,
-  onFlowNameChange,
-  preferences,
-  sessionKey,
-  theme,
-  variables = true,
-}: SessionProps): ReactElement {
+const Session = forwardRef<OpenFlowWorkbenchHandle, SessionProps>(function Session(
+  {
+    catalogWidth,
+    createFlow,
+    importFlow,
+    createFlowDisabled,
+    createFlowField,
+    flowBadges,
+    connectionHref,
+    host,
+    hrefFor,
+    language,
+    location,
+    onConfigureConnector,
+    onManageConnectorAccess,
+    onLanguageChange,
+    onNavigate,
+    onFlowNameChange,
+    preferences,
+    sessionKey,
+    theme,
+    variables = true,
+  }: SessionProps,
+  ref,
+): ReactElement {
+  const importRef = useRef<OpenFlowWorkbenchHandle>(null)
+  useImperativeHandle(ref, () => ({ openImport: (input) => importRef.current?.openImport(input) ?? 'unavailable' }), [])
   const navigate = useRef(onNavigate)
   navigate.current = onNavigate
   const [{ i18n, navigation, store }] = useState(() => {
@@ -355,6 +366,7 @@ function Session({
           {onFlowNameChange != null && <FlowNameBridge store={store} onChange={onFlowNameChange} />}
           {started || location.flowId == null ? (
             <Workbench
+              importRef={location.flowId == null ? importRef : undefined}
               catalogWidth={catalogWidth}
               createFlow={createFlow}
               importFlow={importFlow}
@@ -379,8 +391,8 @@ function Session({
       </I18nProvider>
     </IconThemeContext.Provider>
   )
-}
+})
 
-export function OpenFlowWorkbench({ sessionKey, ...props }: OpenFlowWorkbenchProps): ReactElement {
-  return <Session key={`${sessionKey}:${props.host.connectorOwnerId ?? ''}`} sessionKey={sessionKey} {...props} />
-}
+export const OpenFlowWorkbench = forwardRef<OpenFlowWorkbenchHandle, OpenFlowWorkbenchProps>(function OpenFlowWorkbench({ sessionKey, ...props }, ref) {
+  return <Session ref={ref} key={`${sessionKey}:${props.host.connectorOwnerId ?? ''}`} sessionKey={sessionKey} {...props} />
+})
