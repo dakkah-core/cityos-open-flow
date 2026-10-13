@@ -1,22 +1,8 @@
 import assert from 'node:assert/strict'
-import { writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { build } from 'vite'
 
-const entry = new URL('./preview-consumer.js', import.meta.url)
-await writeFile(
-  entry,
-  `
-  const [React, ReactDOM, { OpenFlowPreview }] = await Promise.all([
-    import('react'),
-    import('react-dom/client'),
-    import('@oomol-lab/open-flow/preview'),
-  ]);
-  ReactDOM.createRoot(document.getElementById('root')).render(
-    React.createElement(OpenFlowPreview, window.previewProps),
-  );
-`,
-)
+const entry = new URL('./preview.mjs', import.meta.url)
 
 // Re-bundle the actual package, including lazy editor chunks. The final esbuild
 // pass rejects invalid JavaScript emitted by Rollup from pre-minified inputs.

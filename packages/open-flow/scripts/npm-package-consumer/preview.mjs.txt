@@ -1,0 +1,2 @@
+const [React, ReactDOM, { OpenFlowPreview }] = await Promise.all([import('react'), import('react-dom/client'), import('@oomol-lab/open-flow/preview')])
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(OpenFlowPreview, window.previewProps))

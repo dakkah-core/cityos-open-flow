@@ -1,0 +1,40 @@
+import type { OpenFlowCommandHost } from '@oomol-lab/open-flow/command'
+
+import { runOpenFlowCommand } from '@oomol-lab/open-flow/command'
+const host: OpenFlowCommandHost = {
+  language: 'zh-CN',
+  cloudRequest: async (path, _init) => {
+    if (path === '/v1/flows?limit=100') return Response.json({ flows: [], version: 1 })
+    if (path === '/v1/flows/flow-1') return Response.json(flow())
+    if (path === '/v1/flows/flow-1/live/details')
+      return Response.json({ flowId: 'flow-1', publication: null, status: 'not-published', entries: [], version: 1 })
+    throw new Error('Unexpected request: ' + path)
+  },
+  getWorkbenchUrl: async (flowId) => 'https://example.test/flows/' + flowId,
+}
+const result: Promise<number> = runOpenFlowCommand(['--version', '--json'], host)
+await result
+await runOpenFlowCommand(['list', '--json'], host)
+await runOpenFlowCommand(['workbench', 'flow-1', '--json'], host)
+await runOpenFlowCommand(['live', 'flow-1', '--json'], host)
+// Type-only negative case; never invoked at runtime.
+export function rejectInvalidHost(): void {
+  // @ts-expect-error Host requests must return a Response.
+  runOpenFlowCommand([], { cloudRequest: async () => 'invalid' })
+}
+
+function flow() {
+  return {
+    createdAt: '2026-08-14T00:00:00.000Z',
+    draftRevisionId: 'revision-1',
+    resourceReferences: {
+      draft: { variableNames: [], connections: [], errorSourceFlowIds: [] },
+      sharedAccess: { accessRevision: 0, providerIds: [], bindings: [] },
+    },
+    flowId: 'flow-1',
+    name: 'Main',
+    status: 'active',
+    updatedAt: '2026-08-14T00:00:00.000Z',
+    version: 1,
+  }
+}

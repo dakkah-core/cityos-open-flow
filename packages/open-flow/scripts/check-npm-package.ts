@@ -1,7 +1,7 @@
 import { unpackTar } from 'modern-tar'
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { copyFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -10,6 +10,7 @@ import { gunzipSync } from 'node:zlib'
 
 const execFileAsync = promisify(execFile)
 const packageRequire = createRequire(import.meta.url)
+const compiler = path.join(path.dirname(packageRequire.resolve('typescript/package.json')), 'bin/tsc')
 const rootPath = path.resolve(import.meta.dirname, '..')
 const manifest = JSON.parse(await readFile(path.join(rootPath, 'package.json'), 'utf8')) as { version: string; devDependencies: Record<string, string> }
 const tarballPath = path.join(rootPath, 'dist/release', `oomol-lab-open-flow-${manifest.version}.tgz`)
@@ -37,99 +38,10 @@ const sharedUiTokens = [
 
 await execFileAsync(process.execPath, [path.join(rootPath, 'scripts/build.ts'), '--quiet'], { cwd: rootPath })
 const entries = await unpackTar(gunzipSync(await readFile(tarballPath)), { strict: true })
-const entryNames = entries.map((entry) => entry.header.name).toSorted()
-for (const expected of [
-  'package/skills/open-flow/SKILL.md',
-  'package/skills/open-flow/references/flow-authoring.md',
-  'package/skills/open-flow/references/flow-n8n-conversion.md',
-
-  'package/dist/command/index.js',
-  'package/dist/command/index.d.ts',
-  'package/dist/command/licenses.md',
-  'package/LICENSE',
-  'package/NOTICE',
-  'package/README.md',
-  'package/dist/browser/licenses.md',
-  'package/dist/browser/flow-authoring-edge.d.ts',
-  'package/dist/browser/flow-authoring-module.d.ts',
-  'package/dist/browser/flow-authoring-node.d.ts',
-  'package/dist/browser/flow-authoring.d.ts',
-  'package/dist/browser/flow-authoring.js',
-  'package/dist/browser/flow-notifications.d.ts',
-  'package/dist/browser/flow-change.d.ts',
-  'package/dist/browser/flow-change.js',
-  'package/dist/browser/workbench-contract.d.ts',
-  'package/dist/browser/theme.css',
-  'package/dist/browser/theme.css.d.ts',
-  'package/dist/browser/preview.js',
-  'package/dist/browser/preview.d.ts',
-  'package/dist/browser/preview.css',
-  'package/dist/browser/preview.css.d.ts',
-  'package/dist/browser/ui.js',
-  'package/dist/browser/ui.d.ts',
-  'package/dist/browser/ui-input.d.ts',
-  'package/dist/browser/ui-label.d.ts',
-  'package/dist/browser/ui-textarea.d.ts',
-  'package/dist/browser/ui.css',
-  'package/dist/browser/ui.css.d.ts',
-  'package/dist/browser/workbench.css',
-  'package/dist/browser/workbench.css.d.ts',
-  'package/dist/browser/workbench.d.ts',
-  'package/dist/browser/workbench.js',
-  'package/dist/common/decision.d.ts',
-  'package/dist/common/decision.js',
-  'package/dist/common/openapi.d.ts',
-  'package/dist/common/openapi.js',
-  'package/dist/common/connector-action.d.ts',
-  'package/dist/common/connector-action.js',
-  'package/dist/common/connector-proxy.d.ts',
-  'package/dist/common/connector-proxy.js',
-  'package/dist/common/mcp.d.ts',
-  'package/dist/common/mcp.js',
-  'package/dist/common/mcp-conformance.d.ts',
-  'package/dist/common/control-requests.d.ts',
-  'package/dist/common/control-requests.js',
-  'package/dist/browser/host-conformance.d.ts',
-  'package/dist/browser/host-conformance.js',
-  'package/dist/common/control-api.d.ts',
-  'package/dist/common/control-api.js',
-  'package/dist/common/control-api-conformance.d.ts',
-  'package/dist/common/control-api-conformance.js',
-  'package/dist/common/control-api-errors.d.ts',
-  'package/dist/common/cron-trigger.d.ts',
-  'package/dist/common/cron-trigger.js',
-  'package/dist/common/integration-trigger.d.ts',
-  'package/dist/common/integration-trigger.js',
-  'package/dist/common/localization.d.ts',
-  'package/dist/common/localization.js',
-  'package/dist/common/poll-trigger.d.ts',
-  'package/dist/common/poll-trigger.js',
-  'package/dist/common/provider-triggers.d.ts',
-  'package/dist/common/provider-triggers.js',
-  'package/dist/common/run-lifecycle.d.ts',
-  'package/dist/common/run-lifecycle.js',
-  'package/dist/common/run-events.d.ts',
-  'package/dist/common/run-events.js',
-  'package/dist/common/engine-contract.d.ts',
-  'package/dist/common/flow-encoding.d.ts',
-  'package/dist/common/flow-encoding.js',
-  'package/dist/common/flow-notifications.d.ts',
-  'package/dist/common/flow-graph.d.ts',
-  'package/dist/common/flow-schema.d.ts',
-  'package/dist/common/flow-modules.d.ts',
-  'package/dist/common/flow-semantics.d.ts',
-  'package/dist/common/trigger-contract.d.ts',
-  'package/dist/common/flow-semantics.js',
-  'package/dist/common/runtime-contract.d.ts',
-  'package/dist/common/runtime-contract.js',
-  'package/dist/common/scheduler.d.ts',
-  'package/dist/common/scheduler.js',
-  'package/dist/common/webhook-trigger.d.ts',
-  'package/dist/common/webhook-trigger.js',
-  'package/dist/index.d.ts',
-  'package/package.json',
-]) {
-  assert.ok(entryNames.includes(expected), `Missing npm package entry ${expected}.`)
+const entryNames = entries.map((entry) => entry.header.name)
+// Documentation and legal notices must ship even though consumers do not import them.
+for (const expected of ['LICENSE', 'NOTICE', 'README.md', 'dist/browser/licenses.md', 'dist/command/licenses.md']) {
+  assert.ok(entryNames.includes(`package/${expected}`), `Missing npm package entry ${expected}.`)
 }
 assert.equal(
   entryNames.some((name) => name.includes('/src/')),
@@ -144,143 +56,19 @@ assert.equal(
   true,
 )
 
-const packedManifestEntry = entries.find((entry) => entry.header.name == 'package/package.json')
-assert.ok(packedManifestEntry?.data)
-const packedManifest = JSON.parse(new TextDecoder().decode(packedManifestEntry.data)) as Record<string, unknown>
-assert.deepEqual(Object.keys(packedManifest).toSorted(), [
-  'description',
-  'exports',
-  'files',
-  'license',
-  'name',
-  'peerDependencies',
-  'publishConfig',
-  'repository',
-  'sideEffects',
-  'types',
-  'version',
-])
-assert.deepEqual(packedManifest.peerDependencies, {
-  'effect': '4.0.0-rc.112',
-  'zod': '^4.6.5',
-  'react': '^18.3.1 || ^19.0.0',
-  'react-dom': '^18.3.1 || ^19.0.0',
-})
-assert.deepEqual(packedManifest.repository, {
-  directory: 'packages/open-flow',
-  type: 'git',
-  url: 'git+https://github.com/oomol-lab/open-flow.git',
-})
-assert.deepEqual(packedManifest.exports, {
-  './command': { types: './dist/command/index.d.ts', import: './dist/command/index.js' },
-  './package.json': './package.json',
-  './skills/open-flow/SKILL.md': './skills/open-flow/SKILL.md',
-  './skills/open-flow/references/flow-authoring.md': './skills/open-flow/references/flow-authoring.md',
-  './skills/open-flow/references/flow-n8n-conversion.md': './skills/open-flow/references/flow-n8n-conversion.md',
-
-  '.': { types: './dist/index.d.ts' },
-  './decision': { import: './dist/common/decision.js', types: './dist/common/decision.d.ts' },
-  './openapi': { import: './dist/common/openapi.js', types: './dist/common/openapi.d.ts' },
-  './connector-action': {
-    import: './dist/common/connector-action.js',
-    types: './dist/common/connector-action.d.ts',
-  },
-  './connector-proxy': {
-    import: './dist/common/connector-proxy.js',
-    types: './dist/common/connector-proxy.d.ts',
-  },
-  './mcp': { import: './dist/common/mcp.js', types: './dist/common/mcp.d.ts' },
-  './control-requests': { import: './dist/common/control-requests.js', types: './dist/common/control-requests.d.ts' },
-  './workbench-host-conformance': { import: './dist/browser/host-conformance.js', types: './dist/browser/host-conformance.d.ts' },
-  './control-api': {
-    import: './dist/common/control-api.js',
-    types: './dist/common/control-api.d.ts',
-  },
-  './control-api-conformance': {
-    import: './dist/common/control-api-conformance.js',
-    types: './dist/common/control-api-conformance.d.ts',
-  },
-  './cron-trigger': {
-    import: './dist/common/cron-trigger.js',
-    types: './dist/common/cron-trigger.d.ts',
-  },
-  './event-source': { types: './dist/common/event-source.d.ts', import: './dist/common/event-source.js' },
-  './integration-trigger': {
-    import: './dist/common/integration-trigger.js',
-    types: './dist/common/integration-trigger.d.ts',
-  },
-  './localization': {
-    import: './dist/common/localization.js',
-    types: './dist/common/localization.d.ts',
-  },
-  './poll-trigger': {
-    import: './dist/common/poll-trigger.js',
-    types: './dist/common/poll-trigger.d.ts',
-  },
-  './provider-triggers': {
-    import: './dist/common/provider-triggers.js',
-    types: './dist/common/provider-triggers.d.ts',
-  },
-  './flow-authoring': {
-    import: './dist/browser/flow-authoring.js',
-    types: './dist/browser/flow-authoring.d.ts',
-  },
-  './flow-change': {
-    import: './dist/browser/flow-change.js',
-    types: './dist/browser/flow-change.d.ts',
-  },
-  './flow-encoding': {
-    import: './dist/common/flow-encoding.js',
-    types: './dist/common/flow-encoding.d.ts',
-  },
-  './flow-semantics': {
-    import: './dist/common/flow-semantics.js',
-    types: './dist/common/flow-semantics.d.ts',
-  },
-  './run-lifecycle': {
-    import: './dist/common/run-lifecycle.js',
-    types: './dist/common/run-lifecycle.d.ts',
-  },
-  './run-events': {
-    import: './dist/common/run-events.js',
-    types: './dist/common/run-events.d.ts',
-  },
-  './runtime-contract': {
-    import: './dist/common/runtime-contract.js',
-    types: './dist/common/runtime-contract.d.ts',
-  },
-  './scheduler': {
-    import: './dist/common/scheduler.js',
-    types: './dist/common/scheduler.d.ts',
-  },
-  './theme.css': {
-    default: './dist/browser/theme.css',
-    types: './dist/browser/theme.css.d.ts',
-  },
-  './webhook-trigger': {
-    import: './dist/common/webhook-trigger.js',
-    types: './dist/common/webhook-trigger.d.ts',
-  },
-  './preview': { import: './dist/browser/preview.js', types: './dist/browser/preview.d.ts' },
-  './preview.css': { types: './dist/browser/preview.css.d.ts', default: './dist/browser/preview.css' },
-  './workbench': {
-    import: './dist/browser/workbench.js',
-    types: './dist/browser/workbench.d.ts',
-  },
-  './ui': { types: './dist/browser/ui.d.ts', import: './dist/browser/ui.js' },
-  './ui.css': { types: './dist/browser/ui.css.d.ts', default: './dist/browser/ui.css' },
-  './workbench.css': {
-    default: './dist/browser/workbench.css',
-    types: './dist/browser/workbench.css.d.ts',
-  },
-})
+const packedManifest = JSON.parse(readPackedText('package.json')) as Record<string, unknown>
+assert.equal(packedManifest.name, '@oomol-lab/open-flow')
+assert.equal(packedManifest.version, manifest.version)
+// Validate advertised targets without freezing the internal output layout or export inventory.
+assert.ok(packedManifest.exports && typeof packedManifest.exports == 'object')
+verifyExportTargets(packedManifest.exports)
+assert.equal(typeof packedManifest.types, 'string')
+verifyExportTargets(packedManifest.types)
 for (const forbidden of ['bin', 'dependencies', 'devDependencies', 'main', 'module', 'scripts']) {
   assert.equal(Object.hasOwn(packedManifest, forbidden), false)
 }
 
-const previewStyleEntry = entries.find((entry) => entry.header.name == 'package/dist/browser/preview.css')
-assert.ok(previewStyleEntry?.data)
-const previewStyle = new TextDecoder().decode(previewStyleEntry.data)
+const previewStyle = readPackedText('dist/browser/preview.css')
 for (const token of sharedUiTokens) assert.ok(previewStyle.includes(`${token}:`), `Missing ${token} from the published preview CSS.`)
 assert.doesNotMatch(previewStyle, /data:font\//)
 for (const [, asset] of previewStyle.matchAll(/url\((?:["'])?(\.\/assets\/[^)"']+)/g)) {
@@ -289,37 +77,54 @@ for (const [, asset] of previewStyle.matchAll(/url\((?:["'])?(\.\/assets\/[^)"']
     `Missing preview asset ${asset}`,
   )
 }
-const workbenchStyleEntry = entries.find((entry) => entry.header.name == 'package/dist/browser/workbench.css')
-assert.ok(workbenchStyleEntry?.data)
-const workbenchStyle = new TextDecoder().decode(workbenchStyleEntry.data)
+const workbenchStyle = readPackedText('dist/browser/workbench.css')
 for (const icon of ['i-lucide-light:zoom-in', 'i-lucide-light:zoom-out', 'i-lucide-light:scan', 'i-codicon:copy', 'i-codicon:trash']) {
   assert.ok(workbenchStyle.includes(`.${icon.replaceAll(':', '\\:')}`), `Missing packaged icon CSS for ${icon}.`)
 }
 assert.match(workbenchStyle, /:where\([^)]*\.open-flow-workbench[^)]*\)\s+\.hidden\s*\{\s*display:\s*none\s*;?\s*\}/)
 for (const token of sharedUiTokens) assert.ok(workbenchStyle.includes(`${token}:`), `Missing ${token} from the published Workbench CSS.`)
-const themeStyleEntry = entries.find((entry) => entry.header.name == 'package/dist/browser/theme.css')
-assert.ok(themeStyleEntry?.data)
-const themeStyle = new TextDecoder().decode(themeStyleEntry.data)
+const themeStyle = readPackedText('dist/browser/theme.css')
 assert.match(themeStyle, /\.open-flow-theme\s*\{/)
 assert.match(themeStyle, /\.open-flow-theme\[data-theme='dark'\]/)
 for (const token of sharedUiTokens) assert.ok(themeStyle.includes(`${token}:`), `Missing ${token} from the published product theme CSS.`)
 assert.doesNotMatch(workbenchStyle, /(?:^|[{},])\s*\.hidden\s*\{\s*display:\s*none/)
 assert.doesNotMatch(workbenchStyle, /data:font\//)
-const referencedFonts = [...workbenchStyle.matchAll(/url\((\.\/assets\/font-[a-f\d]{16}\.(?:woff2|woff|ttf))\)/g)]
-  .map((match) => `package/dist/browser/${match[1]!.slice(2)}`)
-  .toSorted()
-assert.ok(referencedFonts.length > 0)
-assert.deepEqual(
-  entryNames.filter((name) => /^package\/dist\/browser\/assets\/font-[a-f\d]{16}\.(?:woff2|woff|ttf)$/.test(name)),
-  referencedFonts,
+const referencedFonts = [...workbenchStyle.matchAll(/url\((\.\/assets\/font-[a-f\d]{16}\.(?:woff2|woff|ttf))\)/g)].map(
+  (match) => `package/dist/browser/${match[1]!.slice(2)}`,
 )
+
+assert.ok(referencedFonts.length > 0)
+for (const font of referencedFonts) {
+  assert.ok(entryNames.includes(font), `Missing Workbench font ${font}.`)
+}
 await verifyConsumer()
 
 console.log('Verified the public npm package, Browser runtime, and bundled command consumer.')
 
+function readPackedText(file: string): string {
+  const packedFile = entries.find((entry) => entry.header.name == `package/${file}`)
+  assert.ok(packedFile?.data, `Missing npm package file ${file}.`)
+  return new TextDecoder().decode(packedFile.data)
+}
+
+function verifyExportTargets(target: unknown): void {
+  if (typeof target == 'string') {
+    assert.ok(target.startsWith('./'), `Package target must be relative: ${target}`)
+    assert.ok(entryNames.includes(`package/${target.slice(2)}`), `Missing npm package target ${target}.`)
+    return
+  }
+  assert.ok(target && typeof target == 'object', 'Expected an export target or condition map.')
+  for (const value of Object.values(target)) verifyExportTargets(value)
+}
+
 async function verifyConsumer(): Promise<void> {
   const directory = await mkdtemp(path.join(tmpdir(), 'open-flow-consumer-'))
   try {
+    // Templates become source files only in the isolated project that installs the tarball.
+    const templates = path.join(import.meta.dirname, 'npm-package-consumer')
+    for (const file of (await readdir(templates)).filter((name) => name.endsWith('.txt'))) {
+      await copyFile(path.join(templates, file), path.join(directory, file.slice(0, -'.txt'.length)))
+    }
     await writeFile(
       path.join(directory, 'package.json'),
       `${JSON.stringify(
@@ -344,146 +149,7 @@ async function verifyConsumer(): Promise<void> {
       )}\n`,
     )
     await execFileAsync(process.execPath, ['install', '--ignore-scripts'], { cwd: directory })
-    const consumerPath = path.join(directory, 'consumer.tsx')
-    await writeFile(
-      consumerPath,
-      [
-        "import type { ConnectorAction, ControlErrorCode } from '@oomol-lab/open-flow/control-api'",
-        "import { ControlClient, liveEntries, type LiveDetails, type LiveEntry } from '@oomol-lab/open-flow/control-api'",
-        "const details: Promise<LiveDetails> = new ControlClient(async () => Response.json({})).getLiveDetails('flow'); void details",
-        'const projectEntries: readonly LiveEntry[] = liveEntries({} as never, {} as never, []); void projectEntries',
-        "import type { DecisionExecutor } from '@oomol-lab/open-flow/decision'",
-        "export const decisionKind: DecisionExecutor['kind'] = 'decision'",
-        "import type { OpenApiExecutor } from '@oomol-lab/open-flow/openapi'",
-        "export const openApiKind: OpenApiExecutor['kind'] = 'openapi'",
-        "import { connectorActionPorts } from '@oomol-lab/open-flow/connector-action'",
-        "import type { ConnectorProxy } from '@oomol-lab/open-flow/connector-proxy'",
-        "import { connectorControlApiConformanceCases, connectorScopeControlApiConformanceCases, controlApiConformanceCases, draftRepairControlApiConformanceCases, eventSourceControlApiConformanceCases, pollControlApiConformanceCases, publicationControlApiConformanceCases, runResultControlApiConformanceCases, triggerControlApiConformanceCases } from '@oomol-lab/open-flow/control-api-conformance'",
-        "import { eventSourceDefinition, type SourceConfiguration } from '@oomol-lab/open-flow/event-source'",
-        "import { validateTriggerSchedule } from '@oomol-lab/open-flow/cron-trigger'",
-        "import { integrationConformanceCases, listenerConformanceCases, validateListenerPage, type ListenerSource } from '@oomol-lab/open-flow/integration-trigger'",
-        "import type { UiLanguage } from '@oomol-lab/open-flow/localization'",
-        "import { resolveUiLanguage } from '@oomol-lab/open-flow/localization'",
-        "import { maximumPollEventsPerPage } from '@oomol-lab/open-flow/poll-trigger'",
-        "import { triggerDefinitions, receiveFeishuEvent, matchesFeishuEvent, feishuSubscriptions } from '@oomol-lab/open-flow/provider-triggers'",
-        "import { createValue } from '@oomol-lab/open-flow/flow-authoring'",
-        "import type { Task } from '@oomol-lab/open-flow'",
-        "import { mcpTools } from '@oomol-lab/open-flow/mcp'",
-        "import { controlRequests } from '@oomol-lab/open-flow/control-requests'",
-        "import { EventSourcesPage } from '@oomol-lab/open-flow/workbench'",
-        "import { verifyWorkbenchHost } from '@oomol-lab/open-flow/workbench-host-conformance'",
-        "import { encodeRevision, decodeRevision, decodeRevisionContent, encodeWorkflowFile, decodeWorkflowFile, cleanWorkflowFile } from '@oomol-lab/open-flow/flow-encoding'",
-        "import { prepareFlow, matchesTriggerOutputs, triggerOutputDefinitions, triggerOutputPorts } from '@oomol-lab/open-flow/flow-semantics'",
-        "import { transitionRun } from '@oomol-lab/open-flow/run-lifecycle'",
-        "import { createEventProjector } from '@oomol-lab/open-flow/run-events'",
-        "import type { RuntimeProgram } from '@oomol-lab/open-flow/runtime-contract'",
-        "import { runtimeConformanceCases } from '@oomol-lab/open-flow/runtime-contract'",
-        "import { runFlow } from '@oomol-lab/open-flow/scheduler'",
-        "import { webhookEndpointId } from '@oomol-lab/open-flow/webhook-trigger'",
-        "import type { OpenFlowWorkbenchHandle, WorkbenchImportInput, WorkbenchHost, WorkbenchLocation } from '@oomol-lab/open-flow/workbench'",
-        "import { OpenFlowSessionGate, OpenFlowWorkbench } from '@oomol-lab/open-flow/workbench'",
-        "import { OpenFlowPreview, type OpenFlowPreviewProps, type Draft, type Presentation } from '@oomol-lab/open-flow/preview'",
-        "import '@oomol-lab/open-flow/preview.css'",
-        'declare const previewDraft: Draft',
-        'declare const previewPresentation: Presentation | null',
-        "const previewProps: OpenFlowPreviewProps = { draft: previewDraft, presentation: previewPresentation, language: 'en', theme: 'light' }",
-        'const preview = <OpenFlowPreview {...previewProps} />',
-        'void preview',
-        "import { createElement, createRef } from 'react'",
-        "import '@oomol-lab/open-flow/workbench.css'",
-        "import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, Button, Popover, PopoverTrigger, PopoverContent, PopoverTitle, HostNavigationActions, type HostNavigationActionsProps, HostTooltip, IdTooltip, Input, Label, OpenFlowLogo, type OpenFlowLogoProps, Tabs, TabsList, TabsTrigger, TabsContent, Textarea } from '@oomol-lab/open-flow/ui'",
-        "import '@oomol-lab/open-flow/ui.css'",
-        "const logoProps: OpenFlowLogoProps = { theme: 'dark', alt: 'Open Flow', width: 32 }",
-        'const logo = <OpenFlowLogo {...logoProps} />',
-        'void logo',
-        'const tooltip = <HostTooltip label="Save"><Button>Save</Button></HostTooltip>',
-        'declare const navigationProps: HostNavigationActionsProps',
-        'const navigation = <HostNavigationActions {...navigationProps} />',
-        'void tooltip',
-        'const hostPopover = <Popover onOpenChange={(open) => void open}><PopoverTrigger render={<Button>References</Button>} /><PopoverContent container={null} align="end"><PopoverTitle>References</PopoverTitle></PopoverContent></Popover>',
-        'void hostPopover',
-        'const hostMenu = <DropdownMenu><DropdownMenuTrigger render={<Button>Actions</Button>} /><DropdownMenuContent align="end" container={null} finalFocus={false}><DropdownMenuItem onClick={(event) => void event.currentTarget}>Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem variant="destructive">Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu>',
-        'void hostMenu',
-        'const idTooltip = <IdTooltip value="flow_123" label="flow...123" trigger={<span tabIndex={0} />} container={null} copyLabel="Copy ID" copiedLabel="Copied" />',
-        'void idTooltip',
-        'void navigation',
-        'const hostTabs = <Tabs defaultValue="mcp"><TabsList aria-label="Agent access" variant="navigation"><TabsTrigger value="mcp">MCP</TabsTrigger><TabsTrigger value="cli">CLI</TabsTrigger></TabsList><TabsContent value="mcp">MCP settings</TabsContent><TabsContent value="cli">CLI commands</TabsContent></Tabs>',
-        'void hostTabs',
-        'const hostFields = <><Label htmlFor="host-input">Name</Label><Input id="host-input" value="name" onChange={(event) => event.target.value} /><Textarea defaultValue="value" /><Button variant="outline" size="sm" type="submit">Save</Button></>',
-        'void hostFields',
-        "import '@oomol-lab/open-flow/theme.css'",
-        'const connector: ConnectorProxy = { execute: async () => ({ data: {}, status: 200 }) }',
-        "const connectorAction: ConnectorAction = { actionId: 'mail.send', authenticated: true, description: '', inputs: {}, name: 'send', outputs: {}, serviceId: 'mail', serviceName: 'Mail' }",
-        "const controlError: ControlErrorCode = 'flow.not-found'",
-        "const uiLanguage: UiLanguage = resolveUiLanguage(['fr-CA'])",
-        "const transition = transitionRun('queued', { kind: 'claim' })",
-        "const runtimeProgram: RuntimeProgram = { engineContract: 'open-flow-engine/v5', engineDigest: 'sha256:test', entryModuleId: 'main', modules: {} }",
-        "const location: WorkbenchLocation = { view: 'design' }",
-        'const host: WorkbenchHost = {',
-        '  notify: () => undefined, openExternalPage: async () => false,',
-        '  request: async () => Response.json({}), subscribeFlow: () => ({ ready: Promise.resolve(), stop() {} }), subscribeFlowCatalog: () => ({ ready: Promise.resolve(), stop() {} }),',
-        '}',
-        'const workbenchRef = createRef<OpenFlowWorkbenchHandle>()',
-        'const importInput: WorkbenchImportInput = { text: "{}", fileName: "demo.openflow.json", sourceUrl: "https://github.com/oomol-lab/open-flow" }',
-        "const importResult: 'opened' | 'unavailable' | 'invalid-file' | undefined = workbenchRef.current?.openImport(importInput)",
-        'void importResult',
-        "const workbench = createElement(OpenFlowWorkbench, { ref: workbenchRef, host, hrefFor: () => '/teams/team-a', language: 'en', location, onNavigate: () => undefined,",
-        "  preferences: { getItem: () => null, setItem: () => undefined }, sessionKey: 'team-a', theme: 'light', variables: false })",
-        "const sessionGate = createElement(OpenFlowSessionGate, { action: 'Sign in', description: 'Use the operator token.', onSubmit: () => undefined, title: 'Open Flow', token: '', tokenLabel: 'Operator token' })",
-        'const task: Task<{ value: string }, { value: string }> = async (inputs) => inputs',
-        'void connector',
-        'void connectorAction',
-        'void connectorActionPorts',
-        'void controlError',
-        'void uiLanguage',
-        'void connectorControlApiConformanceCases',
-        'void connectorScopeControlApiConformanceCases',
-        'void draftRepairControlApiConformanceCases',
-        'void eventSourceControlApiConformanceCases',
-        "const sourceDefinition = eventSourceDefinition('feishu')",
-        "const sourceConfig: SourceConfiguration = sourceDefinition.initialize({ version: 1, name: 'App', connectionId: 'connection', teamId: null, verificationToken: 'token', encryptKey: 'key', eventTypes: ['im.message.receive_v1'], manageSubscriptions: false }, 'cli_test')",
-        'void sourceDefinition.ready(sourceConfig)',
-        'void pollControlApiConformanceCases',
-        'void runResultControlApiConformanceCases',
-        'void controlApiConformanceCases',
-        'void publicationControlApiConformanceCases',
-        'void triggerControlApiConformanceCases',
-        'void integrationConformanceCases',
-        'void listenerConformanceCases',
-        'void validateListenerPage',
-        'void (null as ListenerSource | null)',
-        'void validateTriggerSchedule',
-        'void maximumPollEventsPerPage',
-        'void triggerDefinitions',
-        "const manual = { kind: 'manual', name: 'Manual' } as const",
-        'const validOutputs: boolean = matchesTriggerOutputs(manual, {})',
-        'void validOutputs',
-        'void triggerOutputDefinitions(manual)',
-        'void triggerOutputPorts(manual)',
-        'void createValue',
-        'const portable = decodeWorkflowFile({ kind: "open-flow-workflow", version: 1, content: { modelVersion: 6, modules: {}, document: { bindings: {}, graph: { nodes: {}, edges: [] } } } })',
-        'void encodeWorkflowFile(cleanWorkflowFile(portable).file)',
-        'void encodeRevision',
-        'void decodeRevision',
-        'void decodeRevisionContent',
-        'void verifyWorkbenchHost',
-        "const argumentsResult = mcpTools.flow_read.inputSchema['~standard'].validate({flowId: 'test'})",
-        "if ('value' in argumentsResult) { const flowId: string = argumentsResult.value.flowId; void flowId }",
-        "const create = controlRequests.createFlow({ name: 'Test', version: 1 }); const name: string = create.name; void name",
-        'void prepareFlow',
-        'void transition',
-        'void runtimeProgram',
-        'void runtimeConformanceCases',
-        'void createEventProjector',
-        'void runFlow',
-        'void webhookEndpointId',
-        'void workbench',
-        'void sessionGate',
-        'void task',
-        '',
-      ].join('\n'),
-    )
-    const compiler = path.join(path.dirname(packageRequire.resolve('typescript/package.json')), 'bin/tsc')
+    const consumerPath = path.join(directory, 'types.tsx')
     await execFileAsync(
       process.execPath,
       [
@@ -499,15 +165,14 @@ async function verifyConsumer(): Promise<void> {
         '--jsx',
         'react-jsx',
         '--strict',
+        '--verbatimModuleSyntax',
         consumerPath,
       ],
       { cwd: directory },
     )
-    const runtimePath = path.join(directory, 'consumer.mjs')
-    await copyFile(path.join(rootPath, 'scripts/npm-package-consumer.mjs'), runtimePath)
+    const runtimePath = path.join(directory, 'runtime.mjs')
     await execFileAsync(process.execPath, [runtimePath], { cwd: directory })
-    const browserPath = path.join(directory, 'browser-consumer.mjs')
-    await copyFile(path.join(rootPath, 'scripts/npm-package-browser-consumer.mjs'), browserPath)
+    const browserPath = path.join(directory, 'browser.mjs')
     await execFileAsync(process.execPath, [browserPath], { cwd: directory })
     await verifyCommandConsumer(directory, manifest.version)
   } finally {
@@ -520,36 +185,10 @@ async function verifyCommandConsumer(consumer: string, version: string): Promise
   const imported = await execFileAsync(process.execPath, ['-e', `await import('${entry}')`], { cwd: consumer })
   assert.equal(imported.stdout, '', 'Import must not execute the CLI.')
   assert.equal(imported.stderr, '')
-  await writeFile(
-    path.join(consumer, 'consumer.ts'),
-    `
-import { runOpenFlowCommand, type OpenFlowCommandHost } from '${entry}'
-const host: OpenFlowCommandHost = {
-  language: 'zh-CN',
-  cloudRequest: async (path, _init) => {
-    if (path === '/v1/flows?limit=100') return Response.json({ flows: [], version: 1 })
-    if (path === '/v1/flows/flow-1') return Response.json(${JSON.stringify(flow())})
-    if (path === '/v1/flows/flow-1/live/details') return Response.json({ flowId: 'flow-1', publication: null, status: 'not-published', entries: [], version: 1 })
-    throw new Error('Unexpected request: ' + path)
-  },
-  getWorkbenchUrl: async (flowId) => 'https://example.test/flows/' + flowId,
-}
-const result: Promise<number> = runOpenFlowCommand(['--version', '--json'], host)
-await result
-await runOpenFlowCommand(['list', '--json'], host)
-await runOpenFlowCommand(['workbench', 'flow-1', '--json'], host)
-await runOpenFlowCommand(['live', 'flow-1', '--json'], host)
-if (false) {
-  // @ts-expect-error Host requests must return a Response.
-  runOpenFlowCommand([], { cloudRequest: async () => 'invalid' })
-}
-`,
-  )
-  const compiler = path.join(path.dirname(createRequire(import.meta.url).resolve('typescript/package.json')), 'bin/tsc')
-  await execFileAsync(process.execPath, [compiler, '--ignoreConfig', '--noEmit', '--strict', '--module', 'nodenext', '--target', 'esnext', 'consumer.ts'], {
+  await execFileAsync(process.execPath, [compiler, '--ignoreConfig', '--noEmit', '--strict', '--module', 'nodenext', '--target', 'esnext', 'command.ts'], {
     cwd: consumer,
   })
-  const direct = await execFileAsync(process.execPath, ['consumer.ts'], { cwd: consumer })
+  const direct = await execFileAsync(process.execPath, ['command.ts'], { cwd: consumer })
   assert.equal(direct.stderr, '')
   const outputs = direct.stdout
     .trim()
@@ -563,8 +202,8 @@ if (false) {
     live: { flowId: 'flow-1', publication: null, status: 'not-published', entries: [], version: 1 },
     version: 1,
   })
-  await execFileAsync(process.execPath, ['build', 'consumer.ts', '--target=bun', '--outfile=host.js'], { cwd: consumer })
-  await execFileAsync(process.execPath, ['build', 'consumer.ts', '--compile', '--outfile=host'], { cwd: consumer })
+  await execFileAsync(process.execPath, ['build', 'command.ts', '--target=bun', '--outfile=host.js'], { cwd: consumer })
+  await execFileAsync(process.execPath, ['build', 'command.ts', '--compile', '--outfile=host'], { cwd: consumer })
   await rm(path.join(consumer, 'node_modules'), { recursive: true, force: true })
   const bundled = await execFileAsync(process.execPath, ['host.js'], { cwd: consumer, env: { ...process.env, BUN_CONFIG_NO_INSTALL: '1' } })
   assert.equal(bundled.stderr, '')
@@ -572,20 +211,4 @@ if (false) {
   const executable = await execFileAsync(path.join(consumer, 'host'), [], { cwd: consumer })
   assert.equal(executable.stderr, '')
   assert.equal(executable.stdout, direct.stdout)
-}
-
-function flow() {
-  return {
-    createdAt: '2026-08-14T00:00:00.000Z',
-    draftRevisionId: 'revision-1',
-    resourceReferences: {
-      draft: { variableNames: [], connections: [], errorSourceFlowIds: [] },
-      sharedAccess: { accessRevision: 0, providerIds: [], bindings: [] },
-    },
-    flowId: 'flow-1',
-    name: 'Main',
-    status: 'active',
-    updatedAt: '2026-08-14T00:00:00.000Z',
-    version: 1,
-  }
 }

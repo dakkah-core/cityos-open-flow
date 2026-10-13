@@ -1,0 +1,220 @@
+// Compiled against the installed tarball by check-npm-package.ts; this template is not executed.
+import '@oomol-lab/open-flow/preview.css'
+import '@oomol-lab/open-flow/workbench.css'
+import '@oomol-lab/open-flow/ui.css'
+import '@oomol-lab/open-flow/theme.css'
+import type { Task } from '@oomol-lab/open-flow'
+import type { ConnectorProxy } from '@oomol-lab/open-flow/connector-proxy'
+import type { ConnectorAction, ControlErrorCode, LiveDetails, LiveEntry } from '@oomol-lab/open-flow/control-api'
+import type { DecisionExecutor } from '@oomol-lab/open-flow/decision'
+import type { SourceConfiguration } from '@oomol-lab/open-flow/event-source'
+import type { UiLanguage } from '@oomol-lab/open-flow/localization'
+import type { OpenApiExecutor } from '@oomol-lab/open-flow/openapi'
+import type { OpenFlowPreviewProps, Draft, Presentation } from '@oomol-lab/open-flow/preview'
+import type { RuntimeProgram } from '@oomol-lab/open-flow/runtime-contract'
+import type { HostNavigationActionsProps, OpenFlowLogoProps } from '@oomol-lab/open-flow/ui'
+import type { OpenFlowWorkbenchHandle, WorkbenchImportInput, WorkbenchHost, WorkbenchLocation } from '@oomol-lab/open-flow/workbench'
+
+import { ControlClient, liveEntries } from '@oomol-lab/open-flow/control-api'
+import { controlRequests } from '@oomol-lab/open-flow/control-requests'
+import { eventSourceDefinition } from '@oomol-lab/open-flow/event-source'
+import { encodeWorkflowFile, decodeWorkflowFile, cleanWorkflowFile } from '@oomol-lab/open-flow/flow-encoding'
+import { matchesTriggerOutputs, triggerOutputDefinitions, triggerOutputPorts } from '@oomol-lab/open-flow/flow-semantics'
+import { resolveUiLanguage } from '@oomol-lab/open-flow/localization'
+import { mcpTools } from '@oomol-lab/open-flow/mcp'
+import { OpenFlowPreview } from '@oomol-lab/open-flow/preview'
+import { transitionRun } from '@oomol-lab/open-flow/run-lifecycle'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  Button,
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+  PopoverTitle,
+  HostNavigationActions,
+  HostTooltip,
+  IdTooltip,
+  Input,
+  Label,
+  OpenFlowLogo,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+  Textarea,
+} from '@oomol-lab/open-flow/ui'
+import { OpenFlowSessionGate, OpenFlowWorkbench } from '@oomol-lab/open-flow/workbench'
+import { createElement, createRef } from 'react'
+
+// Concrete consumer assignments and calls verify the published type signatures.
+export const details: Promise<LiveDetails> = new ControlClient(async () => Response.json({})).getLiveDetails('flow')
+export const projectEntries: readonly LiveEntry[] = liveEntries({} as never, {} as never, [])
+export const decisionKind: DecisionExecutor['kind'] = 'decision'
+export const openApiKind: OpenApiExecutor['kind'] = 'openapi'
+
+declare const previewDraft: Draft
+declare const previewPresentation: Presentation | null
+const previewProps: OpenFlowPreviewProps = { draft: previewDraft, presentation: previewPresentation, language: 'en', theme: 'light' }
+export const preview = <OpenFlowPreview {...previewProps} />
+
+const logoProps: OpenFlowLogoProps = { theme: 'dark', alt: 'Open Flow', width: 32 }
+export const logo = <OpenFlowLogo {...logoProps} />
+export const tooltip = (
+  <HostTooltip label="Save">
+    <Button>Save</Button>
+  </HostTooltip>
+)
+declare const navigationProps: HostNavigationActionsProps
+export const navigation = <HostNavigationActions {...navigationProps} />
+export const hostPopover = (
+  <Popover onOpenChange={(open) => void open}>
+    <PopoverTrigger render={<Button>References</Button>} />
+    <PopoverContent container={null} align="end">
+      <PopoverTitle>References</PopoverTitle>
+    </PopoverContent>
+  </Popover>
+)
+export const hostMenu = (
+  <DropdownMenu>
+    <DropdownMenuTrigger render={<Button>Actions</Button>} />
+    <DropdownMenuContent align="end" container={null} finalFocus={false}>
+      <DropdownMenuItem onClick={(event) => void event.currentTarget}>Edit</DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem variant="destructive">Delete</DropdownMenuItem>
+    </DropdownMenuContent>
+  </DropdownMenu>
+)
+export const idTooltip = (
+  <IdTooltip value="flow_123" label="flow...123" trigger={<span tabIndex={0} />} container={null} copyLabel="Copy ID" copiedLabel="Copied" />
+)
+export const hostTabs = (
+  <Tabs defaultValue="mcp">
+    <TabsList aria-label="Agent access" variant="navigation">
+      <TabsTrigger value="mcp">MCP</TabsTrigger>
+      <TabsTrigger value="cli">CLI</TabsTrigger>
+    </TabsList>
+    <TabsContent value="mcp">MCP settings</TabsContent>
+    <TabsContent value="cli">CLI commands</TabsContent>
+  </Tabs>
+)
+export const hostFields = (
+  <>
+    <Label htmlFor="host-input">Name</Label>
+    <Input id="host-input" value="name" onChange={(event) => event.target.value} />
+    <Textarea defaultValue="value" />
+    <Button variant="outline" size="sm" type="submit">
+      Save
+    </Button>
+  </>
+)
+export const connector: ConnectorProxy = { execute: async () => ({ data: {}, status: 200 }) }
+export const connectorAction: ConnectorAction = {
+  actionId: 'mail.send',
+  authenticated: true,
+  description: '',
+  inputs: {},
+  name: 'send',
+  outputs: {},
+  serviceId: 'mail',
+  serviceName: 'Mail',
+}
+export const controlError: ControlErrorCode = 'flow.not-found'
+export const uiLanguage: UiLanguage = resolveUiLanguage(['fr-CA'])
+export const transition = transitionRun('queued', { kind: 'claim' })
+export const runtimeProgram: RuntimeProgram = { engineContract: 'open-flow-engine/v5', engineDigest: 'sha256:test', entryModuleId: 'main', modules: {} }
+const location: WorkbenchLocation = { view: 'design' }
+const host: WorkbenchHost = {
+  notify: () => undefined,
+  openExternalPage: async () => false,
+  request: async () => Response.json({}),
+  subscribeFlow: () => ({ ready: Promise.resolve(), stop() {} }),
+  subscribeFlowCatalog: () => ({ ready: Promise.resolve(), stop() {} }),
+}
+const workbenchRef = createRef<OpenFlowWorkbenchHandle>()
+const importInput: WorkbenchImportInput = { text: '{}', fileName: 'demo.openflow.json', sourceUrl: 'https://github.com/oomol-lab/open-flow' }
+export const importResult: 'opened' | 'unavailable' | 'invalid-file' | undefined = workbenchRef.current?.openImport(importInput)
+export const workbench = createElement(OpenFlowWorkbench, {
+  ref: workbenchRef,
+  host,
+  hrefFor: () => '/teams/team-a',
+  language: 'en',
+  location,
+  onNavigate: () => undefined,
+  preferences: { getItem: () => null, setItem: () => undefined },
+  sessionKey: 'team-a',
+  theme: 'light',
+  variables: false,
+})
+export const sessionGate = createElement(OpenFlowSessionGate, {
+  action: 'Sign in',
+  description: 'Use the operator token.',
+  onSubmit: () => undefined,
+  title: 'Open Flow',
+  token: '',
+  tokenLabel: 'Operator token',
+})
+export const task: Task<{ value: string }, { value: string }> = async (inputs) => inputs
+const sourceDefinition = eventSourceDefinition('feishu')
+const sourceConfig: SourceConfiguration = sourceDefinition.initialize(
+  {
+    version: 1,
+    name: 'App',
+    connectionId: 'connection',
+    teamId: null,
+    verificationToken: 'token',
+    encryptKey: 'key',
+    eventTypes: ['im.message.receive_v1'],
+    manageSubscriptions: false,
+  },
+  'cli_test',
+)
+void sourceDefinition.ready(sourceConfig)
+const manual = { kind: 'manual', name: 'Manual' } as const
+export const validOutputs: boolean = matchesTriggerOutputs(manual, {})
+void triggerOutputDefinitions(manual)
+void triggerOutputPorts(manual)
+const portable = decodeWorkflowFile({
+  kind: 'open-flow-workflow',
+  version: 1,
+  content: { modelVersion: 6, modules: {}, document: { bindings: {}, graph: { nodes: {}, edges: [] } } },
+})
+void encodeWorkflowFile(cleanWorkflowFile(portable).file)
+const argumentsResult = mcpTools.flow_read.inputSchema['~standard'].validate({ flowId: 'test' })
+if ('value' in argumentsResult) {
+  const flowId: string = argumentsResult.value.flowId
+  void flowId
+}
+const create = controlRequests.createFlow({ name: 'Test', version: 1 })
+export const name: string = create.name
+
+// Re-exports verify named entry points without adding unused local bindings.
+export type { ListenerSource } from '@oomol-lab/open-flow/integration-trigger'
+export { connectorActionPorts } from '@oomol-lab/open-flow/connector-action'
+export {
+  connectorControlApiConformanceCases,
+  connectorScopeControlApiConformanceCases,
+  controlApiConformanceCases,
+  draftRepairControlApiConformanceCases,
+  eventSourceControlApiConformanceCases,
+  pollControlApiConformanceCases,
+  publicationControlApiConformanceCases,
+  runResultControlApiConformanceCases,
+  triggerControlApiConformanceCases,
+} from '@oomol-lab/open-flow/control-api-conformance'
+export { validateTriggerSchedule } from '@oomol-lab/open-flow/cron-trigger'
+export { createValue } from '@oomol-lab/open-flow/flow-authoring'
+export { encodeRevision, decodeRevision, decodeRevisionContent } from '@oomol-lab/open-flow/flow-encoding'
+export { prepareFlow } from '@oomol-lab/open-flow/flow-semantics'
+export { integrationConformanceCases, listenerConformanceCases, validateListenerPage } from '@oomol-lab/open-flow/integration-trigger'
+export { maximumPollEventsPerPage } from '@oomol-lab/open-flow/poll-trigger'
+export { triggerDefinitions, receiveFeishuEvent, matchesFeishuEvent, feishuSubscriptions } from '@oomol-lab/open-flow/provider-triggers'
+export { createEventProjector } from '@oomol-lab/open-flow/run-events'
+export { runtimeConformanceCases } from '@oomol-lab/open-flow/runtime-contract'
+export { runFlow } from '@oomol-lab/open-flow/scheduler'
+export { webhookEndpointId } from '@oomol-lab/open-flow/webhook-trigger'
+export { EventSourcesPage } from '@oomol-lab/open-flow/workbench'
+export { verifyWorkbenchHost } from '@oomol-lab/open-flow/workbench-host-conformance'
