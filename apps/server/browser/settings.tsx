@@ -742,12 +742,7 @@ function ConnectorSettings({
         <fieldset className="settings-service-options" disabled={pending || current.services.managed}>
           <legend className="sr-only">{t('settings.connectorMode')}</legend>
           {(['oomol', 'custom'] as const).map((mode) => (
-            <div
-              className="settings-service-option"
-              key={mode}
-              data-selected={current.services.mode == mode || undefined}
-              data-danger={(current.services.mode == mode && missing) || undefined}
-            >
+            <div className="settings-service-option" key={mode} data-selected={current.services.mode == mode || undefined}>
               <label>
                 <strong>{t(mode == 'oomol' ? 'settings.oomolHosted' : 'settings.connectorCustom')}</strong>
                 <input

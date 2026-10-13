@@ -342,12 +342,6 @@ body {
 .settings-service-option[data-selected] {
   border-color: var(--ui-primary);
 }
-.settings-service-option[data-danger] {
-  border-color: var(--ui-destructive);
-}
-.settings-service-option[data-danger] input {
-  accent-color: var(--ui-destructive);
-}
 .settings-service-option label {
   display: flex;
   align-items: center;
