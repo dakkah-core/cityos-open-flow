@@ -17,8 +17,6 @@
   }
 
   .block-library-list .os-scrollbar-vertical {
-    --os-size: 10px;
-    --os-padding-perpendicular: 2px;
     --os-padding-axis: 4px;
     --os-handle-bg: color-mix(in srgb, var(--ui-foreground) 24%, transparent);
     --os-handle-bg-hover: color-mix(in srgb, var(--ui-foreground) 42%, transparent);

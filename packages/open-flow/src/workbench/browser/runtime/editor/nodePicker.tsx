@@ -10,6 +10,7 @@ import { Button } from '../../../../ui/browser/button.tsx'
 import { useDebouncedValue } from '../../../../ui/browser/hooks.ts'
 import { ContentIcon } from '../../../../ui/browser/icons/ContentIcon.tsx'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '../../../../ui/browser/input-group.tsx'
+import { ScrollArea } from '../../../../ui/browser/scroll-area.tsx'
 import { Spinner } from '../../../../ui/browser/spinner.tsx'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../../../ui/browser/tabs.tsx'
 import { Tooltip, TooltipTrigger, TooltipContent } from '../../../../ui/browser/tooltip.tsx'
@@ -71,7 +72,7 @@ export function NodePickerContent({
   const [appId, setAppId] = useState<string>()
   const [navigation, setNavigation] = useState<'forward' | 'back'>()
   const navigateApp = (id?: string) => {
-    if (list.current) scrollPositions.current.set(pickerViewKey(appId, term, page), list.current.scrollTop)
+    if (viewport) scrollPositions.current.set(pickerViewKey(appId, term, page), viewport.scrollTop)
     setNavigation(id ? 'forward' : 'back')
     setAppId(id)
     setAppQuery('')
@@ -84,7 +85,7 @@ export function NodePickerContent({
   const [failed, setFailed] = useState(false)
   const [adding, setAdding] = useState(false)
   const busy = useRef(false)
-  const list = useRef<HTMLDivElement>(null)
+  const [viewport, setViewport] = useState<HTMLElement | null>(null)
   const [root, setRoot] = useState<HTMLElement | null>(null)
   const mount = useCallback((element: HTMLDivElement | null) => {
     setRoot(element?.closest<HTMLElement>('.open-flow-workbench') ?? element?.closest<HTMLElement>('.open-flow-theme') ?? null)
@@ -168,8 +169,8 @@ export function NodePickerContent({
     return () => controller.abort()
   }, [directoryId, provideChoices, t])
   useLayoutEffect(() => {
-    list.current?.scrollTo(0, scrollPositions.current.get(pickerViewKey(appId, term, page)) ?? 0)
-  }, [appId, term, page, catalog.length, results.length, actions.length])
+    viewport?.scrollTo(0, scrollPositions.current.get(pickerViewKey(appId, term, page)) ?? 0)
+  }, [viewport, appId, term, page, catalog.length, results.length, actions.length])
 
   const add = async (item: AddNodeOption) => {
     if (busy.current || disabled || isOptionDisabled?.(item)) return
@@ -197,12 +198,12 @@ export function NodePickerContent({
         onClick={() => void add(item)}
         onDragStart={(event) => drag(event, item)}
         onDragEnd={onDragEnd}
-        className={`group/app h-auto justify-start whitespace-normal font-normal flex min-w-0 items-start gap-2.5 rounded-lg px-2.5 py-1.5 text-left outline-none hover:bg-accent focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${compact ? '' : '[&>span:first-child]:translate-y-[2px]'}`}
+        className={`group/app h-auto justify-start whitespace-normal font-normal flex min-w-0 items-start gap-2.5 rounded-[calc(var(--ui-control-radius)+2px)] px-2.5 py-1.5 text-left outline-none hover:bg-accent focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${compact ? '' : '[&>span:first-child]:translate-y-[2px]'}`}
       >
         {item.kind == 'connector' || (item.kind == 'trigger' && 'trigger' in item && (item.trigger.kind == 'catalog' || item.trigger.kind == 'connect')) ? (
           <ProviderAppIcon src={item.icon} />
         ) : (
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted">
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-[var(--ui-control-radius)] bg-muted">
             <ContentIcon src={item.icon} className="size-[18px] data-[icon-kind=initials]:text-[20px]" />
           </span>
         )}
@@ -247,7 +248,6 @@ export function NodePickerContent({
   }
   const scrollToGroup = (event: ReactMouseEvent<HTMLButtonElement>) => {
     const section = event.currentTarget.closest('section')
-    const viewport = list.current
     if (section && viewport)
       viewport.scrollTo({
         top: viewport.scrollTop + section.getBoundingClientRect().top - viewport.getBoundingClientRect().top,
@@ -284,7 +284,7 @@ export function NodePickerContent({
       type="button"
       disabled={disabled || adding}
       onClick={() => navigateApp(item.id)}
-      className="group/app h-auto justify-start whitespace-normal font-normal flex min-w-0 items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] outline-none hover:bg-accent focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+      className="group/app h-auto justify-start whitespace-normal font-normal flex min-w-0 items-center gap-2.5 rounded-[calc(var(--ui-control-radius)+2px)] px-2.5 py-1.5 text-left text-[13px] outline-none hover:bg-accent focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
     >
       <ProviderAppIcon src={item.icon} />
       <span className="min-w-0 flex-1 py-1 text-[13px] font-normal leading-5">
@@ -297,7 +297,12 @@ export function NodePickerContent({
   const inputQuery = app == null ? query : appQuery
   const setInputQuery = app == null ? setQuery : setAppQuery
   return (
-    <Tabs value={page} onValueChange={(value) => setPage(value === 'triggers' ? 'triggers' : 'nodes')} className="h-full min-h-0 gap-0" aria-busy={adding}>
+    <Tabs
+      value={page}
+      onValueChange={(value) => setPage(value === 'triggers' ? 'triggers' : 'nodes')}
+      className="open-flow-node-picker h-full min-h-0 gap-0"
+      aria-busy={adding}
+    >
       <div ref={mount} className="shrink-0 px-3 pb-2 pt-3">
         <InputGroup>
           <InputGroupAddon>
@@ -313,7 +318,7 @@ export function NodePickerContent({
             onKeyDown={(event) => {
               if (event.key == 'ArrowDown') {
                 event.preventDefault()
-                list.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
+                viewport?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
               }
             }}
           />
@@ -336,11 +341,11 @@ export function NodePickerContent({
       </div>
       {!term && app == null && (
         <div className="shrink-0 px-3 pb-2">
-          <TabsList aria-label={t('designer.addNode')} variant="flat" className="w-full">
-            <TabsTrigger value="nodes" className="px-3">
+          <TabsList aria-label={t('designer.addNode')} variant="flat" className="w-full rounded-[var(--ui-control-radius)]">
+            <TabsTrigger value="nodes" className="rounded-[calc(var(--ui-control-radius)-3px)] px-3">
               {t('addNode.blocks')}
             </TabsTrigger>
-            <TabsTrigger value="triggers" className="px-3">
+            <TabsTrigger value="triggers" className="rounded-[calc(var(--ui-control-radius)-3px)] px-3">
               {t('addNode.triggers')}
             </TabsTrigger>
           </TabsList>
@@ -349,94 +354,106 @@ export function NodePickerContent({
       <TabsContent value={page} className="flex min-h-0 flex-1 flex-col overflow-visible">
         <div key={appId ?? 'catalog'} className={styles.page} data-navigation={navigation}>
           {app != null && (
-            <div className="mx-3 mb-2 grid h-8 shrink-0 grid-cols-[28px_minmax(0,1fr)_28px] items-center gap-2 rounded-lg bg-[color-mix(in_srgb,var(--ui-foreground)_4%,var(--ui-popover))] px-1.5">
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                className="text-muted-foreground hover:bg-popover hover:text-foreground hover:shadow-sm focus-visible:bg-popover focus-visible:text-foreground dark:hover:bg-[color-mix(in_srgb,var(--ui-foreground)_12%,var(--ui-popover))] dark:focus-visible:bg-[color-mix(in_srgb,var(--ui-foreground)_12%,var(--ui-popover))]"
-                aria-label={t(query.trim() ? 'nodePicker.backToResults' : 'nodePicker.back')}
-                onClick={() => navigateApp()}
-              >
-                <Icon name="chevron-left" />
-              </Button>
+            <div className="mx-3 mb-2 grid h-8 shrink-0 grid-cols-[28px_minmax(0,1fr)_28px] items-center gap-2 rounded-[var(--ui-control-radius)] bg-[color-mix(in_srgb,var(--ui-foreground)_4%,var(--ui-popover))] px-1.5">
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      className="text-muted-foreground [--ui-control-hover-background:color-mix(in_srgb,var(--ui-foreground)_8%,var(--ui-popover))]"
+                      aria-label={t(query.trim() ? 'nodePicker.backToResults' : 'nodePicker.back')}
+                      onClick={() => navigateApp()}
+                    />
+                  }
+                >
+                  <Icon name="chevron-left" />
+                </TooltipTrigger>
+                <TooltipContent container={root}>{t(query.trim() ? 'nodePicker.backToResults' : 'nodePicker.back')}</TooltipContent>
+              </Tooltip>
               <span className="min-w-0 truncate text-center text-sm font-semibold" title={app.label}>
                 {app.label}
               </span>
             </div>
           )}
-          <div
-            ref={list}
-            className="min-h-0 flex-1 overflow-y-scroll overscroll-contain px-2 pb-2"
-            onKeyDown={(event) => {
-              if (event.key != 'ArrowDown' && event.key != 'ArrowUp') return
-              const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]
-              const index = buttons.indexOf(event.target as HTMLButtonElement)
-              if (index < 0) return
-              event.preventDefault()
-              buttons[(index + (event.key == 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus()
-            }}
+          <ScrollArea
+            className="min-h-0 flex-1 [&_[data-overlayscrollbars-viewport]]:overscroll-contain"
+            defer={false}
+            events={{ initialized: (instance) => setViewport(instance.elements().viewport) }}
           >
-            {app != null ? (
-              <>
-                {section(t('addNode.triggers'), visibleTriggers)}
-                {actionSections(visibleActions)}
-                {!choicesLoading && !choicesFailed && !catalogFailed && visibleActions.length == 0 && visibleTriggers.length == 0 && <PickerStatus />}
-              </>
-            ) : searching ? (
-              <>
-                {matchedApps.length > 0 && (
-                  <section className="mb-3">
-                    <h3 style={{ margin: 0 }} className="sticky top-0 z-10 bg-popover px-2.5 pb-1 pt-2 text-xs font-medium text-muted-foreground">
-                      <PickerGroupButton onClick={scrollToGroup}>{t('nodePicker.apps')}</PickerGroupButton>
-                    </h3>
-                    {matchedApps.length == 1 ? (
-                      <div className="grid">{matchedApps.map((item) => appRow(item, true))}</div>
-                    ) : (
-                      <AppDirectory viewport={list.current}>{matchedApps.map((item) => appRow(item))}</AppDirectory>
-                    )}
-                  </section>
-                )}
-                {section(
-                  t('addNode.triggers'),
-                  matches.filter((item) => item.kind == 'trigger'),
-                )}
-                {section(t('addNode.blocks'), builtInNodeItems(matches))}
-                {section(humanInTheLoop, humanInTheLoopItems(matches))}
-                {actionSections(matches)}
-                {!loading && !catalogLoading && !failed && !catalogError && !catalogFailed && matchedApps.length == 0 && matches.length == 0 && (
-                  <PickerStatus />
-                )}
-              </>
-            ) : page == 'triggers' ? (
-              <>
-                {section(
-                  t('nodePicker.builtIn'),
-                  local.filter((item) => item.kind == 'trigger'),
-                )}
-                {apps
-                  .filter((item) => item.triggers.length > 0)
-                  .map((item) => (
-                    <div key={item.id}>{section(item.label, item.triggers, false, item.label)}</div>
-                  ))}
-              </>
-            ) : (
-              <>
-                {section(t('nodePicker.builtInNodes'), builtInNodeItems(local), true)}
-                {section(humanInTheLoop, humanInTheLoopItems(local), true)}
-                {pickerAppGroups.map((group, priority) => {
-                  const items = apps.filter((item) => item.directory != null && (item.priority ?? 3) == priority)
-                  if (items.length == 0) return null
-                  return (
-                    <section key={group} className="mb-3">
-                      <ProviderGroupHeading group={group} container={root} onClick={scrollToGroup} />
-                      <AppDirectory viewport={list.current}>{items.map((item) => appRow(item))}</AppDirectory>
+            <div
+              className="px-3 pb-2"
+              onKeyDown={(event) => {
+                if (event.key != 'ArrowDown' && event.key != 'ArrowUp') return
+                const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]
+                const index = buttons.indexOf(event.target as HTMLButtonElement)
+                if (index < 0) return
+                event.preventDefault()
+                buttons[(index + (event.key == 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus()
+              }}
+            >
+              {app != null ? (
+                <>
+                  {section(t('addNode.triggers'), visibleTriggers)}
+                  {actionSections(visibleActions)}
+                  {!choicesLoading && !choicesFailed && !catalogFailed && visibleActions.length == 0 && visibleTriggers.length == 0 && <PickerStatus />}
+                </>
+              ) : searching ? (
+                <>
+                  {matchedApps.length > 0 && (
+                    <section className="mb-3">
+                      <h3 style={{ margin: 0 }} className="sticky top-0 z-10 bg-popover px-2.5 pb-1 pt-2 text-xs font-medium text-muted-foreground">
+                        <PickerGroupButton onClick={scrollToGroup}>{t('nodePicker.apps')}</PickerGroupButton>
+                      </h3>
+                      {matchedApps.length == 1 ? (
+                        <div className="grid">{matchedApps.map((item) => appRow(item, true))}</div>
+                      ) : (
+                        <AppDirectory viewport={viewport}>{matchedApps.map((item) => appRow(item))}</AppDirectory>
+                      )}
                     </section>
-                  )
-                })}
-              </>
-            )}
-            {(app != null ? choicesLoading : catalogLoading || loading) && <PickerStatus loading searching={searching} />}
-          </div>
+                  )}
+                  {section(
+                    t('addNode.triggers'),
+                    matches.filter((item) => item.kind == 'trigger'),
+                  )}
+                  {section(t('addNode.blocks'), builtInNodeItems(matches))}
+                  {section(humanInTheLoop, humanInTheLoopItems(matches))}
+                  {actionSections(matches)}
+                  {!loading && !catalogLoading && !failed && !catalogError && !catalogFailed && matchedApps.length == 0 && matches.length == 0 && (
+                    <PickerStatus />
+                  )}
+                </>
+              ) : page == 'triggers' ? (
+                <>
+                  {section(
+                    t('nodePicker.builtIn'),
+                    local.filter((item) => item.kind == 'trigger'),
+                  )}
+                  {apps
+                    .filter((item) => item.triggers.length > 0)
+                    .map((item) => (
+                      <div key={item.id}>{section(item.label, item.triggers, false, item.label)}</div>
+                    ))}
+                </>
+              ) : (
+                <>
+                  {section(t('nodePicker.builtInNodes'), builtInNodeItems(local), true)}
+                  {section(humanInTheLoop, humanInTheLoopItems(local), true)}
+                  {pickerAppGroups.map((group, priority) => {
+                    const items = apps.filter((item) => item.directory != null && (item.priority ?? 3) == priority)
+                    if (items.length == 0) return null
+                    return (
+                      <section key={group} className="mb-3">
+                        <ProviderGroupHeading group={group} container={root} onClick={scrollToGroup} />
+                        <AppDirectory viewport={viewport}>{items.map((item) => appRow(item))}</AppDirectory>
+                      </section>
+                    )
+                  })}
+                </>
+              )}
+              {(app != null ? choicesLoading : catalogLoading || loading) && <PickerStatus loading searching={searching} />}
+            </div>
+          </ScrollArea>
         </div>
       </TabsContent>
     </Tabs>
@@ -444,7 +461,7 @@ export function NodePickerContent({
 }
 
 // App rows have a fixed 42px height. Keep only the viewport and a small overscan mounted.
-function AppDirectory({ children, viewport }: { children: ReactElement[]; viewport: HTMLDivElement | null }) {
+function AppDirectory({ children, viewport }: { children: ReactElement[]; viewport: HTMLElement | null }) {
   const container = useRef<HTMLDivElement>(null)
   const [range, setRange] = useState({ start: 0, end: 20 })
   useEffect(() => {

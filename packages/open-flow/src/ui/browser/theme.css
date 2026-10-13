@@ -85,6 +85,10 @@
   --ui-control-radius: 8px;
 }
 
+.open-flow-node-picker {
+  --ui-control-radius: 10px;
+}
+
 .open-flow-workbench :is(.run-drawer, .runs-view) {
   --ui-control-radius: 6px;
 }
