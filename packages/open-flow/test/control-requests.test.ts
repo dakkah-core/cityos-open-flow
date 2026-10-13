@@ -22,6 +22,7 @@ const samples = {
   },
   updateEventSource: { version: 1, expectedRevision: 1, name: 'Feishu', enabled: true, eventTypes: ['im.message.receive_v1'] },
   eventSourceRevision: { version: 1, expectedRevision: 1 },
+  importFlow: { file: {}, version: 1 },
   createFlow: { name: 'Flow', version: 1 },
   renameFlow: { name: 'Flow', version: 1 },
   changeDraft: {

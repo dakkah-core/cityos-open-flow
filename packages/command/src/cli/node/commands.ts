@@ -9,6 +9,8 @@ const commands = [
   ['search', '<flow> (--input JSON|@file|- | --file path|-)', ['input', 'file']],
   ['edit', '<flow> (--input JSON|@file|- | --file path|-)', ['input', 'file']],
   ['list', '[--cursor <cursor>] [--limit <count>]', page],
+  ['export', '<flow>', []],
+  ['import', '--file <path|->', ['file', 'name', 'idempotency-key']],
   ['create', '<name>', ['idempotency-key']],
   ['show', '<flow>', []],
   ['live', '<flow>', []],
@@ -85,7 +87,7 @@ const optionDetails: Record<
     type: 'string',
     enum: ['queued', 'starting', 'running', 'waiting', 'completed', 'failed', 'canceled', 'indeterminate'],
   },
-  'file': { description: 'Authoring request JSON file path or - for stdin.', type: 'string' },
+  'file': { description: 'Authoring request or workflow JSON file path, or - for stdin.', type: 'string' },
   'code': { description: 'JavaScript source, @file, or - for stdin.', type: 'string' },
   'input': { description: 'Authoring request JSON; literal JSON, @file, or -. For run, node ID to input values.', type: 'string' },
   'outputs': { description: 'Trigger outputs: literal JSON, @file, or -. Defaults to {}.', type: 'string' },
@@ -160,6 +162,8 @@ export function commandContract(name: string) {
 }
 
 export function examplesForCommand(name: string, prefix = 'oo flow') {
+  if (name == 'export') return [`${prefix} export FLOW_ID > template.openflow.json`]
+  if (name == 'import') return [`${prefix} import --file template.openflow.json --name "Imported workflow" --idempotency-key IMPORT_KEY --json`]
   if (name == 'schema')
     return [`${prefix} schema read --json`, `${prefix} schema agent --json`, `${prefix} schema --flow FLOW_ID --input '{"action":"ACTION_ID"}' --json`]
   const contract = commandContract(name)

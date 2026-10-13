@@ -469,6 +469,7 @@ function NavigationIslandStory({ dark, language, log }: { readonly dark: boolean
                 <CornerControls
                   before={
                     <WorkspacePublishIsland
+                      onExport={() => log('flow.export')}
                       hasPublications={hasPublications}
                       onOpenPublications={() => log('publication.history')}
                       onOpenRuns={() => log('run.history')}

@@ -1177,3 +1177,42 @@ it('loads immutable publication content without replacing or writing the active 
     store.dispose()
   }
 })
+
+it.each([false, true])('opens an imported draft and reports resource reconfiguration (host import=%s)', async (hosted) => {
+  const { client, store, navigation, navigate } = catalogSession()
+  const editor = await client.getEditor('imported')
+  const file = {
+    kind: 'open-flow-workflow' as const,
+    version: 1 as const,
+    name: 'Template',
+    content: editor.draft.content,
+    presentation: editor.presentation.value,
+  }
+  const importer = vi.fn(async () => editor.flow.flowId)
+  const imported = vi.spyOn(client, 'importFlow').mockResolvedValue(editor.flow)
+  vi.spyOn(client, 'getConnectorAccess').mockResolvedValue({ accessRevision: 0, bindings: [], mode: 'implicit', sharedAccessDigest: 'implicit', version: 1 })
+  const readFlow = vi.spyOn(client, 'getFlow').mockResolvedValue(editor.flow)
+  try {
+    await navigation.start()
+    const notices: string[] = []
+    const stopNotices = store.$.notice.reaction((notice) => {
+      if (notice != null) notices.push(notice.message)
+    })
+    expect(await navigation.importFlow(file, 'Selected name', 'stable-import', hosted ? importer : undefined)).toBe(true)
+    expect(store.workspace.$.flowId.value).toBe('imported')
+    expect(store.workspace.$.draft.value?.content).toEqual(file.content)
+    expect(store.workspace.$.presentation.value?.value).toEqual(file.presentation)
+    expect(navigate).toHaveBeenLastCalledWith({ flowId: 'imported', view: 'design' }, { replace: false })
+    expect(store.$.notice.value?.message).toContain('external resources')
+    stopNotices()
+    expect(notices).toEqual([store.$.notice.value?.message])
+    expect(readFlow).toHaveBeenCalledTimes(hosted ? 1 : 0)
+    if (hosted) {
+      expect(importer).toHaveBeenCalledWith(file, 'Selected name', 'stable-import')
+      expect(imported).not.toHaveBeenCalled()
+    } else expect(imported).toHaveBeenCalledWith(file, { name: 'Selected name', idempotencyKey: 'stable-import' })
+  } finally {
+    navigation.dispose()
+    store.dispose()
+  }
+})

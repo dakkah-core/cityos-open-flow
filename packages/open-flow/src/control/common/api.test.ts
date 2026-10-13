@@ -767,3 +767,8 @@ it('decodes Variable references and forwards cancellation', async () => {
     await expect(client.getVariableReferences('TOKEN')).rejects.toThrow()
   }
 })
+
+it('reports malformed workflow exports through the standard Control response error', async () => {
+  const client = new ControlClient(async () => Response.json({ kind: 'open-flow-workflow', version: 99 }))
+  await expect(client.exportFlow('flow')).rejects.toMatchObject({ code: 'response.invalid', status: 502 })
+})

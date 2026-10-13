@@ -362,13 +362,13 @@ function Shell({ language, onLanguageChange, theme, themeMode, onThemeModeChange
     }
   }
 
-  async function createHostedFlow(name: string): Promise<string> {
+  async function createHostedFlow(name: string, imported?: { file: import('@oomol-lab/open-flow/control-api').WorkflowFile; key: string }): Promise<string> {
     if (team.kind != 'ready' || team.selectedTeamId == null) throw new Error(t('team.loadFailed'))
     const teamId = team.selectedTeamId
-    const response = await fetch('/connector/flows', {
-      body: JSON.stringify({ name, teamId, version: 1 }),
+    const response = await fetch(imported == null ? '/connector/flows' : '/v1/flows/import', {
+      body: JSON.stringify({ name, teamId, ...(imported == null ? {} : { file: imported.file }), version: 1 }),
       credentials: 'same-origin',
-      headers: { 'content-type': 'application/json', 'idempotency-key': `flow-${idempotencyKey()}` },
+      headers: { 'content-type': 'application/json', 'idempotency-key': imported?.key ?? `flow-${idempotencyKey()}` },
       method: 'POST',
     })
     const value = (await response.json()) as unknown
@@ -521,6 +521,7 @@ function Shell({ language, onLanguageChange, theme, themeMode, onThemeModeChange
               <WorkflowPage catalog={route.flowId == null}>
                 <OpenFlowWorkbench
                   catalogWidth="embedded"
+                  importFlow={team.kind == 'ready' && team.selectedTeamId != null ? (file, name, key) => createHostedFlow(name, { file, key }) : undefined}
                   createFlow={team.kind == 'ready' && team.selectedTeamId != null ? createHostedFlow : undefined}
                   createFlowDisabled={team.kind != 'hidden' && (team.kind != 'ready' || team.selectedTeamId == null)}
                   createFlowField={createFlowField}

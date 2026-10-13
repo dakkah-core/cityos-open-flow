@@ -209,7 +209,10 @@
     "enabledHint": "控制新的線上執行，草稿測試仍可使用。",
     "publish": "發佈",
     "publishUpdate": "更新",
-    "deleteDescription": "此操作將刪除工作流程及其執行記錄，並停止線上觸發，無法復原。"
+    "deleteDescription": "此操作將刪除工作流程及其執行記錄，並停止線上觸發，無法復原。",
+    "importFlow": "匯入工作流",
+    "exportFlow": "匯出工作流",
+    "importInvalid": "檔案損壞或工作流格式不受支援。"
   },
   "inspector": {
     "outline": "節點大綱",
@@ -478,7 +481,9 @@
     "networkFailed": "暫時無法連線到服務，請檢查網路後再試一次。",
     "published": "已發布 {{name}}。",
     "rolledBack": "已將線上版本還原到修訂 {{revision}}。",
-    "requestFailed": "服務未能完成此操作，請稍後再試一次。"
+    "requestFailed": "服務未能完成此操作，請稍後再試一次。",
+    "flowImported": "工作流已匯入。執行或發佈前請重新設定外部資源。",
+    "exportSaveFailed": "草稿或版面未能儲存，已停止匯出。請儲存成功後重試。"
   },
   "publication": {
     "active": "運作中",

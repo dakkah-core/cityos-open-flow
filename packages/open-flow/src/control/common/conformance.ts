@@ -206,6 +206,54 @@ function liveRunRequest(harness: ControlApiConformanceHarness, publicationId: st
 
 export const controlApiConformanceCases: readonly ControlApiConformanceCase[] = [
   {
+    name: 'imports workflow files atomically and exports a new unpublished draft with its Presentation',
+    async verify(harness) {
+      const api = new ControlClient((url, init) => harness.request(new Request(new URL(url, harness.origin), init)))
+      const file = {
+        kind: 'open-flow-workflow' as const,
+        version: 1 as const,
+        name: 'Portable flow',
+        content: {
+          modelVersion: 6 as const,
+          modules: {},
+          document: { bindings: {}, graph: { nodes: { start: { kind: 'manual' as const, name: 'Start' } }, edges: [] } },
+        },
+        presentation: { viewport: { x: 10, y: 20, zoom: 1 } },
+      }
+      const idempotencyKey = crypto.randomUUID()
+      const created = await api.importFlow(file, { idempotencyKey })
+      equal(dequal(await api.importFlow(file, { idempotencyKey }), created), true, 'Import retry must return the same Flow.')
+      const exported = await api.exportFlow(created.flowId)
+      equal(dequal(exported, file), true, 'Export must retain the graph and Presentation.')
+      const editor = await api.getEditor(created.flowId)
+      equal(editor.live.publication == null, true, 'Import must not publish.')
+      equal(editor.draft.parentRevisionId == null, true, 'Import must create an initial Revision.')
+      equal(dequal(editor.presentation.value, file.presentation), true, 'Import must atomically save Presentation.')
+      await error(
+        await request(harness, '/v1/flows/import', {
+          method: 'POST',
+          headers: { 'idempotency-key': idempotencyKey },
+          body: JSON.stringify({ file, name: 'Changed', version: 1 }),
+        }),
+        409,
+        'flow.conflict',
+        'Reject changed import retry',
+      )
+      const before = await api.listFlows()
+      await error(
+        await request(harness, '/v1/flows/import', {
+          method: 'POST',
+          headers: { 'idempotency-key': crypto.randomUUID() },
+          body: JSON.stringify({ file: { ...file, version: 99 }, version: 1 }),
+        }),
+        400,
+        'flow.invalid',
+        'Reject unsupported file',
+      )
+      equal(dequal((await api.listFlows()).flows, before.flows), true, 'Rejected import left an empty Flow.')
+    },
+  },
+  {
     name: 'authors nodes atomically with public views, fixed reads and replay before CAS',
     async verify(harness) {
       const api = client(harness),

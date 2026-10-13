@@ -5,6 +5,7 @@ import type { ServerService } from '../application/service.ts'
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server'
 import { controlErrorCode, actionSummary, searchTriggerKeys } from '@oomol-lab/open-flow/control-api'
 import { authoringSchema } from '@oomol-lab/open-flow/control-requests'
+import { importedWorkflowName, resolveMetadataLanguage } from '@oomol-lab/open-flow/localization'
 import { mcpTools, mcpProtocolVersion, mcpInstructions } from '@oomol-lab/open-flow/mcp'
 import { currentEngineContract } from '@oomol-lab/open-flow/runtime-contract'
 import { Hono } from 'hono'
@@ -43,7 +44,17 @@ export function createMcpApp(service: ServerService, authenticate: (request: Req
   app.all('/', async (context) => {
     const actorId = await authenticate(context.req.raw)
     if (shutdownSignal?.aborted) return context.json({ error: { code: 'mcp.unavailable', message: 'Server is shutting down.' } }, 503)
-    const handler = createMcpHandler(() => createServer(service, actorId, logger, new URL(context.req.url).origin), { legacy: 'reject', responseMode: 'auto' })
+    const handler = createMcpHandler(
+      () =>
+        createServer(
+          service,
+          actorId,
+          logger,
+          new URL(context.req.url).origin,
+          importedWorkflowName(resolveMetadataLanguage(undefined, context.req.header('accept-language'))),
+        ),
+      { legacy: 'reject', responseMode: 'auto' },
+    )
     try {
       return await handler.fetch(context.req.raw)
     } finally {
@@ -53,7 +64,7 @@ export function createMcpApp(service: ServerService, authenticate: (request: Req
   return app
 }
 
-function createServer(service: ServerService, actorId: string, logger: Logger, endpointOrigin: string) {
+function createServer(service: ServerService, actorId: string, logger: Logger, endpointOrigin: string, defaultImportName: string) {
   const control = service.control
   const server = new McpServer(
     { name: 'open-flow', version: manifest.version },
@@ -120,6 +131,12 @@ function createServer(service: ServerService, actorId: string, logger: Logger, e
     'flow_create',
     mcpTools.flow_create,
     async ({ name, idempotencyKey, teamId }) => (await control.createFlow(actorId, name, idempotencyKey, teamId)).flow,
+  )
+  register('flow_export', mcpTools.flow_export, ({ flowId }) => control.exportFlow(flowId))
+  register(
+    'flow_import',
+    mcpTools.flow_import,
+    async ({ file, name, teamId, idempotencyKey }) => (await control.importFlow(actorId, file, idempotencyKey, name, teamId, defaultImportName)).flow,
   )
   register('flow_edit', mcpTools.flow_edit, ({ flowId, ...request }) => control.editAuthoring(actorId, flowId, request))
   register('flow_check', mcpTools.flow_check, ({ flowId, revisionId }) => control.checkAuthoring(flowId, revisionId))

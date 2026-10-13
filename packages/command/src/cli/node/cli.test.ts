@@ -833,3 +833,42 @@ it('rejects the removed subflow selector without making a request', async () => 
   expect(JSON.parse(output.stderr())).toMatchObject({ error: { code: 'cli.invalid-arguments', message: 'Unknown option "--subflow".' } })
   expect(request).not.toHaveBeenCalled()
 })
+
+it('exports only indented workflow JSON and imports files or stdin with stable request identity', async () => {
+  const file = {
+    kind: 'open-flow-workflow',
+    version: 1,
+    content: { modelVersion: 6, document: { bindings: {}, graph: { nodes: {}, edges: [] } }, modules: {} },
+    presentation: { viewport: { x: 0, y: 0, zoom: 1 } },
+  }
+  const requests: { path: string; init?: RequestInit }[] = []
+  const host = {
+    request: async (path: string, init?: RequestInit) => {
+      requests.push({ path, init })
+      if (path.endsWith('/export')) return Response.json(file)
+      if (path == '/v1/flows/import') return Response.json(flow, { status: 201 })
+      return Response.json(flow)
+    },
+  }
+  const exported = runtime()
+  expect(await runCli(['export', 'flow-1'], host, exported.value)).toBe(0)
+  expect(JSON.parse(exported.stdout())).toEqual(file)
+  expect(exported.stdout()).toContain('\n  "kind":')
+  expect(exported.stderr()).toBe('')
+  for (const path of ['Example.openflow.json', '-']) {
+    const imported = runtime()
+    imported.value.readFile = async () => JSON.stringify(file)
+    imported.value.readStdin = async () => JSON.stringify(file)
+    expect(await runCli(['import', '--file', path, '--idempotency-key', 'stable', '--json'], host, imported.value)).toBe(0)
+    const request = requests.at(-1)!
+    expect(request.path).toBe('/v1/flows/import')
+    expect(new Headers(request.init?.headers).get('idempotency-key')).toBe('stable')
+    expect(JSON.parse(String(request.init?.body))).toEqual({ file, name: path == '-' ? 'Imported workflow' : 'Example', version: 1 })
+    expect(JSON.parse(imported.stdout())).toMatchObject({ kind: 'flow.import', flow, idempotencyKey: 'stable' })
+  }
+  const broken = runtime()
+  broken.value.readFile = async () => '{'
+  const before = requests.length
+  expect(await runCli(['import', '--file', 'bad.json', '--json'], host, broken.value)).not.toBe(0)
+  expect(requests).toHaveLength(before)
+})

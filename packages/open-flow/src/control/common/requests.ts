@@ -28,6 +28,7 @@ const schemas = {
   createEventSource: createEventSourceSchema,
   updateEventSource: updateEventSourceSchema,
   eventSourceRevision: eventSourceRevisionSchema,
+  importFlow: z.strictObject({ file: json, name: flowName.optional(), teamId: id.optional(), version }),
   createFlow: z.strictObject({ name: flowName, teamId: id.optional(), version }),
   renameFlow: z.strictObject({ name: flowName, version }),
   changeDraft: z.strictObject({ expectedRevisionId: id, operations: z.array(json).min(1), version }),
@@ -71,6 +72,7 @@ export const controlRequests = {
   createEventSource: decoder(schemas.createEventSource),
   updateEventSource: decoder(schemas.updateEventSource),
   eventSourceRevision: decoder(schemas.eventSourceRevision),
+  importFlow: decoder(schemas.importFlow),
   createFlow: decoder(schemas.createFlow),
   renameFlow: decoder(schemas.renameFlow),
   changeDraft(value: unknown): { expectedRevisionId: string; operations: readonly DraftOperation[]; version: 1 } {

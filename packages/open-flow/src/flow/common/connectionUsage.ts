@@ -56,12 +56,12 @@ export function removeConnectionUsage(content: RevisionContent, connectionId: st
   }
 }
 
-function clearNodeConnections(graph: FlowDocument['graph'], connectionId: string): FlowDocument['graph'] {
+export function clearNodeConnections(graph: FlowDocument['graph'], connectionId?: string): FlowDocument['graph'] {
   return {
     ...graph,
     nodes: Object.fromEntries(
       Object.entries(graph.nodes).map(([id, node]) => {
-        if ((node.kind == 'poll' || node.kind == 'integration') && node.connectionId == connectionId) {
+        if ((node.kind == 'poll' || node.kind == 'integration') && (connectionId == null || node.connectionId == connectionId)) {
           const { connectionId: _, ...remaining } = node
           return [id, remaining]
         }
@@ -69,7 +69,7 @@ function clearNodeConnections(graph: FlowDocument['graph'], connectionId: string
         if ('executor' in node.task) {
           const executor = node.task.executor
           const clear = <T extends { readonly connectionId?: string }>(value: T): T => {
-            if (value.connectionId != connectionId) return value
+            if (connectionId != null && value.connectionId != connectionId) return value
             const { connectionId: _, ...rest } = value
             return rest as T
           }
@@ -92,11 +92,30 @@ function clearNodeConnections(graph: FlowDocument['graph'], connectionId: string
           return [id, node]
         }
         const capabilities = node.task.capabilities?.map((capability) => {
-          if (!('mode' in capability) || capability.mode != 'independent') return capability
+          if (!('mode' in capability)) {
+            if ('action' in capability) {
+              const { connectionId: selected, ...rest } = capability
+              return {
+                ...rest,
+                connections: capability.connections.filter((item) => connectionId != null && item.connectionId != connectionId),
+                ...(selected != null && connectionId != null && selected != connectionId ? { connectionId: selected } : {}),
+              }
+            }
+            return {
+              ...capability,
+              ...(connectionId == null && (capability.connectionHints?.length ?? 0) > 0
+                ? { actionHints: [...new Set([...(capability.actionHints ?? []), ...capability.connectionHints!.map((hint) => hint.action)])] }
+                : {}),
+              ...(capability.connectionHints == null
+                ? {}
+                : { connectionHints: capability.connectionHints.filter((item) => connectionId != null && item.connectionId != connectionId) }),
+            }
+          }
+          if (capability.mode != 'independent') return capability
           return {
             ...capability,
             actions: capability.actions.map((action) => {
-              if (action.connectionId != connectionId) return action
+              if (connectionId != null && action.connectionId != connectionId) return action
               const { connectionId: _, ...remaining } = action
               return remaining
             }),

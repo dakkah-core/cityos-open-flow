@@ -21,7 +21,7 @@ export const mcpInstructions =
   'Use flow_publish to publish a fixed Revision, then poll flow_publish_status until succeeded or failed. Use flow_live to inspect current online entries after publication. Use flow_set_enabled to enable or disable the observed Live publication. ' +
   'flow_run returns an accepted Run, not its final result. Find Runs with run_list, poll run_get and use run_result after terminal. Resolve a waiting Run only with an explicit run_resolve_wait action allowed by run_get. ' +
   'Use run_results and run_result_read to inspect stored Agent tool results; these are separate from the terminal Run result. ' +
-  'Retry flow_edit with identical arguments and the same requestId. Retry flow_create, flow_publish and flow_run only with identical arguments and the same idempotencyKey; a new key can execute the Flow again. Other mutations use the same resource identity and arguments when retrying. Cancel a Run explicitly with run_cancel. ' +
+  'Retry flow_edit with identical arguments and the same requestId. Retry flow_create, flow_import, flow_publish and flow_run only with identical arguments and the same idempotencyKey; a new key can execute the Flow again. Other mutations use the same resource identity and arguments when retrying. Cancel a Run explicitly with run_cancel. ' +
   'Use nextCursor and nextAfter to read subsequent pages. Connector-backed deployments may require a Team; inspect connector_teams before creating a Flow.'
 
 function tool<Args>(description: string, schema: z.ZodType<Args>, readOnly: boolean) {
@@ -72,6 +72,16 @@ export const mcpTools = {
     'Read node configuration schemas and the edit grammar, or an Action contract. Action lookup requires a flowId.',
     authoringSchemaQuery.safeExtend({ flowId: flow.optional() }),
     true,
+  ),
+  flow_export: tool(
+    'Export the current draft as a shareable workflow JSON file. Structured external references are cleared. Literal secrets in code, prompts or business JSON remain; review before sharing.',
+    z.strictObject({ flowId: flow }),
+    true,
+  ),
+  flow_import: tool(
+    'Import workflow JSON as a new unpublished draft. External references are cleared and must be configured again. Keep identical arguments and idempotencyKey when retrying.',
+    z.strictObject({ file: json, name: id.optional(), teamId: id.optional(), idempotencyKey: mutationKey }),
+    false,
   ),
   flow_create: tool(
     'Create an empty Flow. If this deployment uses OOMOL Connector, choose a teamId from connector_teams. Keep the key and arguments stable when retrying.',

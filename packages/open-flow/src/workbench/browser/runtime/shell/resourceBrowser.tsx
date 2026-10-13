@@ -1,4 +1,5 @@
 import type { ComponentProps, FormEvent, ReactElement } from 'react'
+import type { WorkflowFile } from '../../../../flow/common/workflowFile.ts'
 import type { ErrorListener, Flow } from '../api.ts'
 import type { WorkbenchLanguage, WorkbenchView } from '../contract.ts'
 import type { OpenFlowWorkbenchProps } from '../openFlowWorkbench.tsx'
@@ -8,7 +9,9 @@ import type { WorkspaceBusy } from '../stores/workspaceModel.ts'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useVal } from 'use-value-enhancer'
 import { useLang, useTranslate } from 'val-i18n-react'
+import { randomId } from '../../../../control/common/random.ts'
 import { resourceNameIssue, resourceNameMaxLength } from '../../../../flow/common/change.ts'
+import { parseWorkflowFile, workflowNameFromFile } from '../../../../flow/common/workflowFile.ts'
 import { Badge } from '../../../../ui/browser/badge.tsx'
 import { Button } from '../../../../ui/browser/button.tsx'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../../../ui/browser/dialog.tsx'
@@ -24,6 +27,7 @@ import { cn } from '../../../../ui/browser/utils.ts'
 import { Icon } from '../icons.tsx'
 import { followWorkbenchLink } from '../navigationLink.ts'
 import { IdTooltip } from './idTooltip.tsx'
+import { WorkflowExportMenuItem } from './workflowExportMenuItem.tsx'
 
 const CreateResourceDialog = lazy(() => import('./createResourceDialog.tsx'))
 
@@ -337,6 +341,7 @@ function FlowItem({ showTeam, badge, busy, flow, href, onSelect, store }: FlowIt
               </DropdownMenuItem>
             )}
             <DropdownMenuSeparator className="mx-2 bg-border/50" />
+            <WorkflowExportMenuItem disabled={flow.status != 'active' || busy != null} onClick={() => void store.workspace.exportFlow(flow.flowId)} />
             <DropdownMenuItem disabled={flow.status != 'active'} onClick={() => onSelect(flow, 'publications')}>
               <i aria-hidden="true" className="i-lucide-light:cloud-upload size-4 shrink-0" />
               {t('workspace.publications')}
@@ -407,6 +412,7 @@ interface FlowBrowserProps extends LanguageSelectProps {
   readonly flowBadges?: Readonly<Record<string, string>> | undefined
   readonly hrefForFlow: (flow: Flow) => string
   readonly initializing?: boolean
+  readonly onImportFlow?: (file: WorkflowFile, name: string, key: string) => Promise<boolean>
   readonly onCreateFlow: (name: string) => Promise<boolean>
   readonly onSelectFlow: (flow: Flow, view?: WorkbenchView) => void
   readonly store: WorkbenchStore
@@ -420,6 +426,7 @@ export function FlowBrowser({
   hrefForFlow,
   initializing = false,
   onCreateFlow,
+  onImportFlow,
   onSelectFlow,
   store,
 }: FlowBrowserProps): ReactElement {
@@ -435,6 +442,9 @@ export function FlowBrowser({
   const flows = useVal(store.workspace.$.flows)
   const total = useVal(store.workspace.$.flowTotal)
   const [creating, setCreating] = useState(false)
+  const [importing, setImporting] = useState<{ file: WorkflowFile; key: string }>()
+  const [importError, setImportError] = useState(false)
+  const fileInput = useRef<HTMLInputElement>(null)
   const [filter, setFilter] = useState('')
   const [name, setName] = useState('')
   const showTeam = flows.some((flow) => (flowBadges?.[flow.flowId]?.trim().length ?? 0) > 0)
@@ -444,7 +454,10 @@ export function FlowBrowser({
   async function create(event: FormEvent): Promise<void> {
     event.preventDefault()
     const nextName = name.trim()
-    if (resourceNameIssue(nextName) != null || !(await onCreateFlow(nextName))) return
+    if (resourceNameIssue(nextName) != null) return
+    const success = importing == null ? await onCreateFlow(nextName) : await onImportFlow?.(importing.file, nextName, importing.key)
+    if (!success) return
+    setImporting(undefined)
     setCreating(false)
     setName('')
   }
@@ -478,12 +491,43 @@ export function FlowBrowser({
                   value={filter}
                 />
               </InputGroup>
+              {onImportFlow != null && (
+                <>
+                  <Input
+                    ref={fileInput}
+                    className="hidden"
+                    type="file"
+                    accept=".openflow.json,.json,application/json"
+                    aria-label={t('resource.importFlow')}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0]
+                      event.target.value = ''
+                      if (file == null) return
+                      setImportError(false)
+                      void file
+                        .text()
+                        .then((text) => {
+                          const parsed = parseWorkflowFile(text)
+                          setImporting({ file: parsed, key: randomId() })
+                          setName(parsed.name ?? workflowNameFromFile(file.name))
+                          setCreating(true)
+                        })
+                        .catch(() => setImportError(true))
+                    }}
+                  />
+                  <Button variant="outline" disabled={initializing || busy != null || createFlowDisabled} onClick={() => fileInput.current?.click()}>
+                    {t('resource.importFlow')}
+                  </Button>
+                </>
+              )}
+
               <Button className="pr-3" disabled={initializing || busy != null} onClick={() => setCreating(true)}>
                 <Icon data-icon="inline-start" name="plus" />
                 {t('resource.newFlow')}
               </Button>
             </div>
           </div>
+          {importError && <p role="alert">{t('resource.importInvalid')}</p>}
           <div className="resource-table-scroll">
             <div className={cn('resource-table', showTeam && 'resource-table-with-teams')}>
               <div aria-hidden="true" className="resource-list-columns-shell">
@@ -568,10 +612,17 @@ export function FlowBrowser({
               label={t('resource.flowName')}
               name={name}
               onNameChange={setName}
-              onOpenChange={setCreating}
+              onOpenChange={(open) => {
+                setCreating(open)
+                if (!open) {
+                  setImporting(undefined)
+                  setName('')
+                }
+              }}
               onSubmit={(event) => void create(event)}
               pending={busy == 'flow'}
-              title={t('resource.newFlow')}
+              submitLabel={importing == null ? undefined : t('resource.importFlow')}
+              title={t(importing == null ? 'resource.newFlow' : 'resource.importFlow')}
             />
           </Suspense>
         )}

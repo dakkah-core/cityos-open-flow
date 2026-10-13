@@ -463,6 +463,10 @@ export function FlowEditor({
               />
             )}
             <WorkspacePublishIsland
+              onExport={() => {
+                const id = store.workspace.$.flowId.value
+                if (id != null) void store.workspace.exportFlow(id)
+              }}
               hasPublications={live == null ? undefined : live.publication != null}
               onOpenPublications={onOpenPublications}
               onOpenRuns={onOpenRuns}

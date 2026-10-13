@@ -191,13 +191,6 @@ export class FlowCatalog {
     }
   }
 
-  public async create(name: string): Promise<Flow | undefined> {
-    const flow = await this.#client.createFlow(name)
-    if (this.#disposed) return
-    this.insert(flow)
-    return flow
-  }
-
   public include(flow: Flow): void {
     const index = this.#state.value.flows.findIndex((candidate) => candidate.flowId == flow.flowId)
     if (index < 0) {

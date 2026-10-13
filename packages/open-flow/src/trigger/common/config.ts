@@ -3,6 +3,13 @@ import type { Group, InputPort, InputValues, JsonValue } from '../../flow/common
 import { inputValue } from '../../flow/common/inputValue.ts'
 import { matchesSchema } from '../../flow/common/schema.ts'
 
+/** Deployment-bound selections owned by the Trigger configuration contract. */
+export function clearTriggerExternalConfig(key: string, config: InputValues): InputValues {
+  const fields =
+    key == 'feishu_app_bot.on_event' ? ['sourceId', 'eventTypes', 'resource', 'chatIds'] : key == 'linear.on_issue_changed' ? ['teamId', 'stateIds'] : []
+  return { ...config, ...Object.fromEntries(fields.map((field) => [field, { kind: 'unset' as const }])) }
+}
+
 export function triggerConfigValue(input: InputPort, config: InputValues): JsonValue | undefined {
   return inputValue(config[input.handle], input.value)
 }

@@ -1,7 +1,8 @@
 import type { I18n } from 'val-i18n'
 import type { ReadonlyVal, Val } from 'value-enhancer'
 import type { InteractiveMode } from '../../../../canvas/browser/stores/canvas/canvas.store.ts'
-import type { ConnectorConnection, WorkbenchClient, Draft, FlowCheck, Run, RunEvent } from '../api.ts'
+import type { WorkflowFile } from '../../../../flow/common/workflowFile.ts'
+import type { ConnectorConnection, WorkbenchClient, Draft, Flow, FlowCheck, Run, RunEvent } from '../api.ts'
 import type { Point } from '../canvasPresentation.ts'
 import type { ConnectorActionView } from '../connectionCatalog.ts'
 import type { FlowChangeEvent, WorkbenchHost, WorkbenchPreferences } from '../contract.ts'
@@ -372,11 +373,23 @@ export class WorkbenchStore {
     }
   }
 
+  public async importFlow(
+    file: WorkflowFile,
+    name: string,
+    key: string,
+    importer?: (file: WorkflowFile, name: string, key: string) => Promise<string>,
+  ): Promise<boolean> {
+    return await this.#openNewFlow(await this.workspace.importFlow(file, name, key, importer), 'notice.flowImported')
+  }
+
   public async createFlow(name: string, create?: (name: string) => Promise<string>): Promise<boolean> {
-    const flow = await this.workspace.createFlow(name, create)
-    if (this.#disposed || flow == null) return false
-    await this.selectFlow(flow.flowId)
-    if (!this.#disposed) this.#notice.set({ kind: 'success', message: this.#i18n.t('notice.created', { name: flow.name }) })
+    return await this.#openNewFlow(await this.workspace.createFlow(name, create), 'notice.created')
+  }
+
+  async #openNewFlow(created: Flow | undefined, notice: 'notice.created' | 'notice.flowImported'): Promise<boolean> {
+    if (this.#disposed || created == null) return false
+    await this.selectFlow(created.flowId)
+    if (!this.#disposed) this.#notice.set({ kind: 'success', message: this.#i18n.t(notice, { name: created.name }) })
     return true
   }
 

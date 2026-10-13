@@ -104,3 +104,15 @@ export function resolveMetadataLanguage(query: string | undefined, acceptLanguag
     .toSorted((a, b) => b.q - a.q || a.order - b.order)
   return preferences[0]?.language ?? defaultUiLanguage
 }
+
+export function importedWorkflowName(language: UiLanguage): string {
+  return {
+    'en': 'Imported workflow',
+    'zh-CN': '导入的工作流',
+    'zh-TW': '匯入的工作流',
+    'ja': 'インポートしたワークフロー',
+    'ko': '가져온 워크플로',
+    'fr': 'Workflow importé',
+    'ru': 'Импортированный процесс',
+  }[language]
+}

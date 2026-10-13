@@ -46,6 +46,10 @@ export {
   type ResultQuery,
 } from './results.ts'
 import type { RunStatus } from '../../execution/common/runLifecycle.ts'
+import type { WorkflowFile } from '../../flow/common/workflowFile.ts'
+
+import { decodeWorkflowFile } from '../../flow/common/workflowFile.ts'
+export type { WorkflowFile, WorkflowCleanupSummary } from '../../flow/common/workflowFile.ts'
 import type { InputPortDefinition, JsonValue, PortDefinition, RevisionContent, TriggerKeySnapshot, WaitAction } from '../../flow/common/change.ts'
 import type { FlowResourceReferences } from '../../flow/common/semantics.ts'
 
@@ -784,6 +788,25 @@ export class ControlClient {
     const source = record(await this.request(`/v1/variables/${segment(name)}`, { method: 'DELETE' }))
     exact(source, ['version'])
     if (source.version != 1) return invalidResponse()
+  }
+
+  async exportFlow(flowId: string): Promise<WorkflowFile> {
+    const value = await this.request(`/v1/flows/${segment(flowId)}/export`)
+    try {
+      return decodeWorkflowFile(value)
+    } catch {
+      return invalidResponse()
+    }
+  }
+
+  async importFlow(file: WorkflowFile, options: { readonly name?: string; readonly teamId?: string; readonly idempotencyKey?: string } = {}): Promise<Flow> {
+    return flow(
+      await this.request('/v1/flows/import', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': options.idempotencyKey ?? `flow-${randomId()}` },
+        body: JSON.stringify({ file, name: options.name, teamId: options.teamId, version: 1 }),
+      }),
+    )
   }
 
   async createFlow(name: string, idempotencyKey = `flow-${randomId()}`, teamId?: string): Promise<Flow> {

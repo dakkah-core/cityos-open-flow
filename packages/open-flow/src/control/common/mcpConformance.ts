@@ -44,6 +44,26 @@ async function rpc(harness: ControlApiConformanceHarness, method: string, params
 
 export const mcpConformanceCases: readonly ControlApiConformanceCase[] = [
   {
+    name: 'shares workflow import and export with REST and preserves idempotency',
+    async verify(harness) {
+      const client = new ControlClient((url, init) => harness.request(new Request(new URL(url, harness.origin), init)))
+      const original = await client.createFlow('Template source')
+      const exported = await rpc(harness, 'tools/call', { name: 'flow_export', arguments: { flowId: original.flowId } })
+      assert(exported.isError != true, 'MCP export failed.')
+      assert(dequal(exported.structuredContent, await client.exportFlow(original.flowId)), 'MCP and REST exports differ.')
+      const args = { file: exported.structuredContent, name: 'Imported template', idempotencyKey: crypto.randomUUID() }
+      const imported = await rpc(harness, 'tools/call', { name: 'flow_import', arguments: args })
+      assert(imported.isError != true, 'MCP import failed.')
+      const flow = imported.structuredContent as { flowId: string; draftRevisionId: string }
+      assert(flow.flowId != original.flowId && flow.draftRevisionId != original.draftRevisionId, 'Import reused resource identities.')
+      assert((await client.getEditor(flow.flowId)).live.publication == null, 'Import published the Flow.')
+      const retry = await rpc(harness, 'tools/call', { name: 'flow_import', arguments: args })
+      assert(dequal(retry.structuredContent, imported.structuredContent), 'Import retry created another Flow.')
+      const conflict = await rpc(harness, 'tools/call', { name: 'flow_import', arguments: { ...args, name: 'Changed import' } })
+      assert(conflict.isError == true, 'Changed import must conflict.')
+    },
+  },
+  {
     name: 'publishes the public MCP catalog, input schemas and annotations',
     async verify(harness) {
       const result = await rpc(harness, 'tools/list')

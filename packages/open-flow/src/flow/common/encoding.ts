@@ -20,6 +20,7 @@ import type {
 
 import { currentFlowModelVersion } from '@oomol-lab/open-flow/flow-change'
 import { decodeRevisionEnvelope, repairRevisionEnvelope } from './changeSchema.ts'
+export * from './workflowFile.ts'
 export { maxJsonDepth } from './json.ts'
 
 export { decodeFlowDocument, decodeRevisionContent } from './changeSchema.ts'

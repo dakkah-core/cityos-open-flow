@@ -209,7 +209,10 @@
     "enabledHint": "控制新的线上运行，草稿测试仍可使用。",
     "publish": "发布",
     "publishUpdate": "更新",
-    "deleteDescription": "此操作将删除工作流及其运行记录，并停止线上触发，无法撤销。"
+    "deleteDescription": "此操作将删除工作流及其运行记录，并停止线上触发，无法撤销。",
+    "importFlow": "导入工作流",
+    "exportFlow": "导出工作流",
+    "importInvalid": "文件损坏或工作流格式不受支持。"
   },
   "inspector": {
     "outline": "节点大纲",
@@ -478,7 +481,9 @@
     "networkFailed": "暂时无法连接服务，请检查网络后重试。",
     "published": "已发布 {{name}}。",
     "rolledBack": "已将线上版本回滚到修订 {{revision}}。",
-    "requestFailed": "服务未能完成此操作，请稍后重试。"
+    "requestFailed": "服务未能完成此操作，请稍后重试。",
+    "flowImported": "工作流已导入。运行或发布前请重新配置外部资源。",
+    "exportSaveFailed": "草稿或布局未能保存，已停止导出。请保存成功后重试。"
   },
   "publication": {
     "active": "运行中",

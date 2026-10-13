@@ -209,7 +209,10 @@
     "enabledHint": "Contrôle les nouvelles exécutions en production. Les tests du brouillon restent disponibles.",
     "publish": "Publier",
     "publishUpdate": "Mettre à jour",
-    "deleteDescription": "Le flux et son historique seront supprimés et les déclencheurs arrêtés. Cette action est irréversible."
+    "deleteDescription": "Le flux et son historique seront supprimés et les déclencheurs arrêtés. Cette action est irréversible.",
+    "importFlow": "Importer un workflow",
+    "exportFlow": "Exporter le workflow",
+    "importInvalid": "Fichier de workflow invalide ou non pris en charge."
   },
   "inspector": {
     "outline": "Liste des nœuds",
@@ -478,7 +481,9 @@
     "networkFailed": "Impossible de joindre le service. Vérifiez votre connexion, puis réessayez.",
     "published": "{{name}} publié.",
     "rolledBack": "Version en ligne restaurée à la révision {{revision}}.",
-    "requestFailed": "Le service n’a pas pu terminer cette opération. Réessayez plus tard."
+    "requestFailed": "Le service n’a pas pu terminer cette opération. Réessayez plus tard.",
+    "flowImported": "Workflow importé. Configurez les ressources externes avant de lancer ou publier.",
+    "exportSaveFailed": "Export arrêté : le brouillon ou la disposition n’a pas pu être enregistré. Réessayez après avoir enregistré."
   },
   "publication": {
     "active": "Actif",

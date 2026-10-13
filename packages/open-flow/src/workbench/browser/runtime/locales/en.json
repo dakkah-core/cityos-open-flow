@@ -209,7 +209,10 @@
     "enabledHint": "Controls new live runs. Draft tests remain available.",
     "publish": "Publish",
     "publishUpdate": "Update",
-    "deleteDescription": "This deletes the flow and its run history and stops live triggers. This cannot be undone."
+    "deleteDescription": "This deletes the flow and its run history and stops live triggers. This cannot be undone.",
+    "importFlow": "Import workflow",
+    "exportFlow": "Export workflow",
+    "importInvalid": "Invalid or unsupported workflow file."
   },
   "inspector": {
     "outline": "Node outline",
@@ -478,7 +481,9 @@
     "networkFailed": "Could not reach the service. Check your connection and try again.",
     "published": "Published {{name}}.",
     "rolledBack": "Rolled Live back to revision {{revision}}.",
-    "requestFailed": "The service could not complete this operation. Try again later."
+    "requestFailed": "The service could not complete this operation. Try again later.",
+    "flowImported": "Workflow imported. Configure external resources before running or publishing.",
+    "exportSaveFailed": "Export stopped because the draft or layout could not be saved. Retry saving before exporting."
   },
   "publication": {
     "active": "Active",

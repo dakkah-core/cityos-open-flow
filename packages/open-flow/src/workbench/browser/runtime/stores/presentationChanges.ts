@@ -23,6 +23,7 @@ export class PresentationChanges {
   #changes: Promise<void> = Promise.resolve()
   #committed?: Presentation
   #disposed = false
+  #failed = false
   #pending: PendingChange[] = []
 
   public constructor(client: WorkbenchClient, setNotice: SetNotice, setPresentation: (presentation: Presentation) => void, i18n: I18n) {
@@ -33,6 +34,7 @@ export class PresentationChanges {
   }
 
   public reset(presentation?: Presentation): void {
+    this.#failed = false
     this.#committed = presentation
     this.#pending = []
   }
@@ -42,8 +44,17 @@ export class PresentationChanges {
     this.#pending = []
   }
 
+  public async flush(): Promise<boolean> {
+    await this.settled()
+    return !this.#failed && !this.#disposed
+  }
+
   public async settled(): Promise<void> {
-    await this.#changes
+    let pending: Promise<void>
+    do {
+      pending = this.#changes
+      await pending
+    } while (pending !== this.#changes)
   }
 
   public async change(flowId: string, presentation: Presentation, current: Current, update: PresentationUpdate): Promise<boolean> {
@@ -70,6 +81,7 @@ export class PresentationChanges {
         success = true
       } catch (error) {
         if (this.#disposed || !current()) return
+        this.#failed = true
         if (error instanceof ApiError && error.code == 'flow.presentation-conflict') {
           try {
             const latest = await this.#client.getPresentation(flowId)

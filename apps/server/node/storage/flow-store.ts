@@ -140,6 +140,19 @@ export class FlowStore {
     return { version: 1, references, unknown }
   }
 
+  replayCreation(
+    actorId: string,
+    idempotencyKey: string,
+    requestDigest: string,
+  ): { readonly created: false; readonly flow: StoredFlow } | { readonly kind: 'conflict' } | undefined {
+    const existing = this.#database
+      .prepare(`SELECT ${flowColumns} FROM ${flowTables} WHERE flows.create_idempotency_key = ?`)
+      .get(JSON.stringify([actorId, idempotencyKey])) as StoredFlow | undefined
+    if (existing == null) return
+    if (existing.createRequestDigest != requestDigest) return { kind: 'conflict' }
+    return { created: false, flow: existing }
+  }
+
   createFlow(input: {
     readonly actorId: string
     readonly connectorTeamId?: string
@@ -151,17 +164,13 @@ export class FlowStore {
     readonly modelVersion: number
     readonly name: string
     readonly requestDigest: string
+    readonly presentation?: Readonly<Record<string, JsonValue>>
     readonly revisionId: string
   }): { readonly created: boolean; readonly flow: StoredFlow } | { readonly kind: 'conflict' } {
     return this.#transaction(() => {
       const idempotencyKey = JSON.stringify([input.actorId, input.idempotencyKey])
-      const existing = this.#database
-        .prepare('SELECT flow_id AS flowId, create_request_digest AS requestDigest FROM flows WHERE create_idempotency_key = ?')
-        .get(idempotencyKey) as { readonly flowId: string; readonly requestDigest: string } | undefined
-      if (existing != null) {
-        if (existing.requestDigest != input.requestDigest) return { kind: 'conflict' }
-        return { created: false, flow: this.get(existing.flowId)! }
-      }
+      const replay = this.replayCreation(input.actorId, input.idempotencyKey, input.requestDigest)
+      if (replay != null) return replay
 
       this.#revisions.ensure({ content: input.content, revisionDigest: input.digest, revisionId: input.revisionId })
       this.#database
@@ -187,7 +196,9 @@ export class FlowStore {
           input.actorId,
           draftResourceReferences(input.content),
         )
-      this.#database.prepare("INSERT INTO flow_presentations (flow_id, revision, value, updated_at) VALUES (?, 1, '{}', ?)").run(input.flowId, input.createdAt)
+      this.#database
+        .prepare('INSERT INTO flow_presentations (flow_id, revision, value, updated_at) VALUES (?, 1, ?, ?)')
+        .run(input.flowId, JSON.stringify(input.presentation ?? {}), input.createdAt)
       this.#database.prepare('INSERT INTO flow_connector_teams (flow_id, team_id) VALUES (?, ?)').run(input.flowId, input.connectorTeamId ?? null)
       return { created: true, flow: this.get(input.flowId)! }
     })

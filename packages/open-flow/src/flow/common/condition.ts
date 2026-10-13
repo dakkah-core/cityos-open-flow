@@ -95,6 +95,27 @@ export function mapConditionSources(node: ConditionNode, map: (source: Source) =
   }
 }
 
+function clearConditionBinding(operand: ConditionOperand): ConditionOperand {
+  return operand.kind == 'source' && operand.source.kind == 'binding' ? { kind: 'value' } : operand
+}
+
+export function clearConditionBindings(node: ConditionNode): ConditionNode {
+  return {
+    ...node,
+    cases: node.cases.map((item) => ({
+      ...item,
+      groups: item.groups.map((group) => ({
+        ...group,
+        expressions: group.expressions.map((expression) => ({
+          ...expression,
+          left: clearConditionBinding(expression.left),
+          ...(expression.right == null ? {} : { right: clearConditionBinding(expression.right) }),
+        })),
+      })),
+    })),
+  }
+}
+
 export function setConditionInput(node: ConditionNode, handle: string, mapping: InputMapping | undefined): ConditionNode {
   const entry = conditionOperands(node).find((item) => item.handle == handle)
   if (entry == null) throw new Error('Condition operand does not exist.')

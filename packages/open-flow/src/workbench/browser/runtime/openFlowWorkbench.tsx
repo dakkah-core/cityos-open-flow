@@ -1,3 +1,5 @@
+import type { WorkflowFile } from '../../../flow/common/workflowFile.ts'
+
 import { IconThemeContext } from '../../../ui/browser/icons/iconTheme.ts'
 export { EventSourcesPage } from './eventSources.tsx'
 import type { FormEvent, ReactElement } from 'react'
@@ -130,6 +132,7 @@ function FlowNameBridge({ store, onChange }: { readonly store: WorkbenchStore; r
 
 interface WorkbenchProps {
   readonly catalogWidth?: OpenFlowWorkbenchProps['catalogWidth']
+  readonly importFlow?: ((file: WorkflowFile, name: string, idempotencyKey: string) => Promise<string>) | undefined
   readonly createFlow?: ((name: string) => Promise<string>) | undefined
   readonly createFlowDisabled?: boolean | undefined
   readonly createFlowField?: OpenFlowWorkbenchProps['createFlowField']
@@ -149,6 +152,7 @@ interface WorkbenchProps {
 function Workbench({
   catalogWidth,
   createFlow,
+  importFlow,
   createFlowDisabled,
   createFlowField,
   flowBadges,
@@ -176,6 +180,7 @@ function Workbench({
           initializing={initializing}
           language={language}
           onCreateFlow={(name) => navigation.createFlow(name, createFlow)}
+          onImportFlow={(file, name, key) => navigation.importFlow(file, name, key, importFlow)}
           onLanguageChange={onLanguageChange}
           onSelectFlow={(flow, view) => void navigation.selectFlow(flow, view)}
           store={store}
@@ -222,6 +227,7 @@ export {
 export interface OpenFlowWorkbenchProps {
   /** Embedded catalogs fill a host-owned page without adding width limits or page padding. */
   readonly catalogWidth?: 'default' | 'full' | 'embedded' | undefined
+  readonly importFlow?: ((file: WorkflowFile, name: string, idempotencyKey: string) => Promise<string>) | undefined
   readonly createFlow?: ((name: string) => Promise<string>) | undefined
   readonly createFlowDisabled?: boolean | undefined
   readonly createFlowField?:
@@ -272,6 +278,7 @@ type SessionProps = Omit<OpenFlowWorkbenchProps, 'sessionKey'> & { readonly sess
 function Session({
   catalogWidth,
   createFlow,
+  importFlow,
   createFlowDisabled,
   createFlowField,
   flowBadges,
@@ -350,6 +357,7 @@ function Session({
             <Workbench
               catalogWidth={catalogWidth}
               createFlow={createFlow}
+              importFlow={importFlow}
               createFlowDisabled={createFlowDisabled}
               createFlowField={createFlowField}
               flowBadges={flowBadges}

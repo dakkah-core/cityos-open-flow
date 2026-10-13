@@ -82,6 +82,61 @@ allowed. Clients should refresh this query when opening reference or deletion UI
 
 ## 3. Flow, Revision, and Presentation
 
+### Shareable workflow files
+
+`GET /v1/flows/:flowId/export` returns the current persisted Draft as a UTF-8 JSON file
+with two-space indentation. `POST /v1/flows/import` accepts
+`{ file: WorkflowFile, name?: string, teamId?: string, version: 1 }` and requires
+`Idempotency-Key`. It returns `201 Flow`, or `200 Flow` for an identical retry.
+Changed arguments under the same actor and key return `409 flow.conflict`.
+The normal owner authorization and target Team selection rules apply.
+
+```ts
+interface WorkflowFile {
+  kind: 'open-flow-workflow'
+  version: 1
+  name?: string
+  content: RevisionContent
+  presentation?: Record<string, JsonValue>
+}
+```
+
+The public `@oomol-lab/open-flow/flow-encoding` entry exports `WorkflowFile`,
+`decodeWorkflowFile`, `parseWorkflowFile`, `encodeWorkflowFile`, and `cleanWorkflowFile`.
+Cleanup returns `{ file, summary: { changedNodeIds, removedBindings } }`, does not mutate
+its input, and is idempotent. Both import and export clear structured Connection references
+in Connector, Agent tools/notifications, Code capabilities (including supported legacy
+forms), and Triggers. Action declarations remain. Variable bindings and their input
+sources are removed; mixed sources retain node outputs, and an input without sources
+becomes unset. Condition operands follow the same rule. Error Trigger source Flow lists
+are emptied. Feishu event source and dependent event/resource/chat selections and Linear
+team/state selections become unset under their Trigger configuration contracts.
+
+Node and Module IDs, edges, shared Module relationships, ports, code, prompts, fixed
+inputs, model selections, and Presentation values remain. Flow/Revision IDs are newly
+allocated. Ownership, shared deployment grants, Variable values, Publications, Runs,
+and subscriptions are never copied. Import creates an unpublished Draft with its initial
+Revision and Presentation in one transaction. Any failure rolls back the creation.
+
+Import uses the supported Revision model decoder and never attempts tolerant repair.
+Malformed JSON, unsupported file/model versions, and retired Subflow structures are
+rejected as `flow.invalid`. Structurally valid incomplete drafts can be stored without
+resolving referenced Actions or probing external resources. Execution and publication
+retain their existing validation and authorization checks.
+
+Name precedence is the explicit override, file name field, then the client fallback.
+Browser and file-based CLI imports use the filename without `.openflow.json` or `.json`;
+MCP and stdin imports use a localized default. Missing Presentation uses the editor's
+normal default layout. Workbench waits for Code, Draft and Presentation saves before
+exporting the selected Flow; a save failure stops the download.
+
+`flow export <flow>` writes only file JSON to stdout. `flow import --file <path|->`
+accepts a path or stdin, plus `--name`, `--idempotency-key` and `--json`.
+MCP exposes `flow_export` and `flow_import` with the same service and retry semantics.
+
+Cleanup does not inspect or rewrite strings in code, prompts or arbitrary business JSON.
+Files can still contain literal sensitive information; review them before sharing.
+
 Flow is a top-level resource:
 
 ```ts

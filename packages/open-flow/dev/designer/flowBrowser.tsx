@@ -82,6 +82,14 @@ function FlowBrowserStory({ dark, language, log }: { dark: boolean; language: Ui
           log('flow.enabled', enabled)
           return Response.json(flows[index])
         }
+        if (url.endsWith('/export'))
+          return Response.json({
+            kind: 'open-flow-workflow',
+            version: 1,
+            name: 'Sample workflow',
+            content: { modelVersion: 6, modules: {}, document: { bindings: {}, graph: { nodes: { start: { kind: 'manual', name: 'Start' } }, edges: [] } } },
+            presentation: {},
+          })
         if (url.endsWith('/error-listeners')) return Response.json({ version: 1, listeners: [] })
         if (String(path).split('?')[0] == '/v1/flows') {
           const catalog = reads++ == 0 ? flows : flows.map((item, position) => (position == 3 ? Object.assign({}, item, { name: 'Updated draft flow' }) : item))
@@ -127,6 +135,10 @@ function FlowBrowserStory({ dark, language, log }: { dark: boolean; language: Ui
           store={session.store}
           hrefForFlow={(flow) => `#${flow.flowId}`}
           onCreateFlow={async () => false}
+          onImportFlow={async (file, name, key) => {
+            log('flow.import', { file, name, key })
+            return true
+          }}
           onSelectFlow={(flow, view = 'design') => log('flow.open', { flowId: flow.flowId, view })}
         />
       </div>
@@ -139,7 +151,7 @@ export const flowBrowserStory: FrontendStory = {
   id: 'flow-browser',
   title: 'Flow list',
   description:
-    'Show single workflow reproduces a short name, a full-length ID, and a team in an embedded list. Compare column spacing at wide and compact widths. Hover or focus a flow name to see its full text. Hover, focus, or click a Flow ID to inspect its full value and copy action; Escape closes the tooltip. Embedded layout leaves page width and spacing to the host. Show empty list to inspect the empty state. New Flow includes a team field for checking modal controls. The list loads before notifications connect. Connect notifications to refresh the Draft row without clearing the list. Show startup to inspect the skeleton. Use the row menu to rename a flow, start/stop its publication, or open publication and run history (logged with the target flow and view). Search for Published flow to verify the menu extends beyond a single-row table. Show teams to inspect the optional Team column. At compact widths, team names sit below flow names, unassigned teams are hidden, and status columns stay aligned across rows. Switch language and theme to inspect labels and menus.',
+    'Show single workflow reproduces a short name, a full-length ID, and a team in an embedded list. Compare column spacing at wide and compact widths. Hover or focus a flow name to see its full text. Hover, focus, or click a Flow ID to inspect its full value and copy action; Escape closes the tooltip. Embedded layout leaves page width and spacing to the host. Show empty list to inspect the empty state. New Flow and Import workflow include a team field for checking modal controls. Import accepts .openflow.json files and logs the submitted content; malformed files show an error. Row menus export a deterministic sample file that can be imported again. The list loads before notifications connect. Connect notifications to refresh the Draft row without clearing the list. Show startup to inspect the skeleton. Use the row menu to rename a flow, start/stop its publication, or open publication and run history (logged with the target flow and view). Search for Published flow to verify the menu extends beyond a single-row table. Show teams to inspect the optional Team column. At compact widths, team names sit below flow names, unassigned teams are hidden, and status columns stay aligned across rows. Switch language and theme to inspect labels and menus.',
   standalone: true,
   render: (log, dark, language) => <FlowBrowserStory dark={dark} language={language} log={log} />,
 }

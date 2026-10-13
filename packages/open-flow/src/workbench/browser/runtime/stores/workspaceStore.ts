@@ -3,6 +3,7 @@ import type { ReadonlyVal } from 'value-enhancer'
 import type { EventSource } from '../../../../control/common/api.ts'
 import type { ConnectorCapability } from '../../../../flow/common/change.ts'
 import type { Settings as NodeSettings } from '../../../../flow/common/nodeChanges.ts'
+import type { WorkflowFile } from '../../../../flow/common/workflowFile.ts'
 import type { WorkbenchClient, ConnectorConnection, Draft, Flow, GraphNode, InputPort, JsonValue, Live, TriggerKeySnapshot, TriggerSchedule } from '../api.ts'
 import type { DesignerViewport, Point } from '../canvasPresentation.ts'
 import type { FlowChangeEvent } from '../contract.ts'
@@ -36,6 +37,7 @@ import {
   setCodeActions as changeCodeActions,
   setTriggerConnection as changeTriggerConnection,
 } from '../../../../flow/common/nodeChanges.ts'
+import { encodeWorkflowFile, workflowFileName } from '../../../../flow/common/workflowFile.ts'
 import { feishuResourceKind, supportsFeishuChatFilter } from '../../../../trigger/providers/feishu/config.ts'
 import { ApiError } from '../api.ts'
 import {
@@ -383,14 +385,53 @@ export class WorkspaceStore {
     return true
   }
 
-  public async createFlow(name: string, create?: (name: string) => Promise<string>): Promise<Flow | undefined> {
+  public async exportFlow(flowId: string): Promise<void> {
+    const current = this.#draftSession.capture()
+    const selected = this.#model.value.flowId == flowId
+    if (selected && (!(await this.saveDraft()) || !(await this.#presentationChanges.flush()) || !current())) {
+      this.#setNotice({ kind: 'error', message: this.#i18n.t('notice.exportSaveFailed') })
+      return
+    }
+    this.#set({ busy: 'flow' })
+    try {
+      const file = await this.#client.exportFlow(flowId)
+      if (this.#disposed || (selected && !current())) return
+      const url = URL.createObjectURL(new Blob([encodeWorkflowFile(file)], { type: 'application/json;charset=utf-8' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.download = workflowFileName(file.name ?? 'workflow')
+      link.click()
+      setTimeout(() => URL.revokeObjectURL(url), 0)
+    } catch (error) {
+      if (!this.#disposed) this.#setNotice(errorNotice(error, this.#i18n.t))
+    } finally {
+      this.#set({ busy: undefined })
+    }
+  }
+
+  public createFlow(name: string, create?: (name: string) => Promise<string>): Promise<Flow | undefined> {
+    return this.#createFlow(async () => (create == null ? this.#client.createFlow(name) : this.#client.getFlow(await create(name))))
+  }
+
+  public importFlow(
+    file: WorkflowFile,
+    name: string,
+    key: string,
+    importer?: (file: WorkflowFile, name: string, key: string) => Promise<string>,
+  ): Promise<Flow | undefined> {
+    return this.#createFlow(async () =>
+      importer == null ? this.#client.importFlow(file, { name, idempotencyKey: key }) : this.#client.getFlow(await importer(file, name, key)),
+    )
+  }
+
+  async #createFlow(create: () => Promise<Flow>): Promise<Flow | undefined> {
     if (!(await this.saveModuleEditor())) return
     this.#set({ busy: 'flow' })
     try {
-      if (create == null) return await this.#flows.create(name)
-      const flow = await this.#client.getFlow(await create(name))
-      this.#flows.insert(flow)
-      return flow
+      const created = await create()
+      if (this.#disposed) return
+      this.#flows.insert(created)
+      return created
     } catch (error) {
       if (!this.#disposed) this.#setNotice(errorNotice(error, this.#i18n.t))
     } finally {

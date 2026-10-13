@@ -6,6 +6,7 @@ import { parseResultQuery } from '@oomol-lab/open-flow/control-api'
 import { controlErrorCode } from '@oomol-lab/open-flow/control-api'
 import { controlRequests } from '@oomol-lab/open-flow/control-requests'
 import { validVariableName } from '@oomol-lab/open-flow/flow-change'
+import { encodeWorkflowFile } from '@oomol-lab/open-flow/flow-encoding'
 import { resolveMetadataLanguage } from '@oomol-lab/open-flow/localization'
 import { localizeTrigger } from '@oomol-lab/open-flow/provider-triggers'
 import { runStatuses } from '@oomol-lab/open-flow/run-lifecycle'
@@ -71,6 +72,19 @@ export function createControlApp(service: ControlService, resolveActor?: Resolve
   ]) {
     app.use(route, authenticate)
   }
+
+  app.post('/flows/import', async (context) => {
+    query(context.req.raw, [], controlErrorCode.flowInvalid)
+    const body = await decodeRequest(context.req.raw, controlErrorCode.flowInvalid, controlRequests.importFlow)
+    const created = await service.importFlow(
+      context.get('actorId'),
+      body.file,
+      idempotencyKey(context.req.raw, controlErrorCode.flowInvalid),
+      body.name,
+      body.teamId,
+    )
+    return response(created.created ? 201 : 200, created.flow)
+  })
 
   for (const route of ['/flows/:flowId', '/flows/:flowId/*', '/runs/:runId', '/runs/:runId/*']) {
     app.use(route, async (context, next) => {
@@ -217,6 +231,10 @@ export function createControlApp(service: ControlService, resolveActor?: Resolve
     const name = body.name
     const created = await service.createFlow(context.get('actorId'), name, idempotencyKey(context.req.raw, controlErrorCode.flowInvalid), body.teamId)
     return response(created.created ? 201 : 200, created.flow)
+  })
+  app.get('/flows/:flowId/export', (context) => {
+    query(context.req.raw, [], controlErrorCode.flowInvalid)
+    return new Response(encodeWorkflowFile(service.exportFlow(context.req.param('flowId'))), { headers: { 'content-type': 'application/json; charset=utf-8' } })
   })
   app.get('/flows/:flowId', (context) => {
     query(context.req.raw, [], controlErrorCode.flowInvalid)

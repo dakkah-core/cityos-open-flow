@@ -6,6 +6,7 @@ import { CanvasTooltip } from '../../../../canvas/browser/components/tooltip.tsx
 import { Button } from '../../../../ui/browser/button.tsx'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../../../../ui/browser/dropdown-menu.tsx'
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from '../../../../ui/browser/popover.tsx'
+import { WorkflowExportMenuItem } from './workflowExportMenuItem.tsx'
 
 export type PublishState = 'ready' | 'current' | 'issues' | 'busy' | 'publishing'
 
@@ -18,11 +19,13 @@ const blockedReasonKey = {
 export function WorkspacePublishIsland({
   hasPublications,
   onOpenPublications,
+  onExport,
   onOpenRuns,
   onPublish,
   state,
 }: {
   readonly hasPublications: boolean | undefined
+  readonly onExport?: (() => void) | undefined
   readonly onOpenPublications: () => void
   readonly onOpenRuns: () => void
   readonly onPublish: () => void
@@ -110,6 +113,9 @@ export function WorkspacePublishIsland({
           />
         </CanvasTooltip>
         <DropdownMenuContent align="end" className="w-max min-w-44 max-w-(--available-width)" container={popupContainer} side="bottom" sideOffset={8}>
+          {onExport != null && (
+            <WorkflowExportMenuItem className="gap-2 px-2 py-[5px]" disabled={state == 'busy' || state == 'publishing'} onClick={onExport} />
+          )}
           <DropdownMenuItem className="gap-2 px-2 py-[5px]" disabled={hasPublications !== true} onClick={onOpenPublications}>
             <i aria-hidden="true" className="i-lucide-light:cloud-upload size-4 shrink-0 text-foreground/70" />
             <span className="grid gap-0.5">

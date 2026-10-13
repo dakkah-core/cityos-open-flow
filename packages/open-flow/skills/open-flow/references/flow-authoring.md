@@ -22,6 +22,26 @@ text. It builds internal definitions, ports and Module identities for you.
 `schema TYPE` supplies the current contract and a node example; `schema edit`
 supplies the edit operations. Use these when a configuration is unfamiliar.
 
+## Share a workflow template
+
+```bash
+<!-- agentic:var flowCommand --> export FLOW_ID > template.openflow.json
+<!-- agentic:var flowCommand --> import --file template.openflow.json --name "Imported workflow" --idempotency-key IMPORT_KEY --json
+```
+
+Export writes only JSON to stdout. Import also accepts `--file -` for stdin and creates
+a new unpublished Draft; it never overwrites the source Flow. Keep the same file, name,
+and idempotency key when retrying an uncertain import. MCP equivalents are `flow_export`
+with `flowId`, and `flow_import` with the JSON `file`, `idempotencyKey`, optional `name`
+and optional target `teamId`.
+
+Both operations clear structured accounts, Variables, error-source workflows and
+Trigger resource selections. Graphs, shared code Modules, fixed inputs, prompts, model
+choices and layout remain. Inspect the imported Draft, configure missing resources with
+the normal editor or authoring interface, and check it before running or publishing.
+Code, prompts and business JSON may still contain literal sensitive data. Review the
+file before sharing; cleanup does not rewrite arbitrary strings.
+
 ## Find a Flow or a relevant part
 
 ```bash

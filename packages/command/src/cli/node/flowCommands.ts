@@ -3,6 +3,9 @@ import type { CommandHost, Runtime } from './support.ts'
 
 import { ControlClient } from '@oomol-lab/open-flow/control-api'
 import { controlRequests } from '@oomol-lab/open-flow/control-requests'
+import { encodeWorkflowFile, parseWorkflowFile, workflowNameFromFile } from '@oomol-lab/open-flow/flow-encoding'
+import { importedWorkflowName } from '@oomol-lab/open-flow/localization'
+import { basename } from 'node:path'
 import { connectorCommand, triggerCommand } from './connectorCommands.ts'
 import { liveText } from './live.ts'
 import { createRunCommand, publicationsCommand, publishCommand, rollbackCommand, runsCommand } from './runCommands.ts'
@@ -87,6 +90,21 @@ export async function flowCommand(client: ControlClient, host: CommandHost, args
       requireCount(operands, 0, `${runtime.commandPrefix ?? 'oo flow'} list [--json]`)
       const page = await client.listFlows({ cursor: args.cursor, limit: args.limit ?? 100 })
       write(runtime, args.json, { ...page, kind: 'flow.list', version: 1 }, page.flows.map(flowText).join('\n'))
+      return
+    }
+    case 'export': {
+      requireCount(operands, 1, `${runtime.commandPrefix ?? 'oo flow'} export <flow>`)
+      const flow = await referencedFlow(client, operands[0]!)
+      runtime.stdout.write(encodeWorkflowFile(await client.exportFlow(flow.flowId)))
+      return
+    }
+    case 'import': {
+      requireCount(operands, 0, `${runtime.commandPrefix ?? 'oo flow'} import --file <path|-> [--name name] [--json]`)
+      if (args.file == null) throw new CliError('cli.invalid-arguments', 'Import requires --file <path|->.')
+      const file = parseWorkflowFile(await argumentText(args.file == '-' ? '-' : `@${args.file}`, 'file', 'flow.import-unreadable', runtime))
+      const name = args.name ?? file.name ?? (args.file == '-' ? importedWorkflowName(runtime.language ?? 'en') : workflowNameFromFile(basename(args.file)))
+      const flow = await client.importFlow(file, { name: checkedResourceName(name, 'Flow'), idempotencyKey: args.idempotencyKey })
+      write(runtime, args.json, { flow, idempotencyKey: args.idempotencyKey, kind: 'flow.import', version: 1 }, flowText(flow))
       return
     }
     case 'create': {

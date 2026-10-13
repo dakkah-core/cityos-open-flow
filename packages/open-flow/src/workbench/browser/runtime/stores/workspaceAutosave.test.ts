@@ -88,6 +88,58 @@ async function setup() {
 afterEach(() => vi.useRealTimers())
 
 describe('code autosave', () => {
+  it('waits for code, draft and Presentation saves before exporting, and blocks failed saves', async () => {
+    const { client, commit, store, workspace } = await setup()
+    const exported = vi.spyOn(client, 'exportFlow').mockRejectedValue(new Error('Stop at download boundary'))
+    const held = Promise.withResolvers<void>()
+    const presentation = vi.spyOn(client, 'updatePresentation').mockImplementation(async () => {
+      await held.promise
+      return { revision: 2, updatedAt: timestamp, value: {}, version: 1 }
+    })
+    try {
+      workspace.updateModuleSource('export default () => 42')
+      const moving = workspace.moveViewport({ x: 20, y: 30, zoom: 1 })
+      const exporting = workspace.exportFlow('flow')
+      await Promise.resolve()
+      expect(exported).not.toHaveBeenCalled()
+      held.resolve()
+      await moving
+      await exporting
+      expect(presentation).toHaveBeenCalledOnce()
+      expect(workspace.$.draft.value?.content.modules.a?.source).toBe('export default () => 42')
+      expect(exported).toHaveBeenCalledOnce()
+      exported.mockClear()
+      commit.mockResolvedValue(Response.json({ error: { code: 'flow.unavailable', message: 'Unavailable' }, version: 1 }, { status: 503 }))
+      workspace.updateModuleSource('export default () => 43')
+      await workspace.exportFlow('flow')
+      expect(exported).not.toHaveBeenCalled()
+    } finally {
+      held.resolve()
+      store.dispose()
+    }
+  })
+
+  it('stops export when an in-flight Presentation save fails', async () => {
+    const { client, store, workspace } = await setup()
+    const held = Promise.withResolvers<void>()
+    vi.spyOn(client, 'updatePresentation').mockImplementation(async () => {
+      await held.promise
+      throw new Error('Layout unavailable')
+    })
+    const exported = vi.spyOn(client, 'exportFlow')
+    try {
+      const moving = workspace.moveViewport({ x: 20, y: 30, zoom: 1 })
+      const exporting = workspace.exportFlow('flow')
+      held.resolve()
+      await moving
+      await exporting
+      expect(exported).not.toHaveBeenCalled()
+    } finally {
+      held.resolve()
+      store.dispose()
+    }
+  })
+
   it('keeps typing local until a save is requested, including incomplete source', async () => {
     const { commit, store, workspace, revision } = await setup()
     vi.useFakeTimers()

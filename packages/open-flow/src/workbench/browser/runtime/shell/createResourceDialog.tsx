@@ -22,6 +22,7 @@ export default function CreateResourceDialog({
   onOpenChange,
   onSubmit,
   pending,
+  submitLabel,
   title,
 }: {
   readonly disabled?: boolean | undefined
@@ -57,6 +58,7 @@ export default function CreateResourceDialog({
   readonly onNameChange: (name: string) => void
   readonly onOpenChange: (open: boolean) => void
   readonly onSubmit: (event: FormEvent) => void
+  readonly submitLabel?: string | undefined
   readonly pending: boolean
   readonly title: string
 }): ReactElement {
@@ -139,7 +141,7 @@ export default function CreateResourceDialog({
                 {t('common.cancel')}
               </DialogClose>
               <Button disabled={disabled || pending || issue != null} type="submit">
-                {t(pending ? 'common.creating' : 'common.create')}
+                {pending ? t('common.creating') : (submitLabel ?? t('common.create'))}
               </Button>
             </DialogFooter>
           </form>

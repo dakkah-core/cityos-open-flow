@@ -209,7 +209,10 @@
     "enabledHint": "새 프로덕션 실행을 제어합니다. 초안 테스트는 계속 사용할 수 있습니다.",
     "publish": "게시",
     "publishUpdate": "업데이트",
-    "deleteDescription": "워크플로와 실행 기록을 삭제하고 프로덕션 트리거를 중지합니다. 이 작업은 되돌릴 수 없습니다."
+    "deleteDescription": "워크플로와 실행 기록을 삭제하고 프로덕션 트리거를 중지합니다. 이 작업은 되돌릴 수 없습니다.",
+    "importFlow": "워크플로 가져오기",
+    "exportFlow": "워크플로 내보내기",
+    "importInvalid": "잘못되었거나 지원하지 않는 워크플로 파일입니다."
   },
   "inspector": {
     "outline": "노드 목록",
@@ -478,7 +481,9 @@
     "networkFailed": "서비스에 연결할 수 없습니다. 네트워크 연결을 확인한 뒤 다시 시도하세요.",
     "published": "{{name}} 게시를 완료했습니다.",
     "rolledBack": "라이브를 리비전 {{revision}}(으)로 롤백했습니다.",
-    "requestFailed": "서비스에서 이 작업을 완료하지 못했습니다. 나중에 다시 시도하세요."
+    "requestFailed": "서비스에서 이 작업을 완료하지 못했습니다. 나중에 다시 시도하세요.",
+    "flowImported": "가져왔습니다. 실행하거나 게시하기 전에 외부 리소스를 설정하세요.",
+    "exportSaveFailed": "초안 또는 레이아웃을 저장하지 못했습니다. 저장 후 다시 내보내세요."
   },
   "publication": {
     "active": "활성",

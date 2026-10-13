@@ -1,4 +1,5 @@
 import type { ReadonlyVal } from 'value-enhancer'
+import type { WorkflowFile } from '../../../flow/common/workflowFile.ts'
 import type { Flow } from './api.ts'
 import type { WorkbenchLocation, WorkbenchNavigationOptions, WorkbenchView } from './contract.ts'
 import type { WorkbenchStore } from './stores/workbenchStore.ts'
@@ -61,11 +62,24 @@ export class NavigationStore {
     this.#write(view, false, { runSource })
   }
 
+  public async importFlow(
+    file: WorkflowFile,
+    name: string,
+    key: string,
+    importer?: (file: WorkflowFile, name: string, key: string) => Promise<string>,
+  ): Promise<boolean> {
+    return await this.#openNewFlow(() => this.#store.importFlow(file, name, key, importer))
+  }
+
   public async createFlow(name: string, create?: (name: string) => Promise<string>): Promise<boolean> {
+    return await this.#openNewFlow(() => this.#store.createFlow(name, create))
+  }
+
+  async #openNewFlow(create: () => Promise<boolean>): Promise<boolean> {
     const change = ++this.#change
     this.#syncing = true
     try {
-      const created = await this.#store.createFlow(name, create)
+      const created = await create()
       if (created && change == this.#change) this.#write('design', false)
       return created
     } finally {

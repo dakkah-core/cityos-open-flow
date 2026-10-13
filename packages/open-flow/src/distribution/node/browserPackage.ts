@@ -322,6 +322,7 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
       }),
     )
     const controlApiDeclaration = (await readFile(path.join(declarationRoot, 'control/common/api.d.ts'), 'utf8'))
+      .replaceAll("'../../flow/common/workflowFile.ts'", "'./flow-workflowFile.js'")
       .replaceAll("'../../flow/common/semantics.ts'", "'./flow-semantics.js'")
       .replaceAll("'./providerIconSprite.ts'", "'./providerIconSprite.js'")
       .replaceAll("'./draftOperations.ts'", "'./draftOperations.js'")
@@ -358,10 +359,11 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
       .replaceAll("'../../trigger/common/configOptions.ts'", "'./trigger-config-options.js'")
     const controlApiErrorsDeclaration = await readFile(path.join(declarationRoot, 'control/common/errors.d.ts'), 'utf8')
     const flowEncodingDeclaration = (await readFile(path.join(declarationRoot, 'flow/common/encoding.d.ts'), 'utf8'))
+      .replaceAll("'./workflowFile.ts'", "'./flow-workflowFile.js'")
       .replaceAll("'./changeSchema.ts'", "'../browser/flow-change-schema.js'")
       .replaceAll("'./json.ts'", "'./flow-json.js'")
     await Promise.all(
-      ['agent', 'semantics', 'graph', 'schema', 'modules', 'connectionUsage', 'promptTemplate'].map(async (name) => {
+      ['agent', 'semantics', 'graph', 'schema', 'modules', 'connectionUsage', 'promptTemplate', 'workflowFile'].map(async (name) => {
         const declaration = (await readFile(path.join(declarationRoot, `flow/common/${name}.d.ts`), 'utf8'))
           .replaceAll("'../../execution/common/engineContract.ts'", "'./engine-contract.js'")
           .replaceAll("'../../execution/common/runtime.ts'", "'./runtime-contract.js'")
@@ -431,6 +433,7 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
       writeFile(
         path.join(browserOutputPath, 'workbench.d.ts'),
         workbenchDeclaration
+          .replaceAll("'../../../flow/common/workflowFile.ts'", "'../common/flow-workflowFile.js'")
           .replaceAll("'./contract.ts'", "'./workbench-contract.js'")
           .replaceAll("'./eventSources.tsx'", "'./event-sources.js'")
           .replaceAll("'../../../localization/common/languages.ts'", "'../common/localization.js'"),

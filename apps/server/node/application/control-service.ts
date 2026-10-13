@@ -27,6 +27,7 @@ import type {
 import type { AuthoringRead, AuthoringSearch, AuthoringRequest, AuthoringType } from '@oomol-lab/open-flow/control-requests'
 import type { DraftOperation } from '@oomol-lab/open-flow/control-requests'
 import type { JsonValue, RevisionContent, TriggerKeySnapshot } from '@oomol-lab/open-flow/flow-change'
+import type { WorkflowFile } from '@oomol-lab/open-flow/flow-encoding'
 import type { ConnectorAccessHost, ConnectorAccessMutation } from '../deployment/connector-access.ts'
 import type { ConnectorAccessContext, ConnectorHost } from '../deployment/connector.ts'
 import type { EventSourceRuntime } from '../runtime/event-source-runtime.ts'
@@ -37,7 +38,9 @@ import type { StoredTriggerBinding } from '../storage/trigger-store.ts'
 import { controlErrorCode, liveEntries } from '@oomol-lab/open-flow/control-api'
 import { readAuthoring, searchAuthoring, compileAuthoring, authoringSchema, authoringDiagnostics, AuthoringError } from '@oomol-lab/open-flow/control-requests'
 import { resolveDraftOperations } from '@oomol-lab/open-flow/control-requests'
+import { resourceNameIssue } from '@oomol-lab/open-flow/flow-change'
 import { applyFlowChanges, currentFlowModelVersion, FlowChangeError } from '@oomol-lab/open-flow/flow-change'
+import { cleanWorkflowFile } from '@oomol-lab/open-flow/flow-encoding'
 import { canonicalJsonBytes, digestBytes, encodeRevision, repairRevision } from '@oomol-lab/open-flow/flow-encoding'
 import { flowClosure, removeConnectionUsage, validateFlow } from '@oomol-lab/open-flow/flow-semantics'
 import { triggerConfigValues } from '@oomol-lab/open-flow/integration-trigger'
@@ -524,17 +527,82 @@ export class ControlService {
     }
   }
 
+  exportFlow(flowId: string): WorkflowFile {
+    const currentFlow = this.getFlow(flowId)
+    const currentDraft = this.getDraft(flowId)
+    return cleanWorkflowFile({
+      kind: 'open-flow-workflow',
+      version: 1,
+      name: currentFlow.name,
+      content: currentDraft.content,
+      presentation: this.getPresentation(flowId).value,
+    }).file
+  }
+
+  async importFlow(actorId: string, value: unknown, idempotencyKey: string, name?: string, teamId?: string, defaultName = 'Imported workflow') {
+    let file: WorkflowFile
+    try {
+      file = cleanWorkflowFile(value).file
+    } catch {
+      throw new ControlError(controlErrorCode.flowInvalid, 'Invalid or unsupported workflow file.')
+    }
+    const resolvedName = name ?? file.name ?? defaultName
+    if (resolvedName != resolvedName.trim() || resourceNameIssue(resolvedName) != null)
+      throw new ControlError(controlErrorCode.flowInvalid, 'Flow name is invalid.')
+    return await this.#createFlow({
+      actorId,
+      name: resolvedName,
+      idempotencyKey,
+      connectorTeamId: teamId,
+      content: file.content,
+      presentation: file.presentation,
+      request: { connectorTeamId: teamId ?? null, import: { file: value as JsonValue, name: name ?? null } },
+    })
+  }
+
   async createFlow(
     actorId: string,
     name: string,
     idempotencyKey: string,
     connectorTeamId?: string,
   ): Promise<{ readonly created: boolean; readonly flow: Flow }> {
+    return await this.#createFlow({
+      actorId,
+      name,
+      idempotencyKey,
+      connectorTeamId,
+      content: emptyRevision(),
+      request: { connectorTeamId: connectorTeamId ?? null, name },
+    })
+  }
+
+  async #createFlow({
+    actorId,
+    name,
+    idempotencyKey,
+    connectorTeamId,
+    content,
+    presentation: initialPresentation,
+    request,
+  }: {
+    readonly actorId: string
+    readonly name: string
+    readonly idempotencyKey: string
+    readonly connectorTeamId?: string
+    readonly content: RevisionContent
+    readonly presentation?: Readonly<Record<string, JsonValue>>
+    readonly request: JsonValue
+  }): Promise<{ readonly created: boolean; readonly flow: Flow }> {
+    const requestDigest = await digestBytes(canonicalJsonBytes(request))
+    const replay = this.store.flows.replayCreation(actorId, idempotencyKey, requestDigest)
+    if (replay != null) {
+      if ('kind' in replay) throw new ControlError(controlErrorCode.flowConflict, 'The idempotency key refers to another Flow request.')
+      return { created: false, flow: flow(replay.flow) }
+    }
     const selectedConnectorTeamId = await this.resolveConnectorTeam(connectorTeamId)
     if (connectorTeamId != null && selectedConnectorTeamId == null) {
       throw new ControlError(controlErrorCode.flowInvalid, 'Connector Team is not available for this deployment.')
     }
-    const content = emptyRevision()
     const bytes = encodeRevision(content)
     const createdAt = this.clock()
     const stored = this.store.flows.createFlow({
@@ -545,9 +613,10 @@ export class ControlService {
       digest: await digestBytes(bytes),
       idempotencyKey,
       modelVersion: content.modelVersion,
+      presentation: initialPresentation,
       name,
       flowId: identity('flow'),
-      requestDigest: await digestBytes(canonicalJsonBytes({ connectorTeamId: connectorTeamId ?? null, name })),
+      requestDigest,
       revisionId: identity('revision'),
     })
     if ('kind' in stored) throw new ControlError(controlErrorCode.flowConflict, 'The idempotency key refers to another Flow request.')
