@@ -64,7 +64,7 @@ describe('Repeated node executions', () => {
           invokeTask: (call) =>
             Effect.sync(() => {
               if (!('moduleId' in call)) throw new Error('Expected Code')
-              expect(call.getPrevious()).toMatchObject(count === 0 ? { id: 'start', outputs: {} } : { id: 'counter', outputs: { count } })
+              expect(call.getPrevious()[0]).toMatchObject(count === 0 ? { id: 'start', outputs: {} } : { id: 'counter', outputs: { count } })
               return { count: ++count }
             }),
         }),
@@ -122,7 +122,7 @@ describe('Repeated node executions', () => {
         invokeTask: (call) =>
           Effect.sync(() => {
             if (!('moduleId' in call)) throw new Error('Expected Code')
-            expect(call.getPrevious()).toMatchObject({
+            expect(call.getPrevious()[0]).toMatchObject({
               id: call.input.previous == null ? 'start' : 'choose',
               outputs: {},
               outputDefs: [],
@@ -175,7 +175,7 @@ describe('Repeated node executions', () => {
     ).rejects.toThrow('execution count')
   })
 
-  it('restores two pending executions of one Wait independently with their original inputs', async () => {
+  it('merges two branches into one Wait and restores their inputs', async () => {
     const prepared = await prepare(
       revision({
         nodes: {
@@ -184,14 +184,13 @@ describe('Repeated node executions', () => {
           b: { kind: 'value', inputs: {}, values: [{ ...port, handle: 'value', value: 'b' }] },
           pause: {
             ...pause,
+            inputDefinitions: [
+              { ...port, handle: 'a' },
+              { ...port, handle: 'b' },
+            ],
             inputs: {
-              value: {
-                kind: 'sources',
-                sources: [
-                  { kind: 'node', nodeId: 'a', output: 'value' },
-                  { kind: 'node', nodeId: 'b', output: 'value' },
-                ],
-              },
+              a: { kind: 'sources', sources: [{ kind: 'node', nodeId: 'a', output: 'value' }] },
+              b: { kind: 'sources', sources: [{ kind: 'node', nodeId: 'b', output: 'value' }] },
             },
           },
         },
@@ -207,19 +206,18 @@ describe('Repeated node executions', () => {
     const config = options(events)
     const first = await advanceWaiting(runFlow(prepared, { ...config, waits: waitHost() }))
     if (first.kind != 'waiting') throw new Error('Expected waiting')
-    expect(first.checkpoint.waits.map((wait) => (wait.value as { value: string }).value).toSorted()).toEqual(['a', 'b'])
+    expect(first.checkpoint.waits).toHaveLength(1)
+    expect(first.checkpoint.waits[0]!.value).toEqual({ a: 'a', b: 'b' })
     const { trigger: _, ...resume } = config
-    const [a, b] = first.checkpoint.waits
-    const second = await advanceWaiting(
-      runFlow(prepared, { ...resume, resume: { checkpoint: first.checkpoint }, waits: waitHost({ [a!.waitId]: 'continue' }) }),
+    await Effect.runPromise(
+      runFlow(prepared, {
+        ...resume,
+        resume: { checkpoint: JSON.parse(JSON.stringify(first.checkpoint)) },
+        waits: waitHost({ [first.checkpoint.waits[0]!.waitId]: 'continue' }),
+      }),
     )
-    if (second.kind != 'waiting') throw new Error('Expected remaining wait')
-    expect(second.checkpoint.waits).toEqual([b])
-    expect(second.checkpoint.counts['']?.pause).toBe(2)
-    await Effect.runPromise(runFlow(prepared, { ...resume, resume: { checkpoint: second.checkpoint }, waits: waitHost({ [b!.waitId]: 'continue' }) }))
-    const completed = events.filter((event) => event.type == 'node.completed').filter((event) => event.nodeId == 'pause')
-    expect(completed.map((event) => (event.outputs.continue as { inputs: { value: string } }).inputs.value).toSorted()).toEqual(['a', 'b'])
-    expect(new Set(completed.map((event) => event.jobId)).size).toBe(2)
+    expect(events.filter((event) => event.type == 'node.started' && event.nodeId == 'pause')).toHaveLength(1)
+    expect(events.filter((event) => event.type == 'node.completed' && event.nodeId == 'pause')).toHaveLength(1)
   })
 
   it('notifies once per Wait entry, never again on checkpoint recovery or resolution', async () => {
@@ -245,7 +243,7 @@ describe('Repeated node executions', () => {
       invokeTask: (call: Parameters<FlowRunOptions['invokeTask']>[0]) =>
         Effect.sync(() => {
           if (!('moduleId' in call)) throw new Error('Expected Code')
-          const previous = call.getPrevious()
+          const [previous] = call.getPrevious()
           expect(previous?.id).toBe('pause')
           expect(Object.keys(previous!.outputs)).toEqual(['pending'])
           expect(previous?.outputDefs.map((definition) => definition.handle)).toEqual(['pending', 'approve', 'reject'])

@@ -269,7 +269,7 @@ describe('Per-field input sources', () => {
     expect(revisionView(source).inputSource('task', 'input0').check()).toEqual({ conflict: false, sources: [{ kind: 'not-ready' }] })
   })
 
-  it('allows sources supplied on separate incoming execution paths', () => {
+  it('rejects ambiguous sources supplied by parallel predecessors', () => {
     const base = draft()
     const source: Draft = {
       ...base,
@@ -310,7 +310,7 @@ describe('Per-field input sources', () => {
     }
 
     expect(revisionView(source).inputSource('task', 'input0').check()).toEqual({
-      conflict: false,
+      conflict: true,
       sources: [{ kind: 'available' }, { kind: 'available' }],
     })
   })

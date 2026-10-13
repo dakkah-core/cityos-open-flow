@@ -121,3 +121,7 @@ Hosts now import `runOpenFlowCommand` and `OpenFlowCommandHost` from
 Command Artifact archives, manifests, release records and the OSS publication
 workflow are removed. Hosts must replace their artifact download/cache loader
 with the npm import; arguments, host callbacks and CLI exit codes remain unchanged.
+
+### Unreleased dependency joins
+
+Engine Contract remains `open-flow-engine/v5`, and Scheduler checkpoints remain version 5. Invocations now wait for their iteration's selected or skipped predecessors, merge selected ancestor data, and repeat through loop iterations. Checkpoints require dependency progress and loop state; earlier development shapes are rejected without conversion. `context.getPrevious()` now returns an array, including for a single predecessor, and an empty array for roots. No legacy API or scheduling mode is retained. Flow model and isolated runtime digest are unchanged.

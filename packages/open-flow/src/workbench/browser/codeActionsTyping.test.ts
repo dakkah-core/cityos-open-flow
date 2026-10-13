@@ -64,7 +64,7 @@ describe('Code Action editor types', () => {
   it('resolves previous node outputs and definitions through public Task types', () => {
     expect(
       diagnostics(`export default async (_, context) => {
-      const previous = await context.getPrevious();
+      const [previous] = await context.getPrevious();
       if (!previous) return {};
       const definition = previous.outputDefs.find(def => def.handle === 'items');
       return { value: previous.outputs.items, schema: definition?.jsonSchema, name: previous.name };
@@ -74,7 +74,7 @@ describe('Code Action editor types', () => {
       diagnostics(`export default async (_, context) => {
       const previous = await context.getPrevious();
       return { value: previous.outputs.items };
-    }`).some((message: string) => message.includes('possibly')),
+    }`).some((message: string) => message.includes('does not exist')),
     ).toBe(true)
   })
 

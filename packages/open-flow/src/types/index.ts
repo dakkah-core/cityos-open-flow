@@ -89,8 +89,8 @@ export interface TaskContext<Actions extends object = Record<string, never>> {
   readonly artifact: ArtifactCapability
   readonly fetch: typeof fetch
   readonly logger: TaskLogger
-  /** Reads the node that triggered this invocation, or null for a graph root. */
-  getPrevious(): Promise<PreviousNode | null>
+  /** Reads the selected direct predecessors, sorted by node ID; empty for a graph root. */
+  getPrevious(): Promise<readonly PreviousNode[]>
   preview(payload: PreviewPayload, id?: string): Promise<void>
   reportProgress(progress: number): Promise<void>
 }

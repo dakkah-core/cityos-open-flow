@@ -97,7 +97,7 @@ function waitForever(_invocation: TaskInvocation): Effect.Effect<never> {
 }
 
 describe('revision graph scheduler', () => {
-  it('reads each direct arrival, including Trigger and independent branches', async () => {
+  it('reads the selected direct predecessors, including Trigger and merged branches', async () => {
     const source = revision(
       {
         bindings: {},
@@ -126,13 +126,13 @@ describe('revision graph scheduler', () => {
           if (!('moduleId' in invocation)) throw new Error('Expected Code')
           const previous = invocation.getPrevious()
           if (invocation.nodeId === 'sink') seen.push(previous)
-          else expect(previous).toEqual({ id: 'start', name: 'Start', outputs: {}, outputDefs: [] })
+          else expect(previous).toEqual([{ id: 'start', name: 'Start', outputs: {}, outputDefs: [] }])
           return invocation.nodeId === 'sink' ? {} : { value: invocation.nodeId }
         }),
     })
-    expect(seen).toHaveLength(2)
+    expect(seen).toHaveLength(1)
     for (const id of ['left', 'right'])
-      expect(seen).toContainEqual({
+      expect(seen[0]).toContainEqual({
         id,
         name: id === 'left' ? 'Left' : 'Right',
         outputs: { value: id },
@@ -379,7 +379,7 @@ describe('revision graph scheduler', () => {
         Effect.sync(() => {
           invocations.push(invocation)
           if ('moduleId' in invocation) {
-            const previous = invocation.getPrevious()
+            const [previous] = invocation.getPrevious()
             expect(previous?.id).toBe('wait')
             expect(previous?.outputs.continue).toEqual(decisionOutput('continue', { id: 42 }))
             expect(previous?.outputDefs.map((definition) => definition.handle)).toContain('pending')
@@ -729,7 +729,7 @@ describe('revision graph scheduler', () => {
   it.each([
     ['a', 20],
     ['b', 20],
-  ] as const)('executes once per arrival with isolated inputs when %s is slower', async (slow, delay) => {
+  ] as const)('waits for both branches and merges their inputs when %s is slower', async (slow, delay) => {
     const source = revision(
       {
         bindings: {},
@@ -766,14 +766,14 @@ describe('revision graph scheduler', () => {
             finished.push(invocation.nodeId)
             return { item: invocation.nodeId }
           }
-          expect(finished.length).toBe(calls + 1)
-          expect(invocation.input).toEqual(finished.at(-1) == 'a' ? { a: 'a', b: null } : { a: null, b: 'b' })
+          expect(finished.length).toBe(2)
+          expect(invocation.input).toEqual({ a: 'a', b: 'b' })
           calls++
           return { seen: [invocation.input.a, invocation.input.b] }
         }),
     })
-    expect(calls).toBe(2)
-    expect(result.nodes[0]).toMatchObject({ status: 'completed', outputs: { seen: slow == 'a' ? ['a', null] : [null, 'b'] } })
+    expect(calls).toBe(1)
+    expect(result.nodes[0]).toMatchObject({ status: 'completed', outputs: { seen: ['a', 'b'] } })
   })
 
   it('publishes all final outputs in one completion before starting downstream work', async () => {

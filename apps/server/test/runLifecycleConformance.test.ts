@@ -107,8 +107,12 @@ for (const conformance of runLifecycleConformanceCases) {
                   inputs: {},
                   results: {},
                   counts: {},
-                  frames: { [wait.jobId]: {} },
                   version: 5,
+                  dependencies: {
+                    nextId: 1,
+                    iterations: {},
+                    nodes: { [wait.nodeId]: { id: 0, status: 'running', jobId: wait.jobId, input: {}, previous: [], released: [], seeded: false } },
+                  },
                   agents: {},
                   waits: [{ ...wait, value: null }],
                 },

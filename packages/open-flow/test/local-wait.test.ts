@@ -177,7 +177,7 @@ it('continues a quiet graph in its original session before the retention deadlin
   expect(f.requests).toHaveLength(1)
 })
 
-it('executes the merge separately for notification and action arrivals', async () => {
+it('waits for notification and action branches before executing the merge once', async () => {
   const f = await fixture()
   const prepared = {
     ...f.prepared,
@@ -210,7 +210,7 @@ it('executes the merge separately for notification and action arrivals', async (
   expect(f.events.some((event) => event.type == 'node.started' && event.nodeId == 'join')).toBe(false)
   sent.resolve({})
   await run
-  expect(f.events.filter((event) => event.type == 'node.completed' && event.nodeId == 'join')).toHaveLength(2)
+  expect(f.events.filter((event) => event.type == 'node.completed' && event.nodeId == 'join')).toHaveLength(1)
 })
 
 it('does not extend the retention window after a wake without a decision', async () => {
@@ -297,7 +297,7 @@ it.each(['continue', 'approve', 'reject'] as const)('does not replay notificatio
   const saved = frozen.checkpoint.waits[0]!
   expect(saved.pending).toMatchObject({ prompt: 'Ready?', inputs: { value: null } })
   const { pending, ...legacy } = saved
-  expect(decodeFlowRunCheckpoint({ ...frozen.checkpoint, waits: [{ ...legacy, notification: pending }] })).toEqual(frozen.checkpoint)
+  expect(() => decodeFlowRunCheckpoint({ ...frozen.checkpoint, waits: [{ ...legacy, notification: pending }] })).toThrow()
   expect(() => decodeFlowRunCheckpoint({ ...frozen.checkpoint, waits: [{ ...saved, notification: pending }] })).toThrow()
   f.resolve()
   const { trigger: _, ...options } = f.options

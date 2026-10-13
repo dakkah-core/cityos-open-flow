@@ -370,9 +370,11 @@ Ordinary nodes must omit `sourceHandle`; Condition and Wait require a declared b
 
 `inputs[handle]` uses `{ kind: 'value', value }` or `{ kind: 'sources', sources }`. Node sources use `{ kind: 'node', nodeId, output, field?: string }`. Omit `field` for the whole output; supply it for a direct property declared by the output object schema. Keys are literal, including empty strings, dots, and slashes. Nested paths and array indexes are unsupported. Inputs and Condition operands share field selection.
 
-Candidates come from direct schema `properties`; `$ref` and `allOf`/`anyOf`/`oneOf` are not expanded. Whole-output selection remains available when fields cannot be listed. A null parent or absent own property is unavailable; an explicit null field remains available. Variable binding source syntax is unchanged. Node sources must target ancestors reachable through execution edges, but need not cover every execution path. Each selected incoming edge starts a separate invocation without waiting for other predecessors.
+Candidates come from direct schema `properties`; `$ref` and `allOf`/`anyOf`/`oneOf` are not expanded. Whole-output selection remains available when fields cannot be listed. A null parent or absent own property is unavailable; an explicit null field remains available. Variable binding source syntax is unchanged. Node sources must target ancestors reachable through execution edges, but need not cover every execution path. An invocation waits for all direct predecessors in its iteration to complete or be skipped, then executes once if at least one incoming edge is selected. If all paths are skipped, it propagates that state without creating a job.
 
-Inputs read only that arrival path’s result snapshot; multiple sources cannot supply values in the same snapshot. Parallel predecessors pass results to their own invocations. Executable nodes accept optional positive integer `maxExecutions`, default 1000, counted per node within one Flow Run. An arrival that would exceed the limit fails the Run. Wait/Agent decision resumption does not increment it. Scheduling depends only on execution edges and branch state.
+Inputs combine the selected incoming paths and their transitive ancestors. Skipped branches never supply historical results, and the Run-wide latest-result table is not consulted. Separate inputs may read different parallel predecessors; multiple available sources for a single input remain an error. Executable nodes accept optional positive integer `maxExecutions`, default 1000, counted per node within one Flow Run. An invocation that would exceed the limit fails the Run. Wait/Agent decision resumption does not increment it. Scheduling depends only on execution edges and branch state.
+
+Self-edges and recurrence edges open a new loop iteration after its dependencies and independently executable selected continuations settle; they are not prerequisites for first entry. Dependency analysis uses deterministic traversal from Triggers, with outgoing edges sorted by target ID and handle. A recurrence resets its forward continuation, while unaffected outer invocations remain available. Nested loops start fresh through ordinary entry and retain prior values only through their own recurrence. A continuation that still requires this loop’s final exit cannot block its recurrence. Unselected exits settle after the loop finishes; `pending` notifications bypass this boundary and remain available immediately. Execution order within parallel branches does not determine data precedence.
 
 Missing input sources do not skip nodes. Zero available sources produce `null`, one supplies its value, and multiple sources cause an error. Actual output `null` counts as supplied. Collected inputs undergo port validation; failure is an error.
 
@@ -1030,18 +1032,51 @@ The exact Scheduler checkpoint object is:
   "inputs": {},
   "results": { "start": { "jobId": "start", "outputs": {} }, "source": { "jobId": "job-1", "outputs": { "value": 42 } } },
   "counts": { "": { "source": 1, "approval": 1 } },
-  "frames": { "job-2": { "start": {}, "source": { "value": 42 } } },
+  "dependencies": {
+    "nextId": 3,
+    "iterations": {},
+    "nodes": {
+      "start": {
+        "id": 0,
+        "status": "completed",
+        "previous": [],
+        "released": [],
+        "seeded": false,
+        "input": {},
+        "output": {}
+      },
+      "source": {
+        "id": 1,
+        "status": "completed",
+        "jobId": "job-1",
+        "previous": ["start"],
+        "released": ["value"],
+        "seeded": false,
+        "input": { "start": { "execution": 0, "outputs": {} } },
+        "output": { "value": 42 }
+      },
+      "approval": {
+        "id": 2,
+        "status": "running",
+        "jobId": "job-2",
+        "previous": ["source"],
+        "released": [],
+        "seeded": false,
+        "input": { "start": { "execution": 0, "outputs": {} }, "source": { "execution": 1, "outputs": { "value": 42 } } }
+      }
+    }
+  },
   "version": 5,
   "agents": {},
-  "waits": [{ "jobId": "job-2", "nodeId": "approval", "value": 42, "waitId": "opaque-id" }]
+  "waits": [{ "jobId": "job-2", "nodeId": "approval", "value": { "value": 42 }, "waitId": "opaque-id" }]
 }
 ```
 
-`inputs` stores launch inputs by node ID/input handle. `bindingValues` stores this Run’s Variable binding snapshot. `results` stores each node’s last completed outputs. `counts` stores cumulative executions by node ID with outer scope fixed to `""`. `frames` stores arrival-time node result snapshots by waiting job ID. `waits` stores all waits whose decisions remain to be applied, allowing multiple jobs per node. Entries also store complete `pending` outputs once released.
+`inputs` stores launch inputs by node ID/input handle. `bindingValues` stores this Run’s Variable binding snapshot. `results` stores each node’s last completed outputs. `counts` stores cumulative executions by node ID with outer scope fixed to `""`. `dependencies` owns the invocation snapshots and progress: `nextId`, per-loop `iterations`, and per-node states (`id`, `status`, `input`, optional `output`, `previous`, `released`, optional `jobId`, and `seeded`). Each `input` entry records one ancestor’s `{ execution, outputs }`; the execution identity selects newer iterations of that ancestor independently of completion order. Input snapshots remain unchanged when a node releases pending or final output. Partial joins reuse the completed predecessors’ saved input and output instead of a separate snapshot table. `waits` stores all waits whose decisions remain to be applied. Entries also store complete `pending` outputs once released.
 
 `agents` maps job IDs to `{ invocationId, input, remainingMs?, checkpoint }`, where checkpoint follows the Agent continuation contract. With node timeoutMs, remainingMs must be positive and no greater than the original limit. Total JSON is limited to 16 MiB. Recovery verifies exact fields, unique job/wait identities, node execution limits, declared results, wait-input/path consistency, and Agent continuation inputs/budgets. Older checkpoints cannot recover as v5.
 
-Nodes outside the execution path create no jobs, execution identities, or events. Each arrival gets a separate identity, retained through suspension/recovery. Ordinary Task outputs declared but missing or `undefined` become `null`. An entirely `undefined` return becomes an empty object; explicit non-object returns remain invalid. Port contents are not recursively normalized. Unselected Condition/Wait branch ports remain absent. Runtime validates and copies return data before JSON transport.
+Nodes outside the execution path create no jobs, execution identities, or events. Each invocation gets a separate identity, retained through suspension/recovery. Ordinary Task outputs declared but missing or `undefined` become `null`. An entirely `undefined` return becomes an empty object; explicit non-object returns remain invalid. Port contents are not recursively normalized. Unselected Condition/Wait branch ports remain absent. Runtime validates and copies return data before JSON transport.
 
 It permits `undefined` only for the entire return or top-level ports. Functions, Symbols, BigInt, non-finite numbers, cycles, non-plain objects, nested `undefined`, and sparse arrays are rejected. Transport calls no `toJSON` and does not rely on serialization to discard or convert invalid values. `node.completed` emits only after complete output validation. Its `outputs` is the full final handle-indexed object, or `{}` with no outputs. Each invocation emits one completion event before `node.started` for downstream nodes released at completion.
 
@@ -1051,7 +1086,7 @@ Flow terminal results use `{ kind: 'node-results', nodes }`. `nodes` contains on
 
 ## 10. Code Action contract
 
-The script contract is `open-flow-engine/v5`, with one execution per incoming-edge arrival and cumulative per-node execution limits. v4 and earlier Publications/Runs require republication or a new Run. `context.actions` replaces v1 `context.connector` without aliases. v1-pinned Publications/Runs require their matching Engine; current Server explicitly rejects v1. New Code node Revisions store account mode. Only independent mode stores a node Action allowlist. Deployment Provider Access Bindings or implicit Connector authority remain the final authorization source.
+The script contract is `open-flow-engine/v5`, with dependency joins, repeated loop iterations, and cumulative per-node execution limits. This unreleased change retains the contract and checkpoint version numbers; old development checkpoint shapes are rejected without conversion. v4 and earlier Publications/Runs require republication or a new Run. `context.actions` replaces v1 `context.connector` without aliases. v1-pinned Publications/Runs require their matching Engine; current Server explicitly rejects v1. New Code node Revisions store account mode. Only independent mode stores a node Action allowlist. Deployment Provider Access Bindings or implicit Connector authority remain the final authorization source.
 
 ### Revision and edit operations
 
@@ -1086,9 +1121,9 @@ The operation requires an inline Code Task and an exact `before` match, using ex
 
 ### Script API
 
-Script `context` provides cancellation, logs, progress, Artifacts, network, Connector and other host capabilities, read-only Run identity, and the same `inputs` as the first argument. On demand, `context.getPrevious()` returns the direct predecessor that triggered this invocation as `{ id, name, outputs, outputDefs }`, or `null`. outputs comes from the arrival path snapshot; outputDefs reuses pinned Revision declarations with handle, jsonSchema, nullable, and optional description. Declarations do not guarantee a value was produced.
+Script `context` provides cancellation, logs, progress, Artifacts, network, Connector and other host capabilities, read-only Run identity, and the same `inputs` as the first argument. On demand, `context.getPrevious()` returns an array of the selected direct predecessors as `{ id, name, outputs, outputDefs }`, sorted by node ID and deduplicated by node. Roots return `[]`; single predecessors still return an array. Skipped predecessors are absent. Outputs come from the selected input snapshots; outputDefs reuses pinned Revision declarations with handle, jsonSchema, nullable, and optional description. Declarations do not guarantee a value was produced.
 
-Condition returns empty outputs/outputDefs. Data is copied into isolation only on read; returned values are independent. Example: `const previous = await context.getPrevious(); const value = previous?.outputs.items`. `context` exposes no intermediate output submission, dynamic cross-node Run store, Variable queries, or arbitrary node output queries. Deployments may privately store Run values for scheduling, debugging, and recovery, but cannot expose a second user data channel. Final results and successful completion publish through one event before downstream nodes released at completion start.
+Condition returns empty outputs/outputDefs. Data is copied into isolation only on read; returned values are independent. Example: `const previous = await context.getPrevious(); const values = previous.map(node => node.outputs.items)`. `context` exposes no intermediate output submission, dynamic cross-node Run store, Variable queries, or arbitrary node output queries. Deployments may privately store Run values for scheduling, debugging, and recovery, but cannot expose a second user data channel. Final results and successful completion publish through one event before downstream nodes released at completion start.
 
 Wait pending branches may execute after wait creation.
 

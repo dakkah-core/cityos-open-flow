@@ -382,7 +382,7 @@ export default () => fs.readFileSync('/etc/passwd', 'utf8')`,
           `export default async (_input, context) => ({ available: typeof context.outputs, previous: await context.getPrevious(), value: 1 })`,
         ),
       })
-      equal(value, { available: 'undefined', previous: null, value: 1 }, 'Final Task outputs')
+      equal(value, { available: 'undefined', previous: [], value: 1 }, 'Final Task outputs')
     },
   },
   {

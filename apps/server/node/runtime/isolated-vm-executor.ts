@@ -690,7 +690,7 @@ function executeWithCapabilities(request: InvokeRequest, pending: Map<number, Pe
           request,
           (invocationId, capabilities, kind, payload) =>
             Effect.gen(function* () {
-              if (kind == 'previous') return null
+              if (kind == 'previous') return []
               const response = yield* call({ capabilities, invocationId, kind, payload, type: 'capability' })
               if (!response.ok)
                 return yield* Effect.fail(Object.assign(new Error(response.error ?? 'Capability call failed.'), { schedulerCode: response.code }))

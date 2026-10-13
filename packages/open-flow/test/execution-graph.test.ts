@@ -191,7 +191,7 @@ describe('Execution graph scheduling', () => {
         { source: 'no', target: 'join' },
       ],
     })
-    expect((await prepareFlow(parallel, currentEngineContract)).kind).toBe('prepared')
+    expect((await prepareFlow(parallel, currentEngineContract)).kind).toBe('flow-invalid')
   })
 
   it('restores transitive ancestor values and refuses incomplete checkpoint dependencies', async () => {

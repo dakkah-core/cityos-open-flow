@@ -1,6 +1,9 @@
 import type { RuntimeHarness, RuntimeProgram } from '@oomol-lab/open-flow/runtime-contract'
 
+import { currentFlowModelVersion } from '@oomol-lab/open-flow/flow-change'
+import { prepareFlow } from '@oomol-lab/open-flow/flow-semantics'
 import { runtimeConformanceCases } from '@oomol-lab/open-flow/runtime-contract'
+import * as Effect from 'effect/Effect'
 import { afterAll, describe, expect, it } from 'vitest'
 import { IsolatedVmError, isolatedVmEngineDigest, isolatedVmLimits, IsolatedVmHost } from '../node/runtime/isolated-vm.ts'
 import { childProcessId } from './processTree.ts'
@@ -538,5 +541,84 @@ describe('isolated-vm runtime conformance', () => {
     for (let index = 0; index < 1_000; index += 1) await invoke('export default () => true')
     await expect(invoke('export default () => "retired-and-rebuilt"')).resolves.toBe('retired-and-rebuilt')
     expect(await executorPid()).not.toBe(initialPid)
+  })
+})
+
+it('reads immutable single and merged predecessor arrays through the isolated script bridge', async () => {
+  const port = { handle: 'value', jsonSchema: {}, nullable: true }
+  const prepared = await prepareFlow(
+    {
+      modelVersion: currentFlowModelVersion,
+      modules: {
+        probe: { name: 'Probe', imports: [], source: 'export default async (_, context) => ({ value: await context.getPrevious() })' },
+        sink: {
+          name: 'Sink',
+          imports: [],
+          source: `export default async (input, context) => {
+        const first = await context.getPrevious();
+        first[0].outputs.value = 'mutated';
+        const second = await context.getPrevious();
+        return { value: { root: input.root, previous: second } };
+      }`,
+        },
+      },
+      document: {
+        bindings: {},
+        graph: {
+          nodes: {
+            start: { kind: 'manual', name: 'Start' },
+            probe: { kind: 'task', inputs: {}, task: { moduleId: 'probe', name: 'Probe', inputs: [], outputs: [port] } },
+            left: { kind: 'value', name: 'Left', inputs: {}, values: [{ ...port, value: 1 }] },
+            right: { kind: 'value', name: 'Right', inputs: {}, values: [{ ...port, value: 2 }] },
+            sink: {
+              kind: 'task',
+              inputs: { root: { kind: 'sources', sources: [{ kind: 'node', nodeId: 'probe', output: 'value' }] } },
+              task: { moduleId: 'sink', name: 'Sink', inputs: [{ ...port, handle: 'root' }], outputs: [port] },
+            },
+          },
+          edges: [
+            { source: 'start', target: 'probe' },
+            { source: 'probe', target: 'left' },
+            { source: 'probe', target: 'right' },
+            { source: 'left', target: 'sink' },
+            { source: 'right', target: 'sink' },
+          ],
+        },
+      },
+    },
+    'open-flow-engine/v5',
+  )
+  if (prepared.kind != 'prepared') throw new Error(JSON.stringify(prepared))
+  const outcome = await Effect.runPromise(
+    host.run(prepared.flow, {
+      emit: () => {},
+      flowId: 'predecessors',
+      runId: 'predecessors',
+      trigger: { nodeId: 'start', outputs: {} },
+      capability: async () => {
+        throw new Error('Unexpected capability')
+      },
+      invokeTask: async () => {
+        throw new Error('Unexpected managed task')
+      },
+      projectFailure: (error) => ({ code: 'test', message: String(error) }),
+    }),
+  )
+  expect(outcome).toMatchObject({
+    kind: 'node-results',
+    nodes: [
+      {
+        nodeId: 'sink',
+        outputs: {
+          value: {
+            root: [{ id: 'start', name: 'Start', outputs: {}, outputDefs: [] }],
+            previous: [
+              { id: 'left', name: 'Left', outputs: { value: 1 }, outputDefs: [port] },
+              { id: 'right', name: 'Right', outputs: { value: 2 }, outputDefs: [port] },
+            ],
+          },
+        },
+      },
+    ],
   })
 })

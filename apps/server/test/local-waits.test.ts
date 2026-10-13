@@ -44,10 +44,16 @@ function fixture() {
   )
   const checkpoint: FlowRunCheckpoint = {
     version: 5,
+    dependencies: {
+      nextId: waits.length,
+      iterations: {},
+      nodes: Object.fromEntries(
+        waits.map((wait, id) => [wait.nodeId, { id, status: 'running' as const, jobId: wait.jobId, input: {}, previous: [], released: [], seeded: false }]),
+      ),
+    },
     agents: {},
     results: {},
     counts: {},
-    frames: Object.fromEntries(waits.map((wait) => [wait.jobId, {}])),
     inputs: {},
     bindingValues: {},
     waits: waits.map((wait) => {
@@ -180,7 +186,7 @@ it('releases the same-flow queue after freezing while honoring active worker exc
   expect(f.store.runs.claim()?.runId).toBe(accepted.runId)
 })
 
-it('loads a version 5 checkpoint with the legacy notification field as pending', () => {
+it('rejects a development checkpoint with the retired notification field', () => {
   const f = fixture()
   f.pause()
   const checkpoint = {
@@ -193,7 +199,8 @@ it('loads a version 5 checkpoint with the legacy notification field as pending',
     .run(source, `sha256:${createHash('sha256').update(source).digest('hex')}`, new TextEncoder().encode(source).byteLength, f.runId)
   const recovered = new Store(f.database, () => 1001)
   recovered.runs.resolveWait(f.runId, 'first', 'approve')
-  expect(recovered.runs.claim()?.resume?.checkpoint).toEqual(f.checkpoint)
+  expect(recovered.runViews.run(f.runId)).toMatchObject({ status: 'indeterminate', result: { error: { code: 'execution.resume-unavailable' } } })
+  expect(recovered.runs.claim()).toBeUndefined()
 })
 
 function resolution(action: 'approve' | 'reject', time = 1000, comment: string | null = null) {

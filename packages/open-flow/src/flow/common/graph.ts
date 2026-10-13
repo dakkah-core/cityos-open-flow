@@ -385,18 +385,7 @@ function mappingAvailable(graph: Graph, target: string | undefined, mapping: Inp
   const targetPaths = target == null ? [{}] : (paths.get(target) ?? [])
   // Sources may be absent, but must never overlap on the same execution path.
   for (const [index, routes] of sources.entries()) {
-    for (const [offset, other] of sources.slice(index + 1).entries()) {
-      const leftSource = mapping.sources[index]!
-      const rightSource = mapping.sources[index + offset + 1]!
-      if (
-        target != null &&
-        leftSource.kind == 'node' &&
-        rightSource.kind == 'node' &&
-        leftSource.nodeId != rightSource.nodeId &&
-        !ancestors.get(leftSource.nodeId)?.has(rightSource.nodeId) &&
-        !ancestors.get(rightSource.nodeId)?.has(leftSource.nodeId)
-      )
-        continue
+    for (const other of sources.slice(index + 1)) {
       for (const left of routes) {
         for (const targetRoute of targetPaths) {
           if (!routesCompatible(left, targetRoute)) continue

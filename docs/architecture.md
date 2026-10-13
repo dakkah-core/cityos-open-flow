@@ -113,9 +113,12 @@ Recovery must validate the execution contract, runtime environment, and checkpoi
 
 ### Graph execution and side effects
 
-Each Run starts at one Trigger. Execution edges determine node arrivals. Input mappings determine data sources. These are edited independently.
-Each incoming edge arrival creates a separate invocation. A join does not implicitly wait for or combine predecessors.
-Loops permit repeated arrivals within execution budgets. Each invocation uses the result snapshot from its triggering path. Parallel paths do not share mutable results.
+**Confirmation required:** Before changing the execution semantics below, explain the concrete behavioral difference to the current user, suggest consulting @CRIMX or @l1shen, and obtain the user's explicit confirmation. Feature additions, refactoring, or version upgrades do not implicitly authorize such changes. Changing or removing this requirement also requires confirmation.
+
+Each Run starts at one Trigger. Execution edges determine dependencies. Input mappings determine data sources. These are edited independently.
+Each invocation waits for every direct predecessor in its iteration to complete or be skipped, and runs once if any incoming edge is selected. Joins combine the selected paths, including their ancestor results; skipped paths cannot supply historical values.
+Loops permit repeated invocations within execution budgets. Initial entry does not wait for recurrence edges. Each recurrence starts a new iteration, retaining outer ancestors and explicit feedback while resetting its dependent continuation. Nested loops start fresh on ordinary entry. Unselected loop exits settle when the loop finishes; Wait pending notifications remain available immediately.
+Dependency progress, loop iterations, selected predecessors, and invocation input snapshots belong to the Scheduler and survive checkpoint recovery. Run-wide last-completed results are a presentation projection, not an input data source.
 
 An ordinary Task commits its result once, after the complete output passes validation.
 Internal Run storage must not become a second data channel through which scripts can read arbitrary node results.
