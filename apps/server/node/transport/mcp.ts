@@ -120,6 +120,7 @@ function createServer(service: ServerService, actorId: string, logger: Logger, e
     const { next, page } = control.listFlows(limit, cursor == null ? undefined : decodeFlowCursor(cursor), false, actorId)
     return { ...page, ...(next == null ? {} : { nextCursor: encodeFlowCursor(next) }) }
   })
+  register('flow_canvas', mcpTools.flow_canvas, ({ flowId, command }) => control.broadcastCanvas(flowId, command))
   register('flow_read', mcpTools.flow_read, ({ flowId, ...query }) => control.readAuthoring(flowId, query))
   register('flow_search', mcpTools.flow_search, ({ flowId, ...query }) => control.searchAuthoring(flowId, query))
   register('flow_schema', mcpTools.flow_schema, ({ flowId, ...query }) => {

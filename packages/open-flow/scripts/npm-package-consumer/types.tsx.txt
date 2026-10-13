@@ -1,3 +1,4 @@
+import type { CanvasCommand, CanvasBroadcast } from '@oomol-lab/open-flow/control-api'
 // Compiled against the installed tarball by check-npm-package.ts; this template is not executed.
 import '@oomol-lab/open-flow/preview.css'
 import '@oomol-lab/open-flow/workbench.css'
@@ -218,3 +219,7 @@ export { runFlow } from '@oomol-lab/open-flow/scheduler'
 export { webhookEndpointId } from '@oomol-lab/open-flow/webhook-trigger'
 export { EventSourcesPage } from '@oomol-lab/open-flow/workbench'
 export { verifyWorkbenchHost } from '@oomol-lab/open-flow/workbench-host-conformance'
+
+const canvasCommand: CanvasCommand = { type: 'pan', dx: 200, dy: -100 }
+const canvasResult: Promise<CanvasBroadcast> = new ControlClient(async () => new Response()).broadcastCanvas('flow', canvasCommand)
+void canvasResult

@@ -144,3 +144,18 @@ failed publications do not attach Live. Other publication commands keep their ex
 `runs results` returns the `resultId` of a complete tool result. `runs read-result` supports JSON Pointer and pagination. `runs download-result` writes raw JSON to stdout. Reading an existing result does not call the external tool again.
 
 If a list includes `nextAfter`, pass it to `runs results RUN_ID --after NEXT_AFTER`. If a page includes `nextOffset`, use that value as the next `read-result` offset. Offsets in long strings count Unicode code points.
+
+## Canvas control
+
+Broadcast to every connected, ready Workbench viewing a Flow:
+
+```bash
+oo flow canvas FLOW --input '{"type":"focus","nodeId":"NODE"}' --json
+oo flow canvas FLOW --input '{"type":"zoom","zoom":0.8}' --json
+oo flow canvas FLOW --input '{"type":"pan","dx":200,"dy":-100}' --json
+oo flow canvas FLOW --input '{"type":"fit"}' --json
+```
+
+Flow accepts its ID or unambiguous name. Input also accepts `--input @file`, `--input -`, or `--file path|-`; choose one input source. Zoom is an absolute ratio within 0.1–3. Pan uses screen CSS pixels, positive right/down, and preserves zoom. Fit includes all nodes regardless of selection.
+
+JSON returns `{ version: 1, kind: "flow.canvas", flowId, broadcast: true }`. Success confirms only Server broadcast; it does not confirm an online browser or execution. Commands are not saved, queued for unopened pages, or replayed on reconnect. Missing focus targets and empty canvases are ignored. Remote operations do not save Presentation, select nodes, open inspectors, or change undo history. Later manual viewport changes save normally. Repeating pan moves again; do not automatically retry an uncertain response.

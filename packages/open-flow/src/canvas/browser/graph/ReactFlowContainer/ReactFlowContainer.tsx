@@ -13,6 +13,7 @@ import type {
   OnConnectEnd,
   OnEdgesChange,
   OnInit,
+  OnMove,
   OnMoveEnd,
   OnNodeDrag,
   OnNodesChange,
@@ -62,6 +63,7 @@ import { Button } from '../../../../ui/browser/button.tsx'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '../../../../ui/browser/dropdown-menu.tsx'
 import { IconThemeContext } from '../../../../ui/browser/icons/iconTheme.ts'
 import { TooltipProvider } from '../../../../ui/browser/tooltip.tsx'
+import { canvasMinZoom, canvasMaxZoom } from '../../../common/commands.ts'
 import { CANVAS_CLASSNAME } from '../../base/canvas.ts'
 import { getScriptletType, getSharedBlockPath, getTriggerType, isWithCommentType, isWithConditionType, isWithValueType } from '../../base/dragNDrop.ts'
 import { toManifestHandleName, toManifestNodeId } from '../../base/rfHelpers.ts'
@@ -136,6 +138,7 @@ export interface ReactFlowContainerProps {
   onNodesChange: OnNodesChange<RFNode<any>>
   onEdgesChange: OnEdgesChange<RFEdge<any>>
   onConnect?: OnConnect
+  onMove?: OnMove
   onMoveEnd?: OnMoveEnd
   onNodeDragStop?: OnNodeDrag<RFNode<any>>
   onSelectionChange?: OnSelectionChangeFunc<RFNode<any>, RFEdge<any>>
@@ -674,8 +677,8 @@ const ReactFlowContainerInner = (props: ReactFlowContainerProps) => {
           fitViewOptions={props.fitViewOptions}
           viewport={viewport}
           onViewportChange={onViewportChange}
-          maxZoom={3}
-          minZoom={0.1}
+          maxZoom={canvasMaxZoom}
+          minZoom={canvasMinZoom}
           nodesDraggable={props.nodesDraggable ?? props.editable}
           nodesConnectable={editable && props.onConnect != null}
           onEdgeContextMenu={(event, edge) => (event.preventDefault(), setEdgeContextMenu({ edge, event }))}
@@ -690,6 +693,7 @@ const ReactFlowContainerInner = (props: ReactFlowContainerProps) => {
           onConnect={editable ? props.onConnect : undefined}
           onDragOver={editable && (props.onAddNode != null || props.onDropAddItem != null) ? handleDragOver : undefined}
           onDrop={editable && (props.onAddNode != null || props.onDropAddItem != null) ? onDrop : undefined}
+          onMove={props.onMove}
           onMoveEnd={props.onMoveEnd}
           onNodeDragStop={props.onNodeDragStop}
           onSelectionChange={props.onSelectionChange}

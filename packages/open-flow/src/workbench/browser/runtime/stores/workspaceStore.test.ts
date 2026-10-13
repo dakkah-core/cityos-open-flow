@@ -1097,3 +1097,42 @@ it.each(['unchanged', 'resolved', 'failed'] as const)('retains diagnostics throu
     store.dispose()
   }
 })
+
+it('delivers canvas commands in order only while the selected Flow is ready, without writes', async () => {
+  let listener: ((event?: FlowChangeEvent) => void) | undefined
+  const request = vi.fn(async (path: string) => {
+    if (path.endsWith('/editor')) return Response.json(editor)
+    if (path.endsWith('/check')) return checked(draft.revisionId)
+    throw new Error(path)
+  })
+  const store = new WorkspaceStore(
+    new WorkbenchClient(request, (_id, changed) => {
+      listener = changed
+      return { ready: Promise.resolve(), stop() {} }
+    }),
+    vi.fn(),
+  )
+  const execute = vi.fn()
+  const stop = store.subscribeCanvasCommands(execute)
+  const command = { type: 'pan', dx: 10, dy: -20 } as const
+  const event = { version: 1, flowId: flow.flowId, kind: 'canvas.command', command } as const
+  try {
+    const loading = store.selectFlow(flow.flowId)
+    listener?.(event)
+    expect(execute).not.toHaveBeenCalled()
+    await loading
+    listener?.(event)
+    listener?.(event)
+    expect(execute.mock.calls).toEqual([[command], [command]])
+    expect(request.mock.calls.every(([path]) => path.endsWith('/editor') || path.endsWith('/check'))).toBe(true)
+    stop()
+    listener?.(event)
+    expect(execute).toHaveBeenCalledTimes(2)
+    store.subscribeCanvasCommands(execute)
+    await store.selectFlow(undefined)
+    listener?.(event)
+    expect(execute).toHaveBeenCalledTimes(2)
+  } finally {
+    store.dispose()
+  }
+})

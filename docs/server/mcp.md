@@ -103,6 +103,19 @@ Reverse proxies should preserve `/v1/mcp`, Authorization, Accept, Content-Type, 
 | `trigger_search`               | `query?`                                                                                   | Provider Trigger keys.                                                  |
 | `trigger_get`                  | `key`                                                                                      | Provider Trigger definition.                                            |
 
+### Canvas control
+
+`flow_canvas({ flowId, command })` broadcasts a transient command to all connected Workbenches viewing that Flow:
+
+- `{ "type": "focus", "nodeId": "NODE_ID" }` uses the canvas's existing node focus behavior without selecting the node or opening its inspector.
+- `{ "type": "zoom", "zoom": 0.8 }` sets an absolute zoom ratio in the range 0.1–3.
+- `{ "type": "pan", "dx": 200, "dy": -100 }` moves the viewport in screen CSS pixels. Positive values move right/down; zoom is preserved.
+- `{ "type": "fit" }` fits all nodes regardless of selection. Empty canvases and absent focus targets are ignored.
+
+The result is `{ version: 1, flowId, broadcast: true }`. Success confirms only Server broadcast, including when no browser is connected; it does not confirm delivery or execution. There are no sessions, receipts, offline queues, or reconnect replay. Commands received before the canvas is ready are dropped. Every ready page uses its own viewport and dimensions.
+
+These commands change only local viewport state, without saving Presentation or changing selection, Flow content, or undo history. Subsequent manual viewport changes retain normal saving behavior. Commands are not idempotent: retrying `pan` moves again. Do not automatically retry after an uncertain response.
+
 All tools reject undeclared top-level parameters. Flow, Run, and event lists accept `limit` from 1–100, default 50. Event `after` defaults to 0. Flow and Run cursors match Control API; a Run cursor is bound to its Flow. `run_list.status` accepts `queued`, `starting`, `running`, `waiting`, `completed`, `failed`, `canceled`, and `indeterminate`. `pendingWait: true` selects Runs with unresolved Waits, including running and queued Runs. Event retention and terminal result rules match Control API.
 
 `run_results` returns up to 50 items per page. Pass `nextAfter` unchanged as the next `after`. `run_result_read` shares Control API result query rules: `pointer` defaults to an empty string (root) and permits up to 4096 characters; `offset` defaults to 0; `limit` defaults to 20 with range 1–100; `maxBytes` defaults to 15000 with range 1–1048576. Use `nextOffset` to read the next page at the same pointer. A value with `complete: true` contains the full value at that path.

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { Val } from 'value-enhancer'
 import type { GroupDividerDef } from '../../../../schema/index.ts'
+import type { CanvasCommandSubscriber } from '../../../common/commands.ts'
 import type { InteractiveMode } from '../../stores/canvas/canvas.store.ts'
 
 export interface FlowCanvasViewSource {
@@ -222,6 +223,7 @@ export interface FlowCanvasViewProps {
   /** Allows session-local movement independently of content editing. Defaults to editable. */
   readonly nodesDraggable?: boolean
   readonly fitView?: boolean
+  readonly subscribeCanvasCommands?: CanvasCommandSubscriber
   readonly focusNodeRequest?: {
     readonly nodeId: string
     readonly requestId: number

@@ -1,5 +1,6 @@
 import type { FlowCatalogEvent, FlowChangeEvent, WorkbenchHost, WorkbenchNotification } from '@oomol-lab/open-flow/workbench'
 
+import { canvasCommandSchema } from '@oomol-lab/open-flow/control-requests'
 import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 
@@ -130,8 +131,10 @@ function decodeCatalogEvent(value: unknown): FlowCatalogEvent | undefined {
 }
 
 function decodeFlowEvent(value: unknown): FlowChangeEvent | undefined {
+  if (value == null || typeof value != 'object') return
   const event = value as Partial<FlowChangeEvent>
   if (event.version != 1 || typeof event.flowId != 'string') return
+  if (event.kind == 'canvas.command' && canvasCommandSchema.safeParse(event.command).success) return event as FlowChangeEvent
   if (event.kind == 'access.changed' && typeof event.accessRevision == 'number' && Number.isSafeInteger(event.accessRevision) && event.accessRevision >= 0)
     return event as FlowChangeEvent
   if (event.kind == 'draft.changed' && typeof event.revisionId == 'string') return event as FlowChangeEvent

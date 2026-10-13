@@ -1,6 +1,7 @@
 import type { JsonValue } from '../../flow/common/change.ts'
 
 import { z } from 'zod'
+import { canvasCommandSchema } from '../../canvas/common/commands.ts'
 import { runStatuses } from '../../execution/common/runLifecycle.ts'
 import { waitCommentSchema } from '../../execution/common/wait.ts'
 import { resourceNameIssue } from '../../flow/common/change.ts'
@@ -21,13 +22,13 @@ export const mcpInstructions =
   'Use flow_publish to publish a fixed Revision, then poll flow_publish_status until succeeded or failed. Use flow_live to inspect current online entries after publication. Use flow_set_enabled to enable or disable the observed Live publication. ' +
   'flow_run returns an accepted Run, not its final result. Find Runs with run_list, poll run_get and use run_result after terminal. Resolve a waiting Run only with an explicit run_resolve_wait action allowed by run_get. ' +
   'Use run_results and run_result_read to inspect stored Agent tool results; these are separate from the terminal Run result. ' +
-  'Retry flow_edit with identical arguments and the same requestId. Retry flow_create, flow_import, flow_publish and flow_run only with identical arguments and the same idempotencyKey; a new key can execute the Flow again. Other mutations use the same resource identity and arguments when retrying. Cancel a Run explicitly with run_cancel. ' +
+  'Retry flow_edit with identical arguments and the same requestId. Retry flow_create, flow_import, flow_publish and flow_run only with identical arguments and the same idempotencyKey; a new key can execute the Flow again. Canvas commands are transient broadcasts without execution confirmation; never automatically retry flow_canvas because pan is relative. Other mutations use the same resource identity and arguments when retrying. Cancel a Run explicitly with run_cancel. ' +
   'Use nextCursor and nextAfter to read subsequent pages. Connector-backed deployments may require a Team; inspect connector_teams before creating a Flow.'
 
-function tool<Args>(description: string, schema: z.ZodType<Args>, readOnly: boolean) {
+function tool<Args>(description: string, schema: z.ZodType<Args>, readOnly: boolean, idempotent = true) {
   return {
     description,
-    annotations: { readOnlyHint: readOnly, destructiveHint: !readOnly, idempotentHint: true, openWorldHint: true },
+    annotations: { readOnlyHint: readOnly, destructiveHint: !readOnly, idempotentHint: idempotent, openWorldHint: true },
     inputSchema: {
       '~standard': {
         version: 1 as const,
@@ -48,6 +49,12 @@ function tool<Args>(description: string, schema: z.ZodType<Args>, readOnly: bool
 }
 
 export const mcpTools = {
+  flow_canvas: tool(
+    'Broadcast a transient canvas command to connected Workbenches viewing this Flow. Success only confirms Server broadcast, not delivery or execution. No replay, session selection or Presentation save. Pan uses screen pixels (positive right/down); zoom is an absolute ratio (0.1–3); fit includes all nodes. Repeating pan moves again.',
+    z.strictObject({ flowId: flow, command: canvasCommandSchema }),
+    false,
+    false,
+  ),
   flow_live: tool(
     'Read the current published Flow, enablement and online entries, including Webhook URLs and request fields. Draft changes do not affect this view. An unpublished Flow returns not-published with no entries.',
     z.strictObject({ flowId: flow }),

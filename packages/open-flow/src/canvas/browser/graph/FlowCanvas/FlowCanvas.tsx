@@ -1,4 +1,4 @@
-import type { IsValidConnection, OnMoveEnd, OnNodeDrag, OnSelectionChangeFunc, Edge as RFEdge, Node as RFNode } from '@xyflow/react'
+import type { IsValidConnection, OnMove, OnMoveEnd, OnNodeDrag, OnSelectionChangeFunc, Edge as RFEdge, Node as RFNode } from '@xyflow/react'
 import type { CanvasStore } from '../../stores/canvas/canvas.store.ts'
 import type { ReactFlowContainerProps } from '../ReactFlowContainer/ReactFlowContainer.tsx'
 import type { FlowCanvasViewProps } from './model.ts'
@@ -33,6 +33,7 @@ export interface FlowCanvasProps {
   className?: string
   addNodeRequest?: ReactFlowContainerProps['addNodeRequest']
   addItemRequest?: ReactFlowContainerProps['addItemRequest']
+  onMove?: OnMove
   onMoveEnd?: OnMoveEnd
   onNodeDragStop?: OnNodeDrag<RFNode<any>>
   onSelectionChange?: OnSelectionChangeFunc<RFNode<any>, RFEdge<any>>
@@ -61,6 +62,7 @@ export const FlowCanvas: React.FC<FlowCanvasProps> = ({
   className,
   addNodeRequest,
   addItemRequest,
+  onMove,
   onMoveEnd,
   onNodeDragStop,
   onSelectionChange,
@@ -106,6 +108,7 @@ export const FlowCanvas: React.FC<FlowCanvasProps> = ({
             onNodesChange={flowCanvasStore.handleNodesChange}
             onEdgesChange={flowCanvasStore.handleEdgesChange}
             onConnect={flowCanvasStore.onRFConnect}
+            onMove={onMove}
             onMoveEnd={onMoveEnd}
             onNodeDragStop={onNodeDragStop}
             onSelectionChange={onSelectionChange}

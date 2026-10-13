@@ -38,6 +38,7 @@ interface Props {
   readonly disabled: boolean
   readonly interactiveMode$?: FlowCanvasViewProps['interactiveMode$']
   readonly theme: WorkbenchTheme
+  readonly subscribeCanvasCommands?: FlowCanvasViewProps['subscribeCanvasCommands']
   readonly focusNodeRequest?: {
     readonly nodeId: string
     readonly requestId: number
@@ -100,6 +101,7 @@ export const WorkbenchCanvas = forwardRef<WorkbenchCanvasHandle, Props>(function
     onDuplicate,
     onMoveNodes,
     onMoveViewport,
+    subscribeCanvasCommands,
     onPaste,
     provideAddNodeOptions,
     onSelectNodes,
@@ -366,6 +368,7 @@ export const WorkbenchCanvas = forwardRef<WorkbenchCanvasHandle, Props>(function
         }}
         onMoveNodes={onMoveNodes}
         onMoveViewport={onMoveViewport}
+        subscribeCanvasCommands={subscribeCanvasCommands}
         onCopy={(nodeIds) => {
           onSelectNodes(nodeIds)
           onCopy()

@@ -530,6 +530,7 @@ export function FlowEditor({
         }}
         addNodeOptions={addNodeOptions}
         disabled={authoringDisabled}
+        subscribeCanvasCommands={store.workspace.subscribeCanvasCommands}
         focusNodeRequest={diagnosticFocus ?? nodeFocus}
         inspectorOpen={contextPanelVisible}
         model={designer}

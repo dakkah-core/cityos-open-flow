@@ -1,10 +1,11 @@
-import type { IsValidConnection, OnMoveEnd, OnNodeDrag, OnSelectionChangeFunc, Edge as RFEdge, Node as RFNode } from '@xyflow/react'
+import type { IsValidConnection, OnMove, OnMoveEnd, OnNodeDrag, OnSelectionChangeFunc, Edge as RFEdge, Node as RFNode } from '@xyflow/react'
 import type { ReactElement } from 'react'
 import type { RFHandleName, RFNodeId } from '../../base/rfHelpers.ts'
 import type { NodeStore } from '../../stores/node/node.store.ts'
 import type { FlowCanvasViewPosition, FlowCanvasViewProps, ViewCallbacks } from './model.ts'
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { isSameViewport } from '../../base/compare.ts'
 import { toManifestHandleName, toManifestNodeId } from '../../base/rfHelpers.ts'
 import { CanvasStore } from '../../stores/canvas/canvas.store.ts'
 import { CommentNodeStore } from '../../stores/node/commentNode.store.ts'
@@ -37,7 +38,30 @@ export function FlowCanvasView(props: FlowCanvasViewProps): ReactElement {
   const selectedEdge = useRef<string>()
   propsRef.current = props
 
-  const onMoveEnd = useCallback<OnMoveEnd>((_, viewport) => propsRef.current.onMoveViewport(viewport), [store])
+  const lastMove = useRef<{ viewport: Parameters<OnMove>[1]; remote: boolean }>()
+  const onMove = useCallback<OnMove>(
+    (_, viewport) => {
+      lastMove.current = { viewport, remote: store.rfCommand.remoteViewportChange }
+    },
+    [store],
+  )
+  const onMoveEnd = useCallback<OnMoveEnd>(
+    (_, viewport) => {
+      // React Flow defers and coalesces end events. Use the movement's source,
+      // not whether an asynchronous command happens to still be running.
+      const move = lastMove.current
+      if (move != null && (move.remote || !isSameViewport(move.viewport, viewport))) return
+      propsRef.current.onMoveViewport(viewport)
+    },
+    [store],
+  )
+  useEffect(
+    () =>
+      props.subscribeCanvasCommands?.((command) => {
+        void store.rfCommand.executeRemote(command).catch((error) => console.error('Failed to execute canvas command.', error))
+      }),
+    [store, props.subscribeCanvasCommands],
+  )
   const onNodeDragStop = useCallback<OnNodeDrag<RFNode<any>>>(
     (_, node, nodes) => {
       const moved = nodes.length > 0 ? nodes : [node]
@@ -123,6 +147,7 @@ export function FlowCanvasView(props: FlowCanvasViewProps): ReactElement {
       isValidConnection={isValidConnection}
       key={props.identity}
       layoutMotion={props.layoutMotion}
+      onMove={onMove}
       onMoveEnd={onMoveEnd}
       onNodeDragStop={onNodeDragStop}
       onDropAddItem={onDropAddItem}

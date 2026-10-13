@@ -1,3 +1,4 @@
+import type { CanvasCommand } from '../../../canvas/common/commands.ts'
 import type { ConditionalResult, Presentation } from '../../../control/common/api.ts'
 import type { JsonValue } from '../../../flow/common/change.ts'
 import type { FlowCatalogEvent, FlowChangeEvent, WorkbenchHost } from './contract.ts'
@@ -122,11 +123,13 @@ export class WorkbenchClient extends ControlClient {
     changed: (revisionId?: string) => void,
     runChanged: (event: Extract<FlowChangeEvent, { readonly kind: 'run.changed' | 'run.created' }>) => void = () => {},
     accessChanged: (accessRevision: number) => void = () => {},
+    canvasCommand: (command: CanvasCommand) => void = () => {},
   ): ReturnType<FlowSubscriber> {
     return this.subscribeFlow(flowId, (event?: FlowChangeEvent) => {
       if (event == null) changed()
       else if (event.kind == 'draft.changed') changed(event.revisionId)
       else if (event.kind == 'access.changed') accessChanged(event.accessRevision)
+      else if (event.kind == 'canvas.command') canvasCommand(event.command)
       else runChanged(event)
     })
   }

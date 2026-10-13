@@ -1,3 +1,5 @@
+import { canvasCommandSchema } from '../../canvas/common/commands.ts'
+export { canvasCommandSchema } from '../../canvas/common/commands.ts'
 import { authoringRequestSchema, authoringReadSchema, authoringSearchSchema, authoringSchemaQuery, authoringCheckSchema } from './authoringSchema.ts'
 export * from './authoring.ts'
 import type { JsonValue } from '../../flow/common/change.ts'
@@ -19,6 +21,7 @@ const flowName = id.refine((value) => value == value.trim() && resourceNameIssue
 const inputs = z.record(z.string(), z.record(z.string(), json))
 const trigger = z.strictObject({ nodeId: id, outputs: z.record(z.string(), json) })
 const schemas = {
+  canvas: z.strictObject({ command: canvasCommandSchema, version }),
   authoringCheck: authoringCheckSchema,
   authoringEdit: authoringRequestSchema,
   authoringRead: authoringReadSchema,
@@ -63,6 +66,7 @@ function decoder<Value>(schema: z.ZodType<Value>): (value: unknown) => Value {
 }
 
 export const controlRequests = {
+  canvas: decoder(schemas.canvas),
   authoringCheck: decoder(schemas.authoringCheck),
   authoringEdit: decoder(schemas.authoringEdit),
   authoringRead: decoder(schemas.authoringRead),

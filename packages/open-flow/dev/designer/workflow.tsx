@@ -1,4 +1,5 @@
 import type { FlowCanvasViewModel, FlowCanvasViewProps } from '../../src/canvas/browser/graph/FlowCanvas/model.ts'
+import type { CanvasCommand, CanvasCommandSubscriber } from '../../src/canvas/common/commands.ts'
 import type { UiLanguage } from '../../src/localization/common/languages.ts'
 import type { Draft } from '../../src/workbench/browser/runtime/api.ts'
 import type { CanvasNodePickerRequest } from '../../src/workbench/browser/runtime/editor/nodePickerPopover.tsx'
@@ -269,14 +270,31 @@ function WorkflowStory({
   model,
   initialSelectedNodeId = 'task',
   picker = false,
+  remoteCommands = false,
 }: {
   readonly dark: boolean
   readonly language: UiLanguage
   readonly log: LogAction
   readonly model: FlowCanvasViewModel
   readonly initialSelectedNodeId?: string
+  readonly remoteCommands?: boolean
   readonly picker?: boolean
 }) {
+  const remote = useMemo(() => {
+    const listeners = new Set<(command: CanvasCommand) => void>()
+    const subscribe: CanvasCommandSubscriber = (execute) => {
+      listeners.add(execute)
+      return () => {
+        listeners.delete(execute)
+      }
+    }
+    return {
+      subscribe,
+      send: (command: CanvasCommand) => {
+        for (const execute of listeners) execute(command)
+      },
+    }
+  }, [])
   const i18n = useMemo(() => createI18n(language), [language])
   const triggers = model.nodes.filter((node) => node.kind === 'trigger')
   const [selectedTriggerId, setSelectedTriggerId] = useState(triggers[0]?.id ?? '')
@@ -289,6 +307,21 @@ function WorkflowStory({
   const { ignoredNodeIds, onIgnoreNodes } = useIgnoredNodes(String(version))
   const [selected, setSelected] = useState<readonly string[]>([initialSelectedNodeId])
   useStoryActions([
+    ...(remoteCommands
+      ? [
+          { label: 'Focus last node', onClick: () => remote.send({ type: 'focus', nodeId: model.nodes.at(-1)!.id }) },
+          { label: 'Zoom 80%', onClick: () => remote.send({ type: 'zoom', zoom: 0.8 }) },
+          { label: 'Pan right / up', onClick: () => remote.send({ type: 'pan', dx: 200, dy: -100 }) },
+          { label: 'Fit all nodes', onClick: () => remote.send({ type: 'fit' }) },
+          {
+            label: 'Two consecutive pans',
+            onClick: () => {
+              remote.send({ type: 'pan', dx: 100, dy: 0 })
+              remote.send({ type: 'pan', dx: 100, dy: 0 })
+            },
+          },
+        ]
+      : []),
     { label: editable ? 'Switch to read-only' : 'Enable editing', onClick: () => setEditable((value) => !value) },
     {
       label: 'Reset samples',
@@ -324,6 +357,7 @@ function WorkflowStory({
             />
           )}
           <FlowCanvasView
+            subscribeCanvasCommands={remoteCommands ? remote.subscribe : undefined}
             onRequestAddNode={setPickerRequest}
             ignoredNodeIds={ignoredNodeIds}
             onIgnoreNodes={onIgnoreNodes}
@@ -407,6 +441,17 @@ const edgeColors: FlowCanvasViewModel = {
 }
 
 export const workflowStories: readonly FrontendStory[] = [
+  {
+    group: 'Workbench',
+    id: 'canvas-commands',
+    title: 'Remote canvas commands',
+    description:
+      'Commands use the production canvas and affect only its viewport. Fit includes every node even with a selection. Remote commands should not log viewport saves; manual pan and zoom still do. Consecutive pans must accumulate. Reset samples remounts without replaying commands.',
+    standalone: true,
+    render: (log, dark, language) => (
+      <WorkflowStory dark={dark} language={language} log={log} model={longChainModel} initialSelectedNodeId="step-1" remoteCommands />
+    ),
+  },
   {
     group: 'Workbench',
     id: 'wrapped-layout',

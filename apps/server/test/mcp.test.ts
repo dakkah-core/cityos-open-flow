@@ -21,6 +21,59 @@ const token = 'mcp-test-operator-token-000000000001'
 const version = '2026-07-28'
 const start = { kind: 'graph.node.create', nodeId: 'start', node: { kind: 'manual', name: 'Start' } }
 
+it('broadcasts REST and MCP canvas commands to every subscriber of only the authorized Flow', async () => {
+  const { call, control, service, app, client } = await fixture()
+  const flow = await control.createFlow('Canvas')
+  const other = await control.createFlow('Other')
+  const first = vi.fn(),
+    second = vi.fn(),
+    unrelated = vi.fn()
+  const stops = [service.subscribeFlow(flow.flowId, first), service.subscribeFlow(flow.flowId, second), service.subscribeFlow(other.flowId, unrelated)]
+  const presentation = await control.getPresentation(flow.flowId)
+  const expected = { version: 1, flowId: flow.flowId, broadcast: true }
+  for (const command of [{ type: 'focus', nodeId: 'node' }, { type: 'zoom', zoom: 0.8 }, { type: 'pan', dx: -200, dy: 100 }, { type: 'fit' }] as const) {
+    expect(await control.broadcastCanvas(flow.flowId, command)).toEqual(expected)
+    expect(await call('flow_canvas', { flowId: flow.flowId, command })).toEqual(expected)
+    expect(first).toHaveBeenLastCalledWith({ version: 1, flowId: flow.flowId, kind: 'canvas.command', command })
+    expect(second.mock.calls).toEqual(first.mock.calls)
+  }
+  expect(first).toHaveBeenCalledTimes(8)
+  expect(unrelated).not.toHaveBeenCalled()
+  expect(await control.getPresentation(flow.flowId)).toEqual(presentation)
+  expect((await control.getFlow(flow.flowId)).draftRevisionId).toBe(flow.draftRevisionId)
+  const catalog = await client.listTools()
+  expect(catalog.tools.find((tool) => tool.name == 'flow_canvas')?.annotations?.idempotentHint).toBe(false)
+  for (const command of [
+    { type: 'zoom', zoom: 4 },
+    { type: 'pan', dx: 1 },
+    { type: 'fit', extra: true },
+  ]) {
+    const response = await app.request(`/v1/flows/${flow.flowId}/canvas`, {
+      method: 'POST',
+      headers: { 'authorization': `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ version: 1, command }),
+    })
+    expect(response.status).toBe(400)
+    expect((await client.callTool({ name: 'flow_canvas', arguments: { flowId: flow.flowId, command } })).isError).toBe(true)
+  }
+  const denied = createServerApp(service, { resolveControlActor: () => 'someone-else' })
+  expect(
+    (
+      await denied.request(`/v1/flows/${flow.flowId}/canvas`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ version: 1, command: { type: 'fit' } }),
+      })
+    ).status,
+  ).toBe(404)
+  expect(first).toHaveBeenCalledTimes(8)
+  stops.forEach((stop) => stop())
+  expect(await call('flow_canvas', { flowId: flow.flowId, command: { type: 'fit' } })).toEqual(expected)
+  const reconnected = vi.fn()
+  service.subscribeFlow(flow.flowId, reconnected)()
+  expect(reconnected).not.toHaveBeenCalled()
+})
+
 it('keeps retained Trigger activity history readable and paginated after removing individual controls', async () => {
   const { control, service, file } = await fixture()
   const flow = await control.createFlow('Activity history')

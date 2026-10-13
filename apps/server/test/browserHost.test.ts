@@ -329,3 +329,28 @@ it('satisfies the public Workbench host lifecycle contract', async () => {
     vi.useRealTimers()
   }
 })
+
+it('dispatches each valid canvas command from SSE while ignoring malformed commands', async () => {
+  const command = { type: 'pan', dx: 10, dy: -20 }
+  const event = { version: 1, kind: 'canvas.command', flowId: 'main', command }
+  const invalid = { ...event, command: { type: 'zoom', zoom: 99 } }
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response([invalid, event, event].map((value) => `data: ${JSON.stringify(value)}\n\n`).join(''))),
+  )
+  const events: FlowChangeEvent[] = []
+  let subscription: { stop(): void } | undefined
+  await new Promise<void>((resolve) => {
+    subscription = createBrowserHost(
+      () => {},
+      () => {},
+    ).subscribeFlow('main', (value) => {
+      if (value != null) events.push(value)
+      if (events.length == 2) {
+        subscription?.stop()
+        resolve()
+      }
+    })
+  })
+  expect(events).toEqual([event, event])
+})

@@ -93,6 +93,12 @@ export function createControlApp(service: ControlService, resolveActor?: Resolve
     })
   }
 
+  app.post('/flows/:flowId/canvas', async (context) => {
+    query(context.req.raw, [], controlErrorCode.flowInvalid)
+    const body = await decodeRequest(context.req.raw, controlErrorCode.flowInvalid, controlRequests.canvas)
+    return response(200, service.broadcastCanvas(context.req.param('flowId'), body.command))
+  })
+
   const administrator = async (context: Context<Environment>, next: Next): Promise<void> => {
     service.requireAdmin(context.get('actorId'))
     await next()

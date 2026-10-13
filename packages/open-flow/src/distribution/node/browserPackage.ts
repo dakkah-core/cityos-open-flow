@@ -260,7 +260,11 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
       .replaceAll("'../../../control/common/flowNotifications.ts'", "'./flow-notifications.js'")
       .replaceAll("'../../../localization/common/languages.ts'", "'../common/localization.js'")
     const localizationDeclaration = await readFile(path.join(declarationRoot, 'localization/common/languages.d.ts'), 'utf8')
-    const flowNotificationsDeclaration = await readFile(path.join(declarationRoot, 'control/common/flowNotifications.d.ts'), 'utf8')
+    const flowNotificationsDeclaration = (await readFile(path.join(declarationRoot, 'control/common/flowNotifications.d.ts'), 'utf8')).replaceAll(
+      "'../../canvas/common/commands.ts'",
+      "'../common/canvas-commands.js'",
+    )
+    const canvasCommandsDeclaration = await readFile(path.join(declarationRoot, 'canvas/common/commands.d.ts'), 'utf8')
     const flowAuthoringDeclaration = (await readFile(path.join(declarationRoot, 'flow/common/authoring.d.ts'), 'utf8'))
       .replaceAll("'./edgeChanges.ts'", "'./flow-authoring-edge.js'")
       .replaceAll("'./moduleChanges.ts'", "'./flow-authoring-module.js'")
@@ -322,6 +326,7 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
       }),
     )
     const controlApiDeclaration = (await readFile(path.join(declarationRoot, 'control/common/api.d.ts'), 'utf8'))
+      .replaceAll("'../../canvas/common/commands.ts'", "'./canvas-commands.js'")
       .replaceAll("'../../flow/common/workflowFile.ts'", "'./flow-workflowFile.js'")
       .replaceAll("'../../flow/common/semantics.ts'", "'./flow-semantics.js'")
       .replaceAll("'./providerIconSprite.ts'", "'./providerIconSprite.js'")
@@ -473,6 +478,7 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
       writeFile(
         path.join(commonOutputPath, 'control-requests.d.ts'),
         (await readFile(path.join(declarationRoot, 'control/common/requests.d.ts'), 'utf8'))
+          .replaceAll("'../../canvas/common/commands.ts'", "'./canvas-commands.js'")
           .replaceAll("'./draftOperations.ts'", "'./draftOperations.js'")
           .replaceAll("'./authoring.ts'", "'./authoring.js'")
           .replaceAll("'./authoringSchema.ts'", "'./authoringSchema.js'")
@@ -509,6 +515,7 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
       ),
       writeFile(path.join(commonOutputPath, 'control-api-errors.d.ts'), controlApiErrorsDeclaration),
       writeFile(path.join(commonOutputPath, 'flow-notifications.d.ts'), flowNotificationsDeclaration),
+      writeFile(path.join(commonOutputPath, 'canvas-commands.d.ts'), canvasCommandsDeclaration),
       writeFile(path.join(commonOutputPath, 'control-api-conformance.d.ts'), controlApiConformanceDeclaration),
       writeFile(path.join(commonOutputPath, 'cron-trigger.d.ts'), cronTriggerDeclaration),
       writeFile(

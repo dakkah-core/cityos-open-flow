@@ -1,10 +1,12 @@
 import type { UiLanguage } from '@oomol-lab/open-flow/localization'
 
+import { canvasCommandSchema } from '@oomol-lab/open-flow/control-requests'
 import { currentFlowModelVersion } from '@oomol-lab/open-flow/flow-change'
 import { uiLanguages } from '@oomol-lab/open-flow/localization'
 import { describe, expect, it, vi } from 'vitest'
 import { parseArguments } from './arguments.ts'
 import { runCli } from './cli.ts'
+import { commandContract } from './commands.ts'
 import { locales } from './i18n.ts'
 
 /** Reads one help message straight from the locale bundle the CLI ships. */
@@ -50,6 +52,62 @@ function runtime(language: UiLanguage = 'en') {
 }
 
 describe('CLI', () => {
+  it.each([{ type: 'focus', nodeId: 'node' }, { type: 'zoom', zoom: 0.8 }, { type: 'pan', dx: -200, dy: 100 }, { type: 'fit' }])(
+    'broadcasts canvas commands through the shared API: %j',
+    async (command) => {
+      for (const input of [
+        ['--input', JSON.stringify(command)],
+        ['--file', 'command.json'],
+        ['--input', '-'],
+      ]) {
+        const output = runtime()
+        const request = vi.fn(async (path: string, init?: RequestInit) => {
+          if (path == '/v1/flows?limit=100') return Response.json({ flows: [flow], version: 1 })
+          if (path == '/v1/flows/Main') return Response.json({ version: 1, error: { code: 'flow.not-found', message: 'Not found' } }, { status: 404 })
+          if (path == `/v1/flows/${flow.flowId}`) return Response.json(flow)
+          expect(path).toBe(`/v1/flows/${flow.flowId}/canvas`)
+          expect(init?.method).toBe('POST')
+          expect(new Headers(init?.headers).has('idempotency-key')).toBe(false)
+          expect(JSON.parse(String(init?.body))).toEqual({ version: 1, command })
+          return Response.json({ version: 1, flowId: flow.flowId, broadcast: true })
+        })
+        expect(
+          await runCli(
+            ['canvas', 'Main', ...input, '--json'],
+            { request },
+            {
+              ...output.value,
+              readFile: async () => JSON.stringify(command),
+              readStdin: async () => JSON.stringify(command),
+            },
+          ),
+        ).toBe(0)
+        expect(JSON.parse(output.stdout())).toEqual({ version: 1, flowId: flow.flowId, broadcast: true, kind: 'flow.canvas' })
+      }
+    },
+  )
+
+  it('discovers the canvas request and guidance through the ordinary command contract', async () => {
+    const contract = commandContract('canvas')!
+    for (const example of contract.examples) expect(canvasCommandSchema.safeParse(example).success).toBe(true)
+    const output = runtime()
+    const request = vi.fn()
+    expect(await runCli(['canvas', '--help', '--json'], { request }, output.value)).toBe(0)
+    const help = JSON.parse(output.stdout())
+    expect(help.request).toEqual(contract.request)
+    expect(help.notes).toContain(contract.guidance)
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('rejects missing or invalid canvas inputs before contacting the server', async () => {
+    for (const input of [[], ['--input', '{"type":"zoom","zoom":4}'], ['--input', '{"type":"fit","extra":1}'], ['--file', 'a', '--input', '{}']]) {
+      const output = runtime()
+      const request = vi.fn()
+      expect(await runCli(['canvas', 'Main', ...input, '--json'], { request }, output.value)).toBe(1)
+      expect(request).not.toHaveBeenCalled()
+    }
+  })
+
   it('uses the host command prefix in help, examples and usage errors without contacting the Server', async () => {
     const request = vi.fn()
     for (const args of [

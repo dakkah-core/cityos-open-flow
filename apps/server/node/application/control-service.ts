@@ -1,3 +1,4 @@
+import type { CanvasCommand, CanvasBroadcast } from '@oomol-lab/open-flow/control-api'
 import type { CreateEventSource, UpdateEventSource } from '@oomol-lab/open-flow/control-api'
 import type {
   ConnectorAction,
@@ -154,6 +155,12 @@ export class ControlService {
     this.connectorAccess = connectorAccess
     this.resolveConnectorConsoleOrigin = resolveConnectorConsoleOrigin
     this.resolveConnectorTeam = resolveConnectorTeam
+  }
+
+  broadcastCanvas(flowId: string, command: CanvasCommand): CanvasBroadcast {
+    this.getFlow(flowId)
+    this.flowChanged({ kind: 'canvas.command', flowId, command, version: 1 })
+    return { version: 1, flowId, broadcast: true }
   }
 
   requireAdmin(actorId: string): void {

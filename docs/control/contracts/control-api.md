@@ -893,6 +893,7 @@ type FlowCatalogEvent =
   | { kind: 'flow.created'; flowId: string; version: 1 }
 
 type FlowChangeEvent =
+  | { flowId: string; kind: 'canvas.command'; command: CanvasCommand; version: 1 }
   | { flowId: string; kind: 'draft.changed'; revisionId: string; version: 1 }
   | { flowId: string; kind: 'run.created'; runId: string; version: 1 }
   | { flowId: string; kind: 'run.changed'; runId: string; version: 1 }
@@ -902,7 +903,7 @@ type FlowChangeEvent =
 
 Flow editors still read initial state after their Flow’s `ready` settles. Hosts must resolve `ready` on initial failure, timeout, or unsubscription. `stop()` closes connections, cancels retries, and prevents later callbacks. `undefined` means reconnection after initial waiting ends, including the first success after failure/timeout, and requires refetch. Do not drop invalidation received during initial snapshot reads. Matching Draft revisions require no repeat sync; otherwise read current Draft.
 
-Events carry no resource snapshots; clients fetch content through read APIs. `flow.created` emits only on first successful creation, not replay. An initialized Workbench on the Flows list automatically opens the new Flow. It does not interrupt open details, local creation, or automatic navigation already underway. Initial loading, ordinary `flows.changed`, and reconnect invalidation refresh lists without inferring creation/navigation. Server waits at most 5 seconds initially, then keeps reconnecting.
+Data change events carry no resource snapshots; clients fetch content through read APIs. `canvas.command` carries a transient operation and must be dispatched directly to the current ready canvas, without refetching Draft or persisting Presentation. `flow.created` emits only on first successful creation, not replay. An initialized Workbench on the Flows list automatically opens the new Flow. It does not interrupt open details, local creation, or automatic navigation already underway. Initial loading, ordinary `flows.changed`, and reconnect invalidation refresh lists without inferring creation/navigation. Server waits at most 5 seconds initially, then keeps reconnecting.
 
 Its same-origin host uses two independent SSE requests:
 
@@ -910,6 +911,20 @@ Its same-origin host uses two independent SSE requests:
 - `GET /v1/flows/:flowId/notifications`
 
 Both return `text/event-stream`, require Operator authentication, and end on session invalidation or Server shutdown. Other deployments may use different transports but must retain two independent logical channels and the same event contract.
+
+### Transient canvas commands
+
+`POST /v1/flows/:flowId/canvas` accepts `{ version: 1, command }`, with the same Flow ownership checks as other Flow endpoints. `command` is a strict union:
+
+```ts
+type CanvasCommand = { type: 'focus'; nodeId: string } | { type: 'zoom'; zoom: number } | { type: 'pan'; dx: number; dy: number } | { type: 'fit' }
+```
+
+Node IDs must be nonempty; numbers must be finite; zoom must be within 0.1–3. Pan uses screen CSS pixels, positive right/down, and preserves zoom. Focus reuses existing canvas focus behavior and does not select. Fit includes all nodes, ignoring selection. The canvas computes focus and fit using its own geometry; an absent target or empty canvas is a no-op.
+
+The response is `{ version: 1, flowId, broadcast: true }` with HTTP 200. This confirms broadcast, not delivery or execution, even with no subscribers. The service emits `canvas.command` on the existing Flow notification channel without persistence, session management, acknowledgments, replay, or automatic retries. Repeating a pan repeats the movement.
+
+Workbench dispatches commands in receipt order only to the current ready canvas, with no animation. Remote viewport changes do not write Presentation or change undo history, selection, or inspector state. Manual viewport changes still save normally. Disconnecting, switching Flow, or mounting a canvas later does not replay prior commands.
 
 ## 8. Routes
 
@@ -926,6 +941,7 @@ Both return `text/event-stream`, require Operator authentication, and end on ses
 | `POST`    | `/v1/flows/:flowId/draft/changes`                            |            200 | `Idempotency-Key` and change batch                             |
 | `POST`    | `/v1/flows/:flowId/draft/repair`                             |            200 | Tolerant repair creating a new Draft Revision                  |
 | `GET`     | `/v1/flows/:flowId/revisions/:revisionId`                    |            200 | immutable Revision                                             |
+| `POST`    | `/v1/flows/:flowId/canvas`                                   |            200 | Broadcast a transient canvas command                           |
 | `GET/PUT` | `/v1/flows/:flowId/presentation`                             |            200 | Presentation CAS                                               |
 | `POST`    | `/v1/flows/:flowId/revisions/:revisionId/check`              |            200 | Pinned Revision validation                                     |
 | `GET`     | `/v1/flows/:flowId/live`                                     |            200 | Live projection                                                |

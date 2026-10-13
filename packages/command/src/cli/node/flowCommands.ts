@@ -2,7 +2,7 @@ import type { ParsedArguments } from './arguments.ts'
 import type { CommandHost, Runtime } from './support.ts'
 
 import { ControlClient } from '@oomol-lab/open-flow/control-api'
-import { controlRequests } from '@oomol-lab/open-flow/control-requests'
+import { canvasCommandSchema, controlRequests } from '@oomol-lab/open-flow/control-requests'
 import { encodeWorkflowFile, parseWorkflowFile, workflowNameFromFile } from '@oomol-lab/open-flow/flow-encoding'
 import { importedWorkflowName } from '@oomol-lab/open-flow/localization'
 import { basename } from 'node:path'
@@ -15,6 +15,18 @@ export async function flowCommand(client: ControlClient, host: CommandHost, args
   const [operation, ...operands] = args.positionals
 
   switch (operation) {
+    case 'canvas': {
+      requireCount(operands, 1, `${runtime.commandPrefix ?? 'oo flow'} canvas <flow> (--input JSON|@file|- | --file path|-) [--json]`)
+      if (args.file != null && args.input != null) throw new CliError('cli.invalid-arguments', 'Choose --input or --file.')
+      const source = args.file == null ? args.input : args.file == '-' ? '-' : `@${args.file}`
+      if (source == null) throw new CliError('cli.invalid-arguments', 'Canvas requires --input or --file.')
+      const command = canvasCommandSchema.safeParse(JSON.parse(await argumentText(source, 'input', 'flow.authoring-unreadable', runtime)))
+      if (!command.success) throw new CliError('cli.invalid-arguments', command.error.message)
+      const flow = await referencedFlow(client, operands[0]!)
+      const result = await client.broadcastCanvas(flow.flowId, command.data)
+      write(runtime, args.json, { ...result, kind: 'flow.canvas' }, `Broadcast canvas ${command.data.type} for ${flow.flowId}; execution is not confirmed.`)
+      return
+    }
     case 'read':
     case 'search':
     case 'edit': {
@@ -167,7 +179,7 @@ export async function flowCommand(client: ControlClient, host: CommandHost, args
     default:
       throw new CliError(
         'cli.invalid-arguments',
-        `Usage: ${runtime.commandPrefix ?? 'oo flow'} <list|create|show|live|read|search|edit|schema|rename|delete|check|enable|disable|connector|event-source|trigger|run|runs|publish|publications|rollback|workbench>`,
+        `Usage: ${runtime.commandPrefix ?? 'oo flow'} <list|create|show|live|read|search|edit|canvas|schema|rename|delete|check|enable|disable|connector|event-source|trigger|run|runs|publish|publications|rollback|workbench>`,
       )
   }
 }

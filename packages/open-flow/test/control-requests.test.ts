@@ -4,6 +4,7 @@ import { mcpTools } from '../src/control/common/mcp.ts'
 import { controlRequests, controlRequestSchema } from '../src/control/common/requests.ts'
 
 const samples = {
+  canvas: { version: 1, command: { type: 'fit' } },
   authoringCheck: { revisionId: 'revision' },
   authoringRead: {},
   authoringSearch: { query: 'test', offset: 0, limit: 20 },

@@ -1,4 +1,6 @@
+import type { ReactFlowInstance, Viewport } from '@xyflow/react'
 import type { NodeId } from '../../../../schema/index.ts'
+import type { CanvasCommand, CanvasCommandSubscriber } from '../../../common/commands.ts'
 import type { FlowCanvasProps } from './FlowCanvas.tsx'
 import type { FlowCanvasViewCommentNode, FlowCanvasViewModel, FlowCanvasViewProps, FlowCanvasViewTaskNode, FlowCanvasViewValueNode } from './model.ts'
 
@@ -606,6 +608,54 @@ describe('FlowCanvasView model synchronization', () => {
     expect(setPosition).not.toHaveBeenCalled()
     expect(setViewport).not.toHaveBeenCalled()
     view.props.flowCanvasStore.dispose()
+  })
+
+  it('keeps delayed remote end events transient through refresh and saves later manual moves', async () => {
+    let execute: ((command: CanvasCommand) => void) | undefined
+    const subscribeCanvasCommands: CanvasCommandSubscriber = (listener) => {
+      execute = listener
+      return () => {
+        execute = undefined
+      }
+    }
+    const onMoveViewport = vi.fn()
+    const onSelectionChange = vi.fn()
+    const initialProps = props(model([task([])]), { subscribeCanvasCommands, onMoveViewport, onSelectionChange, selectedNodeIds: ['target'] })
+    const view = FlowCanvasView(initialProps) as React.ReactElement<FlowCanvasProps>
+    const store = view.props.flowCanvasStore
+    const ends: Viewport[] = []
+    const move = async (next: Viewport) => {
+      store.$$.viewport.set(next)
+      view.props.onMove?.(null, next)
+      ends.push(next)
+      return true
+    }
+    const setCenter = vi.fn(async (x: number, y: number, options: { zoom: number }) => move({ x, y, zoom: options.zoom }))
+    store.rfCommand.onRFInstance({
+      viewportInitialized: true,
+      getViewport: () => store.$.viewport.value,
+      getZoom: () => store.$.viewport.value?.zoom ?? 1,
+      setViewport: move,
+      setCenter,
+    } as unknown as ReactFlowInstance)
+    execute?.({ type: 'focus', nodeId: 'target' })
+    execute?.({ type: 'focus', nodeId: 'target' })
+    execute?.({ type: 'pan', dx: 80, dy: -30 })
+    await vi.waitFor(() => expect(store.$.viewport.value).toEqual({ x: 480, y: 70, zoom: 1 }))
+    expect(store.rfCommand.remoteViewportChange).toBe(false)
+    for (const viewport of ends) view.props.onMoveEnd?.(null, viewport)
+    expect(setCenter).toHaveBeenCalledTimes(2)
+    expect(onMoveViewport).not.toHaveBeenCalled()
+    expect(onSelectionChange).not.toHaveBeenCalled()
+    FlowCanvasView({ ...initialProps, model: model([task([])]) })
+    expect(store.$.viewport.value).toEqual({ x: 480, y: 70, zoom: 1 })
+    await move({ x: 490, y: 70, zoom: 1 })
+    // A stale remote end arriving after manual movement must not save the old viewport.
+    view.props.onMoveEnd?.(null, ends[0]!)
+    expect(onMoveViewport).not.toHaveBeenCalled()
+    view.props.onMoveEnd?.(null, ends.at(-1)!)
+    expect(onMoveViewport).toHaveBeenCalledExactlyOnceWith({ x: 490, y: 70, zoom: 1 })
+    store.dispose()
   })
 
   it('converges when the host acknowledges React Flow movement and selection', async () => {

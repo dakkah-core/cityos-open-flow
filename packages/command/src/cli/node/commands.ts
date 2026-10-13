@@ -1,10 +1,12 @@
 import type { AuthoringType } from '@oomol-lab/open-flow/control-requests'
 
-import { authoringRequestContract, authoringSchema, authoringTypes } from '@oomol-lab/open-flow/control-requests'
+import { authoringRequestContract, authoringSchema, authoringTypes, canvasCommandSchema } from '@oomol-lab/open-flow/control-requests'
+import { z } from 'zod'
 
 const edit = ['expected-revision', 'idempotency-key']
 const page = ['cursor', 'limit']
 const commands = [
+  ['canvas', '<flow> (--input JSON|@file|- | --file path|-)', ['input', 'file']],
   ['read', '<flow> [--input JSON|@file|- | --file path|-]', ['input', 'file']],
   ['search', '<flow> (--input JSON|@file|- | --file path|-)', ['input', 'file']],
   ['edit', '<flow> (--input JSON|@file|- | --file path|-)', ['input', 'file']],
@@ -158,6 +160,13 @@ export function commandSchema(name = 'edits') {
 }
 
 export function commandContract(name: string) {
+  if (name == 'canvas')
+    return {
+      request: z.toJSONSchema(canvasCommandSchema, { io: 'input' }),
+      guidance:
+        'Broadcast transient viewport commands; success does not confirm execution. No Presentation save, offline queue or replay. Pan uses screen pixels; zoom is an absolute ratio (0.1–3); fit includes all nodes. Repeating pan moves again; do not automatically retry an uncertain response.',
+      examples: [{ type: 'focus', nodeId: 'NODE_ID' }, { type: 'zoom', zoom: 0.8 }, { type: 'pan', dx: 200, dy: -100 }, { type: 'fit' }],
+    }
   return authoringRequestContract(name)
 }
 

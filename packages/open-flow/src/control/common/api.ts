@@ -1,3 +1,5 @@
+import type { CanvasCommand } from '../../canvas/common/commands.ts'
+export type { CanvasCommand, CanvasCommandSubscriber } from '../../canvas/common/commands.ts'
 import type { LiveDetails } from './liveDetails.ts'
 
 import { decodeLiveDetails } from './liveDetails.ts'
@@ -70,6 +72,12 @@ export type { FlowCatalogEvent, FlowChangeEvent } from './flowNotifications.ts'
 
 import { ApiError } from './errors.ts'
 import { randomId } from './random.ts'
+
+export interface CanvasBroadcast {
+  readonly version: 1
+  readonly flowId: string
+  readonly broadcast: true
+}
 
 export type ControlRequest = (path: string, init?: RequestInit) => Promise<Response>
 
@@ -817,6 +825,18 @@ export class ControlClient {
         method: 'POST',
       }),
     )
+  }
+
+  async broadcastCanvas(flowId: string, command: CanvasCommand): Promise<CanvasBroadcast> {
+    const source = record(
+      await this.request(`/v1/flows/${segment(flowId)}/canvas`, {
+        method: 'POST',
+        body: JSON.stringify({ version: 1, command }),
+      }),
+    )
+    exact(source, ['version', 'flowId', 'broadcast'])
+    if (source.version != 1 || source.broadcast !== true || source.flowId !== flowId) return invalidResponse()
+    return { version: 1, flowId: string(source.flowId), broadcast: true }
   }
 
   async getFlow(flowId: string): Promise<Flow> {

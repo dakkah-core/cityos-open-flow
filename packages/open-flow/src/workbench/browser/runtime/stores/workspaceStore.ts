@@ -1,5 +1,6 @@
 import type { I18n } from 'val-i18n'
 import type { ReadonlyVal } from 'value-enhancer'
+import type { CanvasCommand, CanvasCommandSubscriber } from '../../../../canvas/common/commands.ts'
 import type { EventSource } from '../../../../control/common/api.ts'
 import type { ConnectorCapability } from '../../../../flow/common/change.ts'
 import type { Settings as NodeSettings } from '../../../../flow/common/nodeChanges.ts'
@@ -115,6 +116,7 @@ interface ReconciledRevision {
 }
 
 export class WorkspaceStore {
+  readonly #canvasCommandListeners = new Set<(command: CanvasCommand) => void>()
   readonly #client: WorkbenchClient
   readonly #draftChanges: DraftChanges
   readonly #draftSession = new Latest()
@@ -195,6 +197,7 @@ export class WorkspaceStore {
     this.#presentationChanges.dispose()
     this.#stopCatalogWatch?.()
     this.#stopFlowWatch?.()
+    this.#canvasCommandListeners.clear()
     this.history$.dispose()
     this.#model.dispose()
     this.#flows.dispose()
@@ -295,6 +298,11 @@ export class WorkspaceStore {
           if (current()) {
             this.accessChanged(flowId, accessRevision)
             void this.#refreshLive(flowId, current)
+          }
+        },
+        (command) => {
+          if (current() && !this.#model.value.workspaceLoading) {
+            for (const execute of this.#canvasCommandListeners) execute(command)
           }
         },
       )
@@ -944,6 +952,13 @@ export class WorkspaceStore {
   public async moveNodes(positions: Readonly<Record<string, Point>>): Promise<void> {
     if (this.#model.value.draft == null) return
     await this.#canvasChange('move', Object.keys(positions).length, [], (value) => setNodePositions(value, positions))
+  }
+
+  public readonly subscribeCanvasCommands: CanvasCommandSubscriber = (execute) => {
+    this.#canvasCommandListeners.add(execute)
+    return () => {
+      this.#canvasCommandListeners.delete(execute)
+    }
   }
 
   public async moveViewport(viewport: DesignerViewport): Promise<void> {
