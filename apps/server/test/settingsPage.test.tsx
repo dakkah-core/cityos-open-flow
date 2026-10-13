@@ -1,7 +1,7 @@
 import type { FormEvent, ReactElement, ReactNode } from 'react'
 import type { SessionUser } from '../common/users.ts'
 
-import { Button, Dialog, Input } from '@oomol-lab/open-flow/ui'
+import { Button, Dialog, DialogTrigger, Input } from '@oomol-lab/open-flow/ui'
 import { Children, isValidElement } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { SessionCard, MemberSettingsPage, SettingsPage as SettingsView, useConfiguration, serviceConfigurationMissing } from '../browser/settings.tsx'
@@ -333,6 +333,43 @@ it.each(['response', 'failure', 'unauthorized', 'unmount'])('ignores an obsolete
   expect(unauthorized).not.toHaveBeenCalled()
 })
 
+it('opens public address configuration in a dialog and focuses missing required fields without saving', () => {
+  hooks.states = [config(1), false, false]
+  hooks.effects = false
+  const fetcher = vi.fn()
+  vi.stubGlobal('fetch', fetcher)
+  const page = SettingsPage({ onConnectorChange: vi.fn(), onUnauthorized: vi.fn() })
+  const item = find(page, (element) => element.props.endpoint == '/config/integration')!
+  hooks.states = []
+  hooks.refs = []
+  const render = (): ReactElement => {
+    hooks.stateIndex = 0
+    hooks.refIndex = 0
+    return (item.type as (props: typeof item.props) => ReactElement)({ ...item.props, origin: '' })
+  }
+  const view = render()
+  expect(find(view, (element) => element.type == Dialog)?.props.open).toBe(false)
+  find(view, (element) => element.type == DialogTrigger)!.props.onClick()
+  const opened = render()
+  expect(find(opened, (element) => element.type == Dialog)?.props.open).toBe(true)
+  const originFocus = vi.fn()
+  const secretFocus = vi.fn()
+  hooks.refs[1]!.current = { focus: originFocus }
+  hooks.refs[2]!.current = { focus: secretFocus }
+  expect(find(opened, (element) => element.props.children == 'settings.save')?.props.disabled).toBe(false)
+  const submit = () => find(render(), (element) => element.type == 'form')!.props.onSubmit({ preventDefault: vi.fn() })
+  submit()
+  expect(originFocus).toHaveBeenCalledOnce()
+  expect(find(opened, (element) => element.props.id == '/config/integration-origin-error')?.props.children).toBe('settings.validation.required')
+  find(opened, (element) => element.type == Input && element.props.type == 'url')!.props.onChange({ target: { value: 'https://flows.example.com' } })
+  submit()
+  expect(secretFocus).toHaveBeenCalledOnce()
+  expect(find(render(), (element) => element.props.id == '/config/integration-secret-error')?.props.children).toBe('settings.validation.required')
+  expect(fetcher).not.toHaveBeenCalled()
+  find(render(), (element) => element.props.children == 'settings.cancel')!.props.onClick()
+  expect(find(render(), (element) => element.type == Dialog)?.props.open).toBe(false)
+})
+
 it.each([
   { secret: 'a'.repeat(31), accepted: false },
   { secret: 'a'.repeat(32), accepted: true },
@@ -354,7 +391,7 @@ it.each([
   const props = form.props as { readonly onSubmit: (event: FormEvent) => void }
   props.onSubmit({ preventDefault: vi.fn() } as unknown as FormEvent)
   expect(fetcher).toHaveBeenCalledTimes(accepted ? 1 : 0)
-  const field = find(form, (element) => element.type == Input && element.props.type == 'password')
+  const field = find(form, (element) => element.type == Input && element.props.id == '/config/integration-secret')
   expect(field?.props['aria-invalid']).toBe(!accepted)
   await new Promise((resolve) => setTimeout(resolve, 0))
 })

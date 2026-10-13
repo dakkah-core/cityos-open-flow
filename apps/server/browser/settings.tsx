@@ -2,7 +2,7 @@ import type { FormEvent, ReactElement } from 'react'
 import type { ServiceProfileDraft } from '../common/service-profile.ts'
 import type { SessionUser } from '../common/users.ts'
 
-import { Button, Input, Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, HostTooltip } from '@oomol-lab/open-flow/ui'
+import { Button, Input, Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger, HostTooltip } from '@oomol-lab/open-flow/ui'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Trans, useTranslate } from 'val-i18n-react'
@@ -318,11 +318,13 @@ function SettingItem({
   onUnauthorized,
   origin,
   originLabel,
+  originDescription,
   originHint,
   placeholder,
   revision,
   generateSecret = false,
   secretLabel,
+  secretDescription,
   secretHint,
   secretRequired = true,
   summaryHint,
@@ -340,11 +342,13 @@ function SettingItem({
   readonly onUnauthorized: () => void
   readonly origin: string
   readonly originLabel?: string
+  readonly originDescription?: string
   readonly originHint?: string
   readonly placeholder?: string
   readonly revision: number
   readonly generateSecret?: boolean
   readonly secretLabel?: string
+  readonly secretDescription?: string
   readonly secretHint?: string
   readonly secretRequired?: boolean
   readonly summaryHint?: string
@@ -357,7 +361,18 @@ function SettingItem({
   const [secret, setSecret] = useState('')
   const t = useTranslate()
   const managed = source == 'environment' || source == 'derived'
-  const secretTooShort = endpoint == '/config/integration' && new TextEncoder().encode(secret).byteLength < 32
+  const container = useRef<HTMLDivElement>(null)
+  const originInput = useRef<HTMLInputElement>(null)
+  const secretInput = useRef<HTMLInputElement>(null)
+  const originError = !draftOrigin.trim() ? t('settings.validation.required') : !URL.canParse(draftOrigin) ? t('settings.validation.origin') : undefined
+  const secretError =
+    secretLabel == null
+      ? undefined
+      : secretRequired && !secret.trim()
+        ? t('settings.validation.required')
+        : endpoint == '/config/integration' && new TextEncoder().encode(secret).byteLength < 32
+          ? t('settings.validation.callbackKey')
+          : undefined
   const Heading = heading
 
   async function request(method: 'DELETE' | 'PUT', requestBody: Record<string, unknown>): Promise<void> {
@@ -401,122 +416,163 @@ function SettingItem({
 
   function save(event: FormEvent): void {
     event.preventDefault()
-    if (draftOrigin.length == 0 || (secretLabel != null && secretRequired && secret.length == 0) || secretTooShort || pending) return
+    if (pending) return
+    if (originError || secretError) {
+      const input = originError ? originInput : secretInput
+      input.current?.focus()
+      return
+    }
     void request('PUT', { ...body(draftOrigin, secret), expectedRevision: revision, version: 1 })
   }
 
   return (
-    <div aria-busy={pending} className="settings-item">
-      <div className="host-card-heading">
-        <div className="host-card-heading-copy">
-          <Heading>{name}</Heading>
-          {description != null && <p>{description}</p>}
-        </div>
-        {!managed && !editing && (
-          <div className="host-actions">
-            {configured &&
-              (removing ? (
-                <>
-                  <span>{t('settings.deleteConfirm')}</span>
-                  <Button variant="outline" size="sm" disabled={pending} onClick={() => setRemoving(false)} type="button">
-                    {t('settings.cancel')}
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    disabled={pending}
-                    onClick={() => void request('DELETE', { expectedRevision: revision, version: 1 })}
-                    type="button"
-                  >
+    <Dialog
+      open={editing}
+      onOpenChange={(open) => {
+        if (!pending) setEditing(open)
+      }}
+    >
+      <div ref={container} aria-busy={pending} className="settings-item">
+        <div className="host-card-heading">
+          <div className="host-card-heading-copy">
+            <Heading>{name}</Heading>
+            {description != null && <p>{description}</p>}
+          </div>
+          {!managed && (
+            <div className="host-actions">
+              {configured &&
+                (removing ? (
+                  <>
+                    <span>{t('settings.deleteConfirm')}</span>
+                    <Button variant="outline" size="sm" disabled={pending} onClick={() => setRemoving(false)} type="button">
+                      {t('settings.cancel')}
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      disabled={pending}
+                      onClick={() => void request('DELETE', { expectedRevision: revision, version: 1 })}
+                      type="button"
+                    >
+                      {t('settings.delete')}
+                    </Button>
+                  </>
+                ) : (
+                  <Button variant="destructive" size="sm" onClick={() => setRemoving(true)} type="button">
                     {t('settings.delete')}
                   </Button>
-                </>
-              ) : (
-                <Button variant="destructive" size="sm" onClick={() => setRemoving(true)} type="button">
-                  {t('settings.delete')}
-                </Button>
-              ))}
-            <Button variant="outline" size="sm" onClick={edit} type="button">
-              {t(configured ? 'settings.edit' : 'settings.configure')}
-            </Button>
-          </div>
-        )}
+                ))}
+              <DialogTrigger render={<Button variant="outline" size="sm" />} onClick={edit} type="button">
+                {t(configured ? 'settings.edit' : 'settings.configure')}
+              </DialogTrigger>
+            </div>
+          )}
+        </div>
+        <div className="host-card-body">
+          {source != 'settings' && <p>{t(`settings.source.${source}`)}</p>}
+          {configured && (
+            <>
+              {originLabel != null && <code>{origin}</code>}
+              {summaryHint != null && source == 'settings' && <p>{summaryHint}</p>}
+            </>
+          )}
+        </div>
+        <DialogContent
+          container={container.current}
+          closeLabel={t('settings.cancel')}
+          showCloseButton={!pending}
+          className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl"
+        >
+          <DialogHeader>
+            <DialogTitle>{name}</DialogTitle>
+          </DialogHeader>
+          <form className="host-field-feedback-scope grid gap-4" noValidate onSubmit={save}>
+            {originLabel != null && (
+              <HostField id={`${endpoint}-origin`} label={originLabel} description={originDescription}>
+                <div className="host-field-control">
+                  <Input
+                    ref={originInput}
+                    required
+                    disabled={pending}
+                    aria-invalid={originError != null}
+                    autoComplete="url"
+                    aria-describedby={
+                      [
+                        originDescription != null && `${endpoint}-origin-description`,
+                        originHint != null && `${endpoint}-origin-hint`,
+                        originError && `${endpoint}-origin-error`,
+                      ]
+                        .filter(Boolean)
+                        .join(' ') || undefined
+                    }
+                    autoFocus
+                    id={`${endpoint}-origin`}
+                    onChange={(event) => setDraftOrigin(event.target.value)}
+                    placeholder={placeholder}
+                    spellCheck={false}
+                    type="url"
+                    value={draftOrigin}
+                  />
+                  {originError && (
+                    <p className="host-field-error" id={`${endpoint}-origin-error`} role="alert">
+                      {originError}
+                    </p>
+                  )}
+                </div>
+                {originHint != null && (
+                  <span className="host-hint" id={`${endpoint}-origin-hint`}>
+                    {originHint}
+                  </span>
+                )}
+              </HostField>
+            )}
+            {secretLabel != null && (
+              <HostField id={`${endpoint}-secret`} label={secretLabel} description={secretDescription}>
+                <div className="flex items-start gap-2">
+                  <div className="host-field-control min-w-0 flex-1">
+                    <Input
+                      ref={secretInput}
+                      required={secretRequired}
+                      disabled={pending}
+                      aria-describedby={`${secretDescription != null ? `${endpoint}-secret-description ` : ''}${endpoint}-secret-hint${secretError ? ` ${endpoint}-secret-error` : ''}`}
+                      aria-invalid={secretError != null}
+                      autoFocus={originLabel == null}
+                      autoComplete="new-password"
+                      id={`${endpoint}-secret`}
+                      onChange={(event) => setSecret(event.target.value)}
+                      spellCheck={false}
+                      type={generateSecret ? 'text' : 'password'}
+                      value={secret}
+                    />
+                    {secretError && (
+                      <p className="host-field-error" id={`${endpoint}-secret-error`} role="alert">
+                        {secretError}
+                      </p>
+                    )}
+                  </div>
+                  {generateSecret && (
+                    <Button variant="outline" disabled={pending} onClick={() => setSecret(randomCallbackKey())} type="button">
+                      {t('settings.generateSecret')}
+                    </Button>
+                  )}
+                </div>
+                <span className="host-hint" id={`${endpoint}-secret-hint`}>
+                  {secretHint ?? t(endpoint == '/config/integration' ? 'settings.callbackKeyHint' : 'settings.tokenHint')}
+                </span>
+              </HostField>
+            )}
+            <DialogFooter>
+              <Button variant="outline" size="default" disabled={pending} onClick={() => setEditing(false)} type="button">
+                {t('settings.cancel')}
+              </Button>
+              <Button variant="default" size="default" disabled={pending} type="submit">
+                {t('settings.save')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
       </div>
-      <div className="host-card-body">
-        {source != 'settings' && <p>{t(`settings.source.${source}`)}</p>}
-        {!editing && configured && (
-          <>
-            {originLabel != null && <code>{origin}</code>}
-            {summaryHint != null && source == 'settings' && <p>{summaryHint}</p>}
-          </>
-        )}
-      </div>
-      {editing && (
-        <form className="host-form" onSubmit={save}>
-          {originLabel != null && (
-            <HostField id={`${endpoint}-origin`} label={originLabel}>
-              <Input
-                autoComplete="url"
-                aria-describedby={originHint == null ? undefined : `${endpoint}-origin-hint`}
-                autoFocus
-                id={`${endpoint}-origin`}
-                onChange={(event) => setDraftOrigin(event.target.value)}
-                placeholder={placeholder}
-                spellCheck={false}
-                type="url"
-                value={draftOrigin}
-              />
-            </HostField>
-          )}
-          {originHint != null && (
-            <span className="host-hint" id={`${endpoint}-origin-hint`}>
-              {originHint}
-            </span>
-          )}
-          {secretLabel != null && (
-            <HostField
-              id={`${endpoint}-secret`}
-              label={secretLabel}
-              action={
-                generateSecret && (
-                  <Button variant="outline" size="sm" disabled={pending} onClick={() => setSecret(randomCallbackKey())} type="button">
-                    {t('settings.generateSecret')}
-                  </Button>
-                )
-              }
-            >
-              <Input
-                aria-describedby={`${endpoint}-secret-hint`}
-                aria-invalid={secretTooShort && secret != ''}
-                autoFocus={originLabel == null}
-                autoComplete="new-password"
-                id={`${endpoint}-secret`}
-                onChange={(event) => setSecret(event.target.value)}
-                spellCheck={false}
-                type="password"
-                value={secret}
-              />
-              <span className="host-hint" id={`${endpoint}-secret-hint`}>
-                {secretHint ?? t(endpoint == '/config/integration' ? 'settings.callbackKeyHint' : 'settings.tokenHint')}
-              </span>
-            </HostField>
-          )}
-          <div className="host-form-actions">
-            <Button variant="outline" size="default" disabled={pending} onClick={() => setEditing(false)} type="button">
-              {t('settings.cancel')}
-            </Button>
-            <Button
-              variant="default"
-              size="default"
-              disabled={pending || draftOrigin.length == 0 || (secretLabel != null && secretRequired && secret.length == 0) || secretTooShort}
-              type="submit"
-            >
-              {t('settings.save')}
-            </Button>
-          </div>
-        </form>
-      )}
-    </div>
+    </Dialog>
   )
 }
 
@@ -984,11 +1040,13 @@ export function SettingsPage({
               onSaved={saved}
               onUnauthorized={onUnauthorized}
               originLabel={t('settings.publicOrigin')}
+              originDescription={t('settings.integrationDescription')}
               originHint={t('settings.publicOriginHint')}
               placeholder="https://flows.example.com"
               revision={current.revision}
               generateSecret
               secretLabel={t('settings.callbackKey')}
+              secretDescription={t('settings.callbackKeyDescription')}
               secretHint={t('settings.callbackKeyHint')}
               summaryHint={t('settings.callbackKeyStored')}
             />
