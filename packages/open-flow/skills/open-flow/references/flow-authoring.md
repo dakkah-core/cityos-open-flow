@@ -311,10 +311,10 @@ and `validation`. A Draft may save with diagnostics. `valid`, `invalid` and
 Use the edit's validation or request a check of a specific Revision. Structural
 validity does not demonstrate business behavior, model quality or runtime account
 access. An authorized test Run can exercise meaningful input cases. Draft Run
-readiness concerns the selected Trigger's path and dependencies; publishing and
-Live Runs require the complete Flow to be ready.
+readiness concerns the selected Trigger's path and dependencies. Publishing and
+Live Runs require the complete Flow to be ready. Explicit Live Runs must select a Start node. Other Triggers can be simulated only in Draft Runs; their Live Runs originate from their event sources.
 
-The Start node is selected automatically even when other Triggers exist; use `--trigger` to choose another entry. A sole legacy Manual Trigger remains supported.
+The Start node is selected automatically even when other Triggers exist; use `--trigger` to choose another entry for a Draft test. A sole legacy Manual Trigger remains supported for Draft tests.
 `--outputs` supplies named Start parameters or other Trigger outputs. Required Start parameters must be present, omitted nullable parameters become null, and unknown parameters are rejected. Start parameters have no defaults. `--input` supplies per-node input
 overrides; command help gives their shape. Live Runs use `--source live` and
 `--expected-publication` instead of `--expected-revision`.

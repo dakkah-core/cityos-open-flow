@@ -141,6 +141,9 @@ export class RunControl {
       throw new ControlError(serverErrorCode.flowRevisionStorageConflict, 'The fixed Revision does not match the Publication.')
     }
     const content = revisionContent(stored)
+    if (content.document.graph.nodes[trigger.nodeId]?.kind != 'start') {
+      throw new ControlError(controlErrorCode.runInvalid, 'Live Runs can only be started through a Start node.')
+    }
     const fixed = await this.prepareRun(content, livePublication.engineContract)
     const seed = normalizeRunTrigger(content, trigger)
     if (seed == null) throw new ControlError(controlErrorCode.runInvalid, 'Select a valid Trigger and outputs.')

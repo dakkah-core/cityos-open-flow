@@ -193,3 +193,42 @@ it.each(['draft', 'live'] as const)('persists complete Start arguments for %s Ru
     database.close()
   }
 })
+
+it.each([false, true])('rejects explicit Live Webhook Runs with Start present: %s, while allowing Draft simulation', async (withStart) => {
+  const { api, service } = await fixture()
+  const flow = await api.createFlow('Webhook entry', 'webhook-entry')
+  const changed = await api.changeDraft(flow.flowId, flow.draftRevisionId, [
+    { kind: 'graph.node.create', nodeId: 'webhook', node: { kind: 'webhook', name: 'Webhook', method: 'POST', bodyFields: [] } },
+    ...(withStart ? [{ kind: 'graph.node.create' as const, nodeId: 'start', node: { kind: 'start' as const, name: 'Start', parameters: [] } }] : []),
+  ])
+  const operation = await api.publishFlow(flow.flowId, changed.revision.revisionId, null)
+  await service.tickMaintenance()
+  const published = service.control.getPublishOperation(flow.flowId, operation.operationId)
+  if (published.status != 'succeeded') throw new Error('Publication did not succeed')
+  const trigger = { nodeId: 'webhook', outputs: { headers: {}, query: {}, body: {}, webhookUrl: 'http://server.local/webhook' } }
+  await expect(api.createLiveRun(published.publicationId, { trigger })).rejects.toMatchObject({
+    code: 'run.invalid',
+    message: 'Live Runs can only be started through a Start node.',
+  })
+  expect((await api.listRuns(flow.flowId)).runs).toEqual([])
+  await expect(api.createDraftRun(flow.flowId, changed.revision.revisionId, { trigger })).resolves.toMatchObject({ source: 'draft' })
+  if (withStart) {
+    await expect(api.createLiveRun(published.publicationId, { trigger: { nodeId: 'start', outputs: {} } })).resolves.toMatchObject({ source: 'live' })
+  }
+})
+
+it('rejects a published legacy Manual entry even after its Draft is upgraded to Start', async () => {
+  const { api, file, service } = await fixture()
+  const flow = await storedLegacy(file, api)
+  const operation = await api.publishFlow(flow.flowId, flow.draftRevisionId, null)
+  await service.tickMaintenance()
+  const published = service.control.getPublishOperation(flow.flowId, operation.operationId)
+  if (published.status != 'succeeded') throw new Error('Publication did not succeed')
+  const upgraded = await api.upgradeDraft(flow.flowId, flow.draftRevisionId)
+  expect((await api.getDraft(flow.flowId)).content.document.graph.nodes.start?.kind).toBe('start')
+  await expect(api.createLiveRun(published.publicationId, { trigger: { nodeId: 'start', outputs: {} } })).rejects.toMatchObject({ code: 'run.invalid' })
+  expect((await api.listRuns(flow.flowId)).runs).toEqual([])
+  await expect(api.createDraftRun(flow.flowId, upgraded.revision.revisionId, { trigger: { nodeId: 'start', outputs: {} } })).resolves.toMatchObject({
+    source: 'draft',
+  })
+})
