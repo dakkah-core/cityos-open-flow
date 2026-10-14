@@ -175,9 +175,8 @@ export class WorkbenchStore {
       this.runs,
       setNotice,
       async (flowId) => {
-        if (flowId != this.workspace.$.flowId.value || !(await this.workspace.saveModuleEditor()) || this.#disposed || flowId != this.workspace.$.flowId.value)
-          return
-        return this.workspace.$.draft.value?.revisionId
+        if (flowId != this.workspace.$.flowId.value || !(await this.workspace.saveDraft()) || this.#disposed || flowId != this.workspace.$.flowId.value) return
+        return this.workspace.$.draft.value
       },
       i18n,
       identity,

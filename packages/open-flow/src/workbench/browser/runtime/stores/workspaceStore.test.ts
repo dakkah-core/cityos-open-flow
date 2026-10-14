@@ -1,8 +1,10 @@
 import type { FlowChangeEvent } from '../contract.ts'
 
-import { currentFlowModelVersion } from '@oomol-lab/open-flow/flow-change'
+import { applyFlowChanges, currentFlowModelVersion, decodeChangeOperations } from '@oomol-lab/open-flow/flow-change'
 import { describe, expect, it, vi } from 'vitest'
-import { WorkbenchClient } from '../api.ts'
+import { ApiError, WorkbenchClient } from '../api.ts'
+import { createI18n } from '../i18n.ts'
+import { designerGraph } from '../workspace.ts'
 import { WorkspaceStore } from './workspaceStore.ts'
 
 const timestamp = '2026-08-26T00:00:00.000Z'
@@ -1133,6 +1135,156 @@ it('delivers canvas commands in order only while the selected Flow is ready, wit
     listener?.(event)
     expect(execute).toHaveBeenCalledTimes(2)
   } finally {
+    store.dispose()
+  }
+})
+
+it('repairs the persisted title of an already upgraded Start when opening in Chinese', async () => {
+  const parameters = [{ handle: 'note', jsonSchema: { type: 'string' }, nullable: true }] as const
+  let head = {
+    ...draft,
+    content: { ...draft.content, document: { bindings: {}, graph: { nodes: { start: { kind: 'start', name: 'Manual trigger', parameters } }, edges: [] } } },
+  } as import('../api.ts').Draft
+  const original = structuredClone(head)
+  const entered = Promise.withResolvers<void>()
+  const release = Promise.withResolvers<void>()
+  const client = new WorkbenchClient(vi.fn())
+  vi.spyOn(client, 'listFlows').mockResolvedValue({ flows: [flow], total: 1, version: 1 })
+  vi.spyOn(client, 'getEditor').mockImplementation(async () => ({ ...editor, flow: { ...flow, draftRevisionId: head.revisionId }, draft: head }))
+  const upgrades = vi.spyOn(client, 'upgradeDraft')
+  const writes = vi.spyOn(client, 'changeDraft').mockImplementation(async (_flowId, expectedRevisionId, operations) => {
+    expect(expectedRevisionId).toBe(head.revisionId)
+    entered.resolve()
+    await release.promise
+    head = {
+      ...head,
+      content: applyFlowChanges(head.content, decodeChangeOperations(operations)),
+      parentRevisionId: head.revisionId,
+      revisionId: 'revision-renamed',
+    }
+    const { content: _content, ...metadata } = head
+    return { revision: metadata, version: 1 }
+  })
+  vi.spyOn(client, 'checkFlow').mockResolvedValue({
+    closureDigest: 'digest',
+    diagnostics: [],
+    engineContract: 'open-flow-engine/v5',
+    flowId: flow.flowId,
+    modelVersion: currentFlowModelVersion,
+    revisionDigest: 'digest',
+    revisionId: 'revision-renamed',
+    valid: true,
+    version: 1,
+  })
+  const i18n = createI18n('zh-CN')
+  const store = new WorkspaceStore(client, vi.fn(), () => 'rename', i18n)
+  try {
+    const opening = store.start(flow.flowId)
+    await entered.promise
+    expect(store.$.workspaceLoading.value).toBe(true)
+    release.resolve()
+    await opening
+    expect(store.$.workspaceLoading.value).toBe(false)
+    expect(upgrades).not.toHaveBeenCalled()
+    expect(writes).toHaveBeenCalledTimes(1)
+    expect(head.content.document.graph.nodes.start).toEqual({ kind: 'start', name: '开始', parameters })
+    expect(original.content.document.graph.nodes.start?.name).toBe('Manual trigger')
+    const displayed = designerGraph(store.$.draft.value, {}, [], {}, {}, i18n.t)
+    expect(displayed.nodes.find((node) => node.id == 'start')?.title).toBe('开始')
+  } finally {
+    release.resolve()
+    store.dispose()
+  }
+})
+
+it('upgrades legacy manual nodes before editing and rereads a conflicting Draft without losing concurrent inputs', async () => {
+  let head = {
+    ...draft,
+    content: {
+      ...draft.content,
+      document: {
+        bindings: {},
+        graph: {
+          edges: [],
+          nodes: {
+            legacy: { kind: 'manual', name: 'Start' },
+            value: { kind: 'value', name: 'Data', inputs: {}, values: [{ handle: 'message', jsonSchema: {}, nullable: true, value: 'before' }] },
+          },
+        },
+      },
+    },
+  } as import('../api.ts').Draft
+  const entered = Promise.withResolvers<void>()
+  const release = Promise.withResolvers<void>()
+  const expectedHeads: string[] = []
+  const client = new WorkbenchClient(vi.fn())
+  vi.spyOn(client, 'listFlows').mockResolvedValue({ flows: [flow], total: 1, version: 1 })
+  vi.spyOn(client, 'getEditor').mockImplementation(async () => ({ ...editor, flow: { ...flow, draftRevisionId: head.revisionId }, draft: head }))
+  vi.spyOn(client, 'upgradeDraft').mockImplementation(async (_flowId, expectedRevisionId) => {
+    expectedHeads.push(expectedRevisionId)
+    if (expectedHeads.length === 1) {
+      entered.resolve()
+      await release.promise
+      head = {
+        ...head,
+        revisionId: 'revision-concurrent',
+        content: {
+          ...head.content,
+          document: {
+            ...head.content.document,
+            graph: {
+              ...head.content.document.graph,
+              nodes: {
+                ...head.content.document.graph.nodes,
+                value: { kind: 'value', name: 'Data', inputs: {}, values: [{ handle: 'message', jsonSchema: {}, nullable: true, value: 'concurrent' }] },
+              },
+            },
+          },
+        },
+      }
+      throw new ApiError(409, 'flow.revision-conflict', 'Draft changed')
+    }
+    head = {
+      ...head,
+      parentRevisionId: head.revisionId,
+      revisionId: 'revision-upgraded',
+      content: {
+        ...head.content,
+        document: {
+          ...head.content.document,
+          graph: { ...head.content.document.graph, nodes: { ...head.content.document.graph.nodes, legacy: { kind: 'start', name: 'Start', parameters: [] } } },
+        },
+      },
+    }
+    const { content: _content, ...revision } = head
+    return { revision, version: 1 }
+  })
+  vi.spyOn(client, 'checkFlow').mockResolvedValue({
+    closureDigest: 'digest',
+    diagnostics: [],
+    engineContract: 'open-flow-engine/v5',
+    flowId: flow.flowId,
+    modelVersion: currentFlowModelVersion,
+    revisionDigest: 'digest',
+    revisionId: 'revision-upgraded',
+    valid: true,
+    version: 1,
+  })
+  const store = new WorkspaceStore(client, vi.fn())
+  try {
+    const opening = store.start(flow.flowId)
+    await entered.promise
+    expect(store.$.workspaceLoading.value).toBe(true)
+    expect(store.$.draft.value).toBeUndefined()
+    release.resolve()
+    await opening
+    expect(expectedHeads).toEqual(['revision-1', 'revision-concurrent'])
+    expect(store.$.draft.value?.revisionId).toBe('revision-upgraded')
+    expect(store.$.draft.value?.content.document.graph.nodes.legacy).toEqual({ kind: 'start', name: 'Start', parameters: [] })
+    expect(store.$.draft.value?.content.document.graph.nodes.value).toMatchObject({ values: [{ handle: 'message', value: 'concurrent' }] })
+    expect(store.$.workspaceLoading.value).toBe(false)
+  } finally {
+    release.resolve()
     store.dispose()
   }
 })

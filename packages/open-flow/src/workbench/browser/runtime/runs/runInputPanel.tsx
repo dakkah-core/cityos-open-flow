@@ -58,7 +58,8 @@ function Form({
         {request.editor && (
           <section className="run-input-group">
             <header>
-              <strong>{t('inspector.ports.outputsTitle')}</strong>
+              <strong>{t(request.editor.allowOmittedNullable ? 'inspector.ports.startParametersTitle' : 'inspector.ports.outputsTitle')}</strong>
+              {request.editor.allowOmittedNullable && <p>{t('runInput.startParametersHint')}</p>}
             </header>
             <FlowRunInputEditor store={request.editor} theme={theme} showErrors={request.attempted} />
           </section>

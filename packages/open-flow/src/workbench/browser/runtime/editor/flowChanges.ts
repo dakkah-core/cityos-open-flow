@@ -39,6 +39,7 @@ import {
   setInputValue as setGraphInputValue,
   setInputVariable as setGraphInputVariable,
 } from '../../../../flow/common/nodeChanges.ts'
+import { renamedPort, renameOutputMapping } from '../../../../flow/common/portChanges.ts'
 import { renamePromptInput } from '../../../../flow/common/promptTemplate.ts'
 import { valueForEditor } from '../../../../form/common/editorComponent.ts'
 
@@ -86,7 +87,7 @@ export type AddNodeIntent =
   | { readonly kind: 'code'; readonly name: string; readonly ports?: TaskPorts }
   | { readonly action: ConnectorActionView; readonly kind: 'connector' }
   | { readonly kind: 'condition'; readonly name: string }
-  | { readonly kind: 'manual'; readonly name: string }
+  | { readonly kind: 'start'; readonly name: string }
   | { readonly kind: 'error'; readonly name: string }
   | { readonly kind: 'cron'; readonly name: string }
   | { readonly kind: 'llm'; readonly mode: 'chat' | 'json'; readonly name: string; readonly outputDescription: string }
@@ -181,8 +182,8 @@ export function addNode(revision: RevisionView, nodeId: string, intent: AddNodeI
     case 'error':
       changes = createBuiltinTrigger(nodeId, { kind: 'error', name: intent.name })
       break
-    case 'manual':
-      changes = createBuiltinTrigger(nodeId, { kind: 'manual', name: intent.name })
+    case 'start':
+      changes = createBuiltinTrigger(nodeId, { kind: 'start', name: intent.name, parameters: [] })
       break
     case 'webhook':
       changes = createBuiltinTrigger(nodeId, { bodyFields: [], kind: 'webhook', method: 'POST', name: intent.name })
@@ -229,7 +230,7 @@ export function updateNodeIcon(revision: RevisionView, nodeId: string, icon: str
 
 export function updateNodeName(revision: RevisionView, nodeId: string, name: string | undefined): FlowChanges | undefined {
   const node = revision.node(nodeId)?.node
-  if (node == null || node.kind == 'manual' || node.kind == 'error') return
+  if (node == null || node.kind == 'manual' || node.kind == 'start' || node.kind == 'error') return
   const value = !('inputs' in node) ? (name ?? node.name) : name
   if (node.name == value) return []
   return [{ before: node.name, field: 'name', kind: 'graph.node.field.set', nodeId, value }]
@@ -395,17 +396,6 @@ export function updateWebhook(revision: RevisionView, triggerId: string, setting
   return [{ before, kind: 'graph.node.webhook.set', nodeId: triggerId, value }]
 }
 
-function renamedPort(
-  previous: readonly ({ readonly handle: string } | { readonly group: string })[],
-  next: readonly ({ readonly handle: string } | { readonly group: string })[],
-): readonly [oldName: string, newName: string] | undefined {
-  const previousNames = new Set(previous.flatMap((port) => ('handle' in port ? [port.handle] : [])))
-  const nextNames = new Set(next.flatMap((port) => ('handle' in port ? [port.handle] : [])))
-  const removed = [...previousNames].filter((name) => !nextNames.has(name))
-  const added = [...nextNames].filter((name) => !previousNames.has(name))
-  return removed.length == 1 && added.length == 1 ? [removed[0]!, added[0]!] : undefined
-}
-
 function updatedInputMappings(
   mappings: Readonly<Record<string, InputMapping>>,
   previous: TaskDefinition['inputs'],
@@ -491,14 +481,7 @@ function replaceTaskPorts(
       currentNodeId == nodeId ? updatedInputMappings(node.inputs, previous.inputs, task.inputs, inputRename, values) : { ...nodeInputMappings(node) }
 
     for (const [name, mapping] of Object.entries(inputs)) {
-      if (mapping.kind != 'sources') continue
-      const sources = mapping.sources.map((source) => {
-        if (source.kind != 'node' || !instances.has(source.nodeId)) return source
-        if (outputRename != null && source.output == outputRename[0]) return { ...source, output: outputRename[1] }
-        return source
-      })
-      if (sources.every((source, index) => source === mapping.sources[index])) continue
-      inputs[name] = { kind: 'sources', sources }
+      inputs[name] = renameOutputMapping(mapping, instances, outputRename)
     }
 
     if (currentNodeId == nodeId && 'moduleId' in current.task) {

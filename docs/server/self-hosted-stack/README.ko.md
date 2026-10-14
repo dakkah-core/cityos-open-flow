@@ -237,7 +237,7 @@ oo flow publish "GitHub digest"
 oo flow open "GitHub digest"
 ```
 
-- `edits.json`에 `baseRevision`, `requestId`, 노드·입력·연결 편집과 Manual Trigger를 작성하세요. Connector 설정에 Connection ID를 명시하세요. [편집 계약](../../control/contracts/control-api.md#node-authoring)을 참고하세요.
+- `edits.json`에 `baseRevision`, `requestId`, 노드·입력·연결 편집과 Start node를 작성하세요. Connector 설정에 Connection ID를 명시하세요. [편집 계약](../../control/contracts/control-api.md#node-authoring)을 참고하세요.
 - `check`는 Revision이 올바른지 검사합니다. 자격 증명이 동작하는지, Provider에서 실제로 실행되는지는 `run`만
   확인합니다.
 - `run --wait`는 OpenConnector를 통해 Draft를 실행하고 결과를 출력합니다. `oo flow runs events <run>`은 전체

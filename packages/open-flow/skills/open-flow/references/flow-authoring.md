@@ -106,7 +106,7 @@ Absence, explicit null, an unset binding and an inherited default are distinct.
 
 ### Connect execution and data
 
-This complete edit adds a Manual Trigger, a calculation, and a formatter. It
+This complete edit adds a Start node, a calculation, and a formatter. It
 needs no Connector or model. `total` is a business output; `amount` is a named
 input whose binding reads it. Both execution edges and data bindings are visible.
 
@@ -115,7 +115,7 @@ input whose binding reads it. Both execution edges and data bindings are visible
   "baseRevision": "REVISION",
   "requestId": "example-code-and-data",
   "edits": [
-    { "op": "node.add", "as": "start", "type": "manual", "name": "Start" },
+    { "op": "node.add", "as": "start", "type": "start", "name": "Start" },
     {
       "op": "node.add",
       "as": "calculate",
@@ -286,7 +286,7 @@ selection rules come from the selected node contract.
 | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | Provider read or write          | `connector`: discovered `action`, optional `connectionId`, named input bindings.                                        |
 | Provider event                  | `poll` or `integration`: discovered `key`, Connection and any static inputs; polling also has a schedule.               |
-| Manual, HTTP or scheduled entry | `manual`, `webhook`, `cron`: business payload fields or schedule. A Manual Trigger has no output parameters.            |
+| Manual, HTTP or scheduled entry | `start`, `webhook`, `cron`: Start `config.parameters`, HTTP body fields, or schedule.                                   |
 | Workflow failure handler        | `error`: published upstream Flows' automatic Run failures; not a node-level catch or a handler for manual Run failures. |
 | Fixed HTTP operation            | `openapi`: an OpenAPI source, path and method; resolved authentication choices and ports appear in node details.        |
 | Reusable constants              | `value`: named JSON values and optional output constraints.                                                             |
@@ -314,10 +314,12 @@ access. An authorized test Run can exercise meaningful input cases. Draft Run
 readiness concerns the selected Trigger's path and dependencies; publishing and
 Live Runs require the complete Flow to be ready.
 
-A sole Manual Trigger is selected automatically; otherwise specify `--trigger`.
-`--outputs` supplies named Trigger outputs. `--input` supplies per-node input
+The Start node is selected automatically even when other Triggers exist; use `--trigger` to choose another entry. A sole legacy Manual Trigger remains supported.
+`--outputs` supplies named Start parameters or other Trigger outputs. Required Start parameters must be present, omitted nullable parameters become null, and unknown parameters are rejected. Start parameters have no defaults. `--input` supplies per-node input
 overrides; command help gives their shape. Live Runs use `--source live` and
 `--expected-publication` instead of `--expected-revision`.
+
+Declare a Start entry with business fields, for example `config: {"parameters":{"message":{"schema":{"type":"string"},"nullable":false},"note":{"schema":{"type":"string"},"nullable":true}}}`. Downstream nodes bind these fields with `{ "kind": "output", "node": "$start", "port": "message" }` and separate execution edges. Call it with `--outputs '{"message":"Hello"}'`; note becomes null. REST and MCP Run calls use the same map in `trigger.outputs`. Opening an editable legacy Flow upgrades its old Manual node to an empty-parameter Start in a new Draft Revision; its published Live contract is unchanged until publishing.
 
 ### Inspect or continue an existing Run
 
@@ -384,7 +386,7 @@ commands when relevant.
 belongs to the host. An open Workbench receives Revision notifications, so a CLI
 edit does not require a page reload.
 
-`live` includes Manual entry nodes without a runtime binding. `trigger search`
+`live` includes Start and legacy Manual entry nodes without a runtime binding. `trigger search`
 and `trigger show` discover provider definitions; `live` inspects the Flow's
 current online entries. The MCP equivalent is `flow_live({ flowId })`.
 

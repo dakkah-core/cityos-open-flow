@@ -37,7 +37,7 @@ function fixture(value: JsonValue = { name: 'Ada', count: 2 }, schema: JsonValue
           { source: 'data', target: 'sink' },
         ],
         nodes: {
-          start: { kind: 'manual', name: 'Start' },
+          start: { kind: 'start', name: 'Start', parameters: [] },
           data: {
             kind: 'value',
             name: 'Data',

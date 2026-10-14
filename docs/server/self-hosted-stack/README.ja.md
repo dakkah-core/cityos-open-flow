@@ -236,7 +236,7 @@ oo flow publish "GitHub digest"
 oo flow open "GitHub digest"
 ```
 
-- `edits.json` に `baseRevision`、`requestId`、ノード・入力・接続の編集を記述し、Manual Trigger を含めます。Connector の設定で Connection ID を明示します。[編集仕様](../../control/contracts/control-api.md#node-authoring)を参照してください。
+- `edits.json` に `baseRevision`、`requestId`、ノード・入力・接続の編集を記述し、Start node を含めます。Connector の設定で Connection ID を明示します。[編集仕様](../../control/contracts/control-api.md#node-authoring)を参照してください。
 - `check` は Revision が正しいかを確認します。認証情報が使えるか、Provider 側で実際に実行されるかは、`run` でのみ分かります。
 - `run --wait` は OpenConnector に対して Draft を実行し、結果を出力します。`oo flow runs events <run>` で完全なイベント履歴を
   確認できます。

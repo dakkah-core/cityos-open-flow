@@ -129,6 +129,40 @@ describe('Flow changes', () => {
     expect(repairNodeNames(changed)).toEqual([])
   })
 
+  it.each(['Manual trigger', 'Manual Trigger', '手动触发'])('repairs an already upgraded default Start title without changing its parameters: %s', (name) => {
+    const parameters = [{ handle: 'note', jsonSchema: { type: 'string' }, nullable: true }] as const
+    const source: RevisionContent = {
+      ...revision(),
+      document: { bindings: {}, graph: { edges: [], nodes: { start: { kind: 'start', name, parameters, description: 'Purpose' } } } },
+    }
+    const changed = applyFlowChanges(source, repairNodeNames(source, { start: '开始' }))
+    expect(changed.document.graph.nodes.start).toEqual({ kind: 'start', name: '开始', parameters, description: 'Purpose' })
+    expect(source.document.graph.nodes.start?.name).toBe(name)
+    expect(repairNodeNames(changed, { start: '开始' })).toEqual([])
+  })
+
+  it('keeps custom Start titles and other nodes when a repaired default title would conflict', () => {
+    const source: RevisionContent = {
+      ...revision(),
+      document: {
+        bindings: {},
+        graph: {
+          edges: [],
+          nodes: { start: { kind: 'start', name: 'Manual trigger', parameters: [] }, other: { kind: 'value', name: '开始', inputs: {}, values: [] } },
+        },
+      },
+    }
+    const changed = applyFlowChanges(source, repairNodeNames(source, { start: '开始' }))
+    expect(changed.document.graph.nodes.start?.name).toBe('开始 (2)')
+    expect(changed.document.graph.nodes.other).toEqual(source.document.graph.nodes.other)
+    expect(repairNodeNames(changed, { start: '开始' })).toEqual([])
+    const custom: RevisionContent = {
+      ...source,
+      document: { ...source.document, graph: { edges: [], nodes: { start: { kind: 'start', name: 'My entry', parameters: [] } } } },
+    }
+    expect(repairNodeNames(custom, { start: '开始' })).toEqual([])
+  })
+
   it('rejects a duplicate or empty Node name edit', () => {
     const source = applyFlowChanges(revision(), [
       { kind: 'graph.node.create', node: { inputs: {}, kind: 'value', name: 'First', values: [] }, nodeId: 'first' },

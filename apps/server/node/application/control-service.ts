@@ -42,7 +42,7 @@ import { resolveDraftOperations } from '@oomol-lab/open-flow/control-requests'
 import { resourceNameIssue } from '@oomol-lab/open-flow/flow-change'
 import { applyFlowChanges, currentFlowModelVersion, FlowChangeError } from '@oomol-lab/open-flow/flow-change'
 import { cleanWorkflowFile } from '@oomol-lab/open-flow/flow-encoding'
-import { canonicalJsonBytes, digestBytes, encodeRevision, repairRevision } from '@oomol-lab/open-flow/flow-encoding'
+import { canonicalJsonBytes, digestBytes, encodeRevision, repairRevision, upgradeRevisionContent } from '@oomol-lab/open-flow/flow-encoding'
 import { flowClosure, removeConnectionUsage, validateFlow } from '@oomol-lab/open-flow/flow-semantics'
 import { triggerConfigValues } from '@oomol-lab/open-flow/integration-trigger'
 import { PermanentPollError, PollConnectionError } from '@oomol-lab/open-flow/poll-trigger'
@@ -570,7 +570,8 @@ export class ControlService {
   async importFlow(actorId: string, value: unknown, idempotencyKey: string, name?: string, teamId?: string, defaultName = 'Imported workflow') {
     let file: WorkflowFile
     try {
-      file = cleanWorkflowFile(value).file
+      const cleaned = cleanWorkflowFile(value).file
+      file = { ...cleaned, content: upgradeRevisionContent(cleaned.content) }
     } catch {
       throw new ControlError(controlErrorCode.flowInvalid, 'Invalid or unsupported workflow file.')
     }
@@ -749,7 +750,7 @@ export class ControlService {
     }
     const base = readRevisionOrRepair(() => this.store.flows.revision(flowId, expectedRevisionId))
     if (base == null) throw new ControlError(controlErrorCode.flowRevisionConflict, 'The Draft changed.')
-    const content = removeConnectionUsage(revisionContent(base), connectionId)
+    const content = upgradeRevisionContent(removeConnectionUsage(revisionContent(base), connectionId))
     const bytes = encodeRevision(content)
     const digest = await digestBytes(bytes)
     const stored = this.store.flows.commitRevision(
@@ -1005,6 +1006,57 @@ export class ControlService {
         throw new ControlError(controlErrorCode.flowRevisionConflict, 'The Draft changed.')
       case 'request-conflict':
         throw new ControlError(controlErrorCode.flowConflict, 'The repair identity refers to another Draft repair.')
+      case 'not-found':
+        return notFound()
+      case 'committed':
+        this.triggersChanged()
+        this.flowCatalogChanged(undefined, this.store.flows.get(flowId)?.ownerId)
+        this.flowChanged({ kind: 'draft.changed', flowId, revisionId: stored.revision.revisionId, version: 1 })
+        return { revision: revisionMetadata(stored.revision), version: 1 }
+    }
+  }
+
+  async upgradeDraft(actorId: string, flowId: string, expectedRevisionId: string, changeId: string = randomUUID()): Promise<DraftChange> {
+    const currentFlow = this.getFlow(flowId)
+    const requestDigest = await digestBytes(canonicalJsonBytes({ kind: 'draft.upgrade', expectedRevisionId, version: 1 }))
+    const previous = this.store.flows.change(flowId, changeId)
+    if (previous != null) {
+      if (previous.requestDigest != requestDigest) throw new ControlError(controlErrorCode.flowConflict, 'The upgrade identity refers to another Draft change.')
+      return { revision: revisionMetadata(previous), version: 1 }
+    }
+    if (currentFlow.draftRevisionId != expectedRevisionId) throw new ControlError(controlErrorCode.flowRevisionConflict, 'The Draft changed.')
+    const base = readRevisionOrRepair(() => this.store.flows.revision(flowId, expectedRevisionId))
+    if (base == null) throw new ControlError(controlErrorCode.flowRevisionConflict, 'The Draft content is unavailable.')
+    if ((await digestBytes(new TextEncoder().encode(base.content))) != base.digest)
+      throw new ControlError(controlErrorCode.flowInvalid, 'The stored Draft does not match its digest.')
+    const content = upgradeRevisionContent(revisionContent(base))
+    const bytes = encodeRevision(content)
+    const digest = await digestBytes(bytes)
+    if (digest == base.digest) {
+      const latest = this.getFlow(flowId)
+      if (latest.status != 'active') throw new ControlError(controlErrorCode.flowBusy, 'The Flow is retiring.')
+      if (latest.draftRevisionId != expectedRevisionId) throw new ControlError(controlErrorCode.flowRevisionConflict, 'The Draft changed.')
+      return { revision: revisionMetadata(base), version: 1 }
+    }
+    const stored = this.store.flows.commitRevision({
+      actorId,
+      changeId,
+      content: new TextDecoder().decode(bytes),
+      createdAt: this.clock(),
+      digest,
+      modelVersion: content.modelVersion,
+      expectedRevisionId,
+      flowId,
+      requestDigest,
+      revisionId: identity('revision'),
+    })
+    switch (stored.kind) {
+      case 'busy':
+        throw new ControlError(controlErrorCode.flowBusy, 'The Flow is retiring.')
+      case 'conflict':
+        throw new ControlError(controlErrorCode.flowRevisionConflict, 'The Draft changed.')
+      case 'request-conflict':
+        throw new ControlError(controlErrorCode.flowConflict, 'The upgrade identity refers to another Draft change.')
       case 'not-found':
         return notFound()
       case 'committed':

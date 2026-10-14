@@ -406,6 +406,19 @@ export function createControlApp(service: ControlService, resolveActor?: Resolve
       ),
     )
   })
+  app.post('/flows/:flowId/draft/upgrade', async (context) => {
+    query(context.req.raw, [], controlErrorCode.flowInvalid)
+    const body = await decodeRequest(context.req.raw, controlErrorCode.flowInvalid, controlRequests.upgradeDraft)
+    return response(
+      200,
+      await service.upgradeDraft(
+        context.get('actorId'),
+        context.req.param('flowId'),
+        text(body.expectedRevisionId, controlErrorCode.flowInvalid),
+        idempotencyKey(context.req.raw, controlErrorCode.flowInvalid),
+      ),
+    )
+  })
   app.get('/flows/:flowId/revisions/:revisionId', (context) => response(200, service.getRevision(context.req.param('flowId'), context.req.param('revisionId'))))
 
   app.use('/connector/*', async (context, next) => {

@@ -1,13 +1,19 @@
 import type { ChangeOperation, RevisionContent } from './change.ts'
 
 import { dequal } from 'dequal/lite'
-import { applyFlowChanges } from './change.ts'
+import { applyFlowChanges, upgradeManualTrigger, upgradeRevisionContent } from './change.ts'
 
-/** Invert canvas authoring operations, including the reducer's cascading deletions. */
+/** Invert authoring operations and cascading deletions while retaining model upgrades. */
 export function inverseFlowChanges(content: RevisionContent, operations: readonly ChangeOperation[]): readonly ChangeOperation[] {
-  let current = content
+  let current = upgradeRevisionContent(content)
   const groups: ChangeOperation[][] = []
-  for (const operation of operations) {
+  for (const requested of operations) {
+    const operation =
+      requested.kind == 'graph.node.create'
+        ? { ...requested, node: upgradeManualTrigger(requested.node) }
+        : requested.kind == 'graph.node.replace' && requested.before.kind == 'manual' && requested.node.kind == 'manual'
+          ? { ...requested, before: upgradeManualTrigger(requested.before), node: upgradeManualTrigger(requested.node) }
+          : requested
     const after = applyFlowChanges(current, [operation])
     const restore: ChangeOperation[] = []
     switch (operation.kind) {

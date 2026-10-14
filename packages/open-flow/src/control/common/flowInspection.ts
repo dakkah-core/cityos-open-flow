@@ -125,6 +125,7 @@ function inspectNode(_document: FlowDocument, node: GraphNode): Record<string, u
       }
     case 'error':
     case 'manual':
+    case 'start':
     case 'cron':
       return { ...node, ...ports }
   }

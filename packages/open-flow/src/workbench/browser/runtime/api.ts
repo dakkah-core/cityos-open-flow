@@ -64,6 +64,7 @@ export type {
   InputPortDefinition,
   JsonValue,
   PortDefinition,
+  Port,
   FlowDocument,
   TaskDefinition,
   TaskNode,

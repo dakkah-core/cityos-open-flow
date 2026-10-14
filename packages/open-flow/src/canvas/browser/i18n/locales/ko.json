@@ -594,6 +594,7 @@
     },
     "triggerSource": {
       "manual": "수동",
+      "start": "시작",
       "cron": "일정",
       "webhook": "Webhook",
       "error": "오류 트리거"

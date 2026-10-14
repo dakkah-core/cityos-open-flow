@@ -91,6 +91,8 @@ export function authoringDiagnosticField(_content: RevisionContent, node: GraphN
     case 'wait':
     case 'approval':
       return head == 'inputDefinitions' ? portField(node.inputDefinitions, location.slice(1), 'config.inputs') : 'config'
+    case 'start':
+      return head == 'parameters' ? portField(node.parameters, location.slice(1), 'config.parameters') : 'config'
     case 'webhook':
       if (head == 'bodyFields') return portField(node.bodyFields, location.slice(1), 'config.body')
       return head == 'method' || head == 'options' ? ['config', ...location].join('.') : 'config'

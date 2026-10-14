@@ -4,6 +4,7 @@ import type { ConnectorConnection, CreateEventSource, ResultInfo, PollTriggerTes
 import type { ProviderAccessIdentity } from './providerAccess.ts'
 
 import { dequal } from 'dequal/lite'
+import { upgradeRevisionContent } from '../../flow/common/change.ts'
 import { ControlClient, decodeRunEvent } from './api.ts'
 import { allConnectorConnectionsQuery } from './connectorQueries.ts'
 
@@ -135,14 +136,16 @@ function addValueNode(harness: ControlApiConformanceHarness, flowId: string, rev
   )
 }
 
-async function addManualTrigger(harness: ControlApiConformanceHarness, flowId: string, revisionId: string): Promise<string> {
+async function addStartTrigger(harness: ControlApiConformanceHarness, flowId: string, revisionId: string): Promise<string> {
   return changedRevisionId(
     await json(
-      await changeRequest(harness, flowId, revisionId, [{ kind: 'graph.node.create', node: { kind: 'manual', name: 'Start' }, nodeId: 'start' }]),
+      await changeRequest(harness, flowId, revisionId, [
+        { kind: 'graph.node.create', node: { kind: 'start', name: 'Start', parameters: [] }, nodeId: 'start' },
+      ]),
       200,
-      'Add manual trigger',
+      'Add Start node',
     ),
-    'Manual trigger Revision',
+    'Start Revision',
   )
 }
 
@@ -224,7 +227,11 @@ export const controlApiConformanceCases: readonly ControlApiConformanceCase[] = 
       const created = await api.importFlow(file, { idempotencyKey })
       equal(dequal(await api.importFlow(file, { idempotencyKey }), created), true, 'Import retry must return the same Flow.')
       const exported = await api.exportFlow(created.flowId)
-      equal(dequal(exported, file), true, 'Export must retain the graph and Presentation.')
+      equal(
+        dequal(exported, { ...file, content: upgradeRevisionContent(file.content) }),
+        true,
+        'Export must upgrade legacy Manual nodes and retain the graph and Presentation.',
+      )
       const editor = await api.getEditor(created.flowId)
       equal(editor.live.publication == null, true, 'Import must not publish.')
       equal(editor.draft.parentRevisionId == null, true, 'Import must create an initial Revision.')
@@ -306,11 +313,78 @@ export const controlApiConformanceCases: readonly ControlApiConformanceCase[] = 
     },
   },
   {
+    name: 'authors Start parameters and admits their shared call contract',
+    async verify(harness) {
+      const api = client(harness),
+        flow = await api.createFlow('Start parameters')
+      const schema = await api.authoringSchema(flow.flowId, { type: 'start' })
+      equal(schema.type, 'start', 'Start discovery')
+      const created = await api.editAuthoring(flow.flowId, {
+        baseRevision: flow.draftRevisionId,
+        requestId: 'start-parameters-create',
+        edits: [
+          {
+            op: 'node.add',
+            as: 'start',
+            type: 'start',
+            name: 'Start',
+            config: {
+              parameters: {
+                message: { schema: { type: 'string' }, nullable: false, description: 'Original' },
+                note: { schema: { type: 'string' }, nullable: true },
+              },
+            },
+          },
+        ],
+      })
+      const nodeId = created.nodes.start!
+      const changed = await api.editAuthoring(flow.flowId, {
+        baseRevision: created.revision,
+        requestId: 'start-parameters-update',
+        edits: [{ op: 'node.update', node: nodeId, set: { config: { parameters: { message: { description: 'Call message' } } } } }],
+      })
+      const details = await api.readAuthoring(flow.flowId, { nodes: [nodeId] })
+      const node = record(details.data.nodes?.[0], 'Start details')
+      equal(
+        node.config,
+        {
+          parameters: {
+            message: { schema: { type: 'string' }, nullable: false, description: 'Call message' },
+            note: { schema: { type: 'string' }, nullable: true },
+          },
+        },
+        'Local parameter update preserves the contract',
+      )
+      const runPath = `/v1/flows/${flow.flowId}/revisions/${changed.revision}/runs`
+      const run = (outputs: unknown, key: string) =>
+        request(harness, runPath, {
+          method: 'POST',
+          headers: { 'idempotency-key': key },
+          body: JSON.stringify({ engineContract, inputs: {}, trigger: { nodeId, outputs }, version: 2 }),
+        })
+      for (const [index, outputs] of [{}, { message: 0 }, { message: 'Hello', extra: true }].entries())
+        await error(await run(outputs, `start-invalid-${index}`), 400, 'run.invalid', 'Reject invalid Start parameters')
+      const admitted = await json(await run({ message: 'Hello' }, 'start-call'), 202, 'Admit omitted nullable parameter')
+      equal(await json(await run({ message: 'Hello' }, 'start-call'), 200, 'Replay Start call'), admitted, 'Stable Start admission')
+      await error(await run({ message: 'Hello', note: null }, 'start-call'), 409, 'run.conflict', 'Preserve original request identity before normalization')
+      await json(await run({ message: 'Hello', note: null }, 'start-explicit-null'), 202, 'Admit explicit null')
+      const old = await api.readAuthoring(flow.flowId, { nodes: [nodeId], revision: created.revision })
+      equal(
+        record(record(old.data.nodes?.[0], 'Old Start').config, 'Old config').parameters,
+        {
+          message: { schema: { type: 'string' }, nullable: false, description: 'Original' },
+          note: { schema: { type: 'string' }, nullable: true },
+        },
+        'Fixed Start read preserves old configuration',
+      )
+    },
+  },
+  {
     name: 'admits simultaneous retries as one Run and preserves its Trigger identity',
     async verify(harness) {
       const flow = await createFlow(harness, 'Concurrent Run', 'concurrent-run-flow')
       const flowId = requiredString(flow.flowId, 'Flow ID')
-      const revisionId = await addManualTrigger(harness, flowId, requiredString(flow.draftRevisionId, 'Revision ID'))
+      const revisionId = await addStartTrigger(harness, flowId, requiredString(flow.draftRevisionId, 'Revision ID'))
       const submit = (payload: unknown = {}) =>
         request(harness, `/v1/flows/${flowId}/revisions/${revisionId}/runs`, {
           method: 'POST',
@@ -590,7 +664,7 @@ export const controlApiConformanceCases: readonly ControlApiConformanceCase[] = 
     async verify(harness) {
       const flow = await createFlow(harness, 'Partial Draft', 'partial-draft')
       const flowId = requiredString(flow.flowId, 'Partial Flow identity')
-      const initial = await addManualTrigger(harness, flowId, requiredString(flow.draftRevisionId, 'Partial Draft identity'))
+      const initial = await addStartTrigger(harness, flowId, requiredString(flow.draftRevisionId, 'Partial Draft identity'))
       const changed = await json(
         await changeRequest(harness, flowId, initial, [
           { kind: 'graph.node.create', nodeId: 'other', node: { kind: 'webhook', method: 'POST', name: 'Other', bodyFields: [] } },
@@ -636,7 +710,7 @@ export const controlApiConformanceCases: readonly ControlApiConformanceCase[] = 
     async verify(harness) {
       const flow = await createFlow(harness, 'Run flow', 'run-flow')
       const flowId = requiredString(flow.flowId, 'Run Flow flowId')
-      const draftRevisionId = await addManualTrigger(harness, flowId, requiredString(flow.draftRevisionId, 'Run Flow revisionId'))
+      const draftRevisionId = await addStartTrigger(harness, flowId, requiredString(flow.draftRevisionId, 'Run Flow revisionId'))
       const checked = await json(
         await request(harness, `/v1/flows/${flowId}/revisions/${draftRevisionId}/check`, {
           body: JSON.stringify({ engineContract, version: 1 }),
@@ -796,7 +870,7 @@ export const controlApiConformanceCases: readonly ControlApiConformanceCase[] = 
     async verify(harness) {
       const flow = await createFlow(harness, 'Wait flow', 'wait-flow')
       const flowId = requiredString(flow.flowId, 'Wait Flow flowId')
-      const initialRevisionId = await addManualTrigger(harness, flowId, requiredString(flow.draftRevisionId, 'Wait Flow revisionId'))
+      const initialRevisionId = await addStartTrigger(harness, flowId, requiredString(flow.draftRevisionId, 'Wait Flow revisionId'))
       const changed = await json(
         await changeRequest(harness, flowId, initialRevisionId, [
           {
@@ -973,7 +1047,7 @@ export const publicationControlApiConformanceCases: readonly ControlApiConforman
     async verify(harness) {
       const flow = await createFlow(harness, 'Enabled flow', 'enabled-flow')
       const flowId = requiredString(flow.flowId, 'Flow id')
-      const revisionId = await addManualTrigger(harness, flowId, requiredString(flow.draftRevisionId, 'Draft id'))
+      const revisionId = await addStartTrigger(harness, flowId, requiredString(flow.draftRevisionId, 'Draft id'))
       const change = (enabled: boolean, expectedPublicationId: string) =>
         request(harness, `/v1/flows/${flowId}/enabled`, {
           method: 'PUT',
@@ -1015,7 +1089,7 @@ export const publicationControlApiConformanceCases: readonly ControlApiConforman
     async verify(harness) {
       const flow = await createFlow(harness, 'Publication flow', 'publication-flow')
       const flowId = requiredString(flow.flowId, 'Publication Flow flowId')
-      const draftRevisionId = await addManualTrigger(harness, flowId, requiredString(flow.draftRevisionId, 'Publication Flow revisionId'))
+      const draftRevisionId = await addStartTrigger(harness, flowId, requiredString(flow.draftRevisionId, 'Publication Flow revisionId'))
       equal((await json(await request(harness, `/v1/flows/${flowId}/live`), 200, 'Read Live')).status, 'not-published', 'Initial Live status')
       const publish = () => publishRequest(harness, flowId, draftRevisionId, null, 'publication-first')
       const completed = await completePublish(harness, await publish(), 202, 'Publish Flow')
@@ -1065,7 +1139,7 @@ export const publicationControlApiConformanceCases: readonly ControlApiConforman
     async verify(harness) {
       const flow = await createFlow(harness, 'Rollback flow', 'rollback-flow')
       const flowId = requiredString(flow.flowId, 'Rollback Flow flowId')
-      const firstRevisionId = await addManualTrigger(harness, flowId, requiredString(flow.draftRevisionId, 'Rollback Flow revisionId'))
+      const firstRevisionId = await addStartTrigger(harness, flowId, requiredString(flow.draftRevisionId, 'Rollback Flow revisionId'))
       const layoutApi = client(harness)
       const initialLayout = await layoutApi.getPresentation(flowId)
       const publishedLayout = await json(
@@ -1548,7 +1622,7 @@ export function selectableConnectorAccessControlApiConformanceCases(
         )
         const selectedDigest = requiredString(selected.sharedAccessDigest, 'Selected Connector access digest')
 
-        const revisionId = await addManualTrigger(harness, flowId, requiredString(created.draftRevisionId, 'Draft Revision ID'))
+        const revisionId = await addStartTrigger(harness, flowId, requiredString(created.draftRevisionId, 'Draft Revision ID'))
         const draftRun = await json(
           await request(harness, `/v1/flows/${flowId}/revisions/${revisionId}/runs`, {
             body: JSON.stringify({ engineContract, inputs: {}, trigger: { nodeId: 'start', outputs: {} }, version: 2 }),

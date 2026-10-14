@@ -108,7 +108,7 @@ The CLI writes normal results to stdout and invocation errors to stderr. `--json
 
 ### Execution and waiting
 
-A Run pins one Trigger. The CLI selects it automatically if the graph has exactly one Manual Trigger. Otherwise, use `--trigger`. `--outputs` accepts a JSON object indexed by port name. Its default, `{}`, is suitable for Manual. Other Triggers require complete outputs.
+A Run pins one Trigger. The CLI selects the Start node automatically even when the graph has other Triggers. A sole legacy Manual Trigger remains supported. Use `--trigger` to select another entry. `--outputs` accepts a JSON object indexed by Start parameter or Trigger output name. Its default is `{}`; Start requires its non-nullable parameters and normalizes omitted nullable parameters to `null`. Other Triggers require complete outputs.
 
 When a pending decision is detected, wait commands return the Run detail’s `waits` array. Each item includes `waitId`, `nodeId`, `prompt`, `actions`, and an expiry time. The Run can still be running. Use `runs list --pending-wait` to find all Runs with pending waits.
 
@@ -121,7 +121,7 @@ When a pending decision is detected, wait commands return the Run detail’s `wa
 ### Online entries
 
 `live FLOW_ID_OR_NAME [--json]` returns the current Publication, Flow enablement,
-and all online entries, including Manual and Webhook request fields. JSON is
+and all online entries, including Start parameters and Webhook request fields. JSON is
 `{ kind: 'flow.live', live: LiveDetails, version: 1 }`. An unpublished Flow returns
 `status: 'not-published'` with no entries and exit code 0. Flow lists remain summaries.
 The command accepts neither a node selector nor a historical publication.

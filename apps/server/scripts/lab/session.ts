@@ -390,7 +390,7 @@ export class LabSession {
         const triggers = Object.entries(revision.content.document.graph.nodes).filter(([id, node]) =>
           'node' in entry ? id == entry.node : node.kind == entry.kind,
         )
-        if (triggers.length != 1 || triggers[0]![1].kind != 'manual') errors.push('The scenario entry must resolve to one Manual trigger.')
+        if (triggers.length != 1 || triggers[0]![1].kind != 'start') errors.push('The scenario entry must resolve to one Start node.')
         else
           for (const sample of samples(this.scenarioId, this.stage)) {
             Object.assign(this.mocks.sample, sample)

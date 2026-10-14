@@ -104,7 +104,7 @@ describe('node authoring', () => {
   })
   it('creates aliases, explicit execution and data links, and hides storage identities', async () => {
     const result = await edit(empty, [
-      { op: 'node.add', type: 'manual', as: 'start', name: 'Start' },
+      { op: 'node.add', type: 'start', as: 'start', name: 'Start' },
       { op: 'node.add', type: 'code', as: 'format', name: 'Format', code: 'export default () => ({result:"hello"})' },
       { op: 'node.add', type: 'connector', as: 'send', name: 'Send', config: { action: 'test.send' } },
       { op: 'edge.connect', source: '$start', target: '$format' },
@@ -326,7 +326,7 @@ describe('node authoring', () => {
   })
   it('requires a business output selection when the source has zero or multiple outputs', async () => {
     const created = await edit(empty, [
-      { op: 'node.add', type: 'manual', as: 'empty', name: 'Start' },
+      { op: 'node.add', type: 'start', as: 'empty', name: 'Start' },
       { op: 'node.add', type: 'code', as: 'many', name: 'Many', config: { outputs: { first: {}, second: {} } } },
       { op: 'node.add', type: 'agent', as: 'target', name: 'Target' },
     ])
@@ -420,7 +420,7 @@ describe('node authoring', () => {
       { handle: 'output', nullable: true, jsonSchema: schema, description: 'Keep this' },
     ])
   })
-  it.each(['manual', 'webhook', 'cron', 'error', 'code', 'agent', 'llm', 'decision', 'condition', 'value', 'wait', 'approval'] as const)(
+  it.each(['start', 'webhook', 'cron', 'error', 'code', 'agent', 'llm', 'decision', 'condition', 'value', 'wait', 'approval'] as const)(
     'round trips %s configuration',
     async (type) => {
       const created = await edit(empty, [{ op: 'node.add', type, as: 'node', name: 'Node' }])

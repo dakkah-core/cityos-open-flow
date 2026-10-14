@@ -124,6 +124,15 @@ through MCP; it does not launch an Agent. External MCP clients need compatible p
 and a Lab recording adapter for comparable per-call costs. Direct external edits mark the
 attempt as mixed.
 
+## Start parameter regression
+
+`start-parameters` creates a Start node with required message and amount parameters and a nullable note. The public reference edits the amount description in a later request and preserves its schema. Acceptance runs the Flow with zero, an omitted note, explicit null and an ordinary note, then checks the actual archive call. This exercises the same configuration and execution contract through CLI and MCP.
+
+```bash
+bun run lab test start-parameters
+bun run lab test start-parameters --mcp
+```
+
 ## Connector response regression
 
 `connector-responses` creates a workflow through the public authoring interface, consumes a dynamic
@@ -173,8 +182,8 @@ its own task and starting Revision; do not compare its isolated cost with a tria
 from an empty Flow. `reset` restores the empty baseline and returns to the first task while
 preserving previous reports. Use a fresh Agent conversation when restarting the whole journey.
 
-This example accepts run parameters on unbound node inputs without default values. A Manual
-trigger has no output parameters. Supply the query's `batch` input and calculation's `slaHours`
+This example accepts run parameters on unbound node inputs without default values. This continuing task uses a Start
+node with no declared parameters. Supply the query's `batch` input and calculation's `slaHours`
 input through the public run command on every run; the Agent can inspect that command's help
 when testing its work. Model outputs remain deterministic mocks, so this exercise verifies data
 routing and transmitted instructions rather than the quality of generated prose.
@@ -212,6 +221,7 @@ fulfillment workflow:
 
 | Scenario                   | Task and independent acceptance                                                                                                                                                                                                                           |
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start-parameters`         | Create Start parameters, update one description while preserving schemas, and archive their actual values downstream. Verify zero, explicit null, and omitted nullable values through both CLI and MCP.                                                   |
 | `webhook-live`             | CLI-only: publish a POST Webhook, discover its URL and request fields, edit the Draft to PUT, and verify the live callback still executes the published contract.                                                                                         |
 | `order-alert`              | Build from an empty flow. Discover order and notification Actions and test accounts among decoys. Run empty, below, equal and above-threshold orders; verify branch choice, call counts, content and accounts.                                            |
 | `customer-redaction`       | Insert a processing step into the customer notification execution path and bind its data. Verify only order ID and total leave the customer path; the internal archive retains the complete original record and account.                                  |
@@ -228,7 +238,7 @@ through `driver.ts`. They cannot read fixture data, the database or the service 
 CLI calls use production argument/file handling. MCP calls use the real HTTP transport.
 
 Each scenario declares its entry. Existing fixtures name their initial trigger. The blank-flow task
-requires one newly created Manual trigger. The verifier uses those entries and sample sets. It supports
+requires one newly created Start node. The verifier uses those entries and sample sets. It supports
 independent Runs and expected failures, and inspects actual mock calls.
 
 Model outputs are deterministic. Model request records verify prompt/configuration transmission.

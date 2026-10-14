@@ -19,7 +19,8 @@ const provider = {
   ),
 }
 const entrySchema = z.discriminatedUnion('type', [
-  z.strictObject({ ...metadata, type: z.literal('manual'), config: authoringConfigurations.manual }),
+  z.strictObject({ ...metadata, type: z.literal('start'), config: authoringConfigurations.start }),
+  z.strictObject({ ...metadata, type: z.literal('manual'), config: z.strictObject({}) }),
   z.strictObject({ ...metadata, type: z.literal('webhook'), config: authoringConfigurations.webhook, binding }),
   z.strictObject({ ...metadata, type: z.literal('cron'), config: authoringConfigurations.cron, binding }),
   z.strictObject({ ...metadata, type: z.literal('error'), config: authoringConfigurations.error, binding }),
@@ -43,7 +44,15 @@ export function liveEntries(content: RevisionContent, current: Publication, bind
   const entries = Object.entries(content.document.graph.nodes)
     .toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .flatMap(([nodeId, node]) => {
-      if (node.kind != 'manual' && node.kind != 'webhook' && node.kind != 'cron' && node.kind != 'error' && node.kind != 'poll' && node.kind != 'integration')
+      if (
+        node.kind != 'start' &&
+        node.kind != 'manual' &&
+        node.kind != 'webhook' &&
+        node.kind != 'cron' &&
+        node.kind != 'error' &&
+        node.kind != 'poll' &&
+        node.kind != 'integration'
+      )
         return []
       const config = triggerConfiguration(node)
       const value = {
@@ -52,7 +61,7 @@ export function liveEntries(content: RevisionContent, current: Publication, bind
         type: node.kind,
         ...(node.description == null ? {} : { description: node.description }),
         config: node.kind == 'webhook' && !webhookSupportsBody(node.method) ? { ...config, body: {} } : config,
-        ...(node.kind == 'manual' ? {} : { binding: byNode.get(nodeId) }),
+        ...(node.kind == 'start' || node.kind == 'manual' ? {} : { binding: byNode.get(nodeId) }),
         ...(node.kind == 'poll' || node.kind == 'integration' ? { provider: node.definition.provider, inputs: node.config } : {}),
       }
       return [value]
@@ -92,6 +101,7 @@ function decodeEntries(values: unknown, current: Publication): readonly LiveEntr
     if (ids.has(entry.nodeId)) return invalidResponse()
     ids.add(entry.nodeId)
     if (
+      entry.type != 'start' &&
       entry.type != 'manual' &&
       (entry.binding.flowId != current.flowId ||
         entry.binding.triggerNodeId != entry.nodeId ||

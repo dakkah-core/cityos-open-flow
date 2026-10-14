@@ -7,7 +7,7 @@ import type { FrontendStory, LogAction } from './stories.tsx'
 import type { TriggerFixture } from './triggerFixtures.ts'
 
 import { currentFlowModelVersion } from '@oomol-lab/open-flow/flow-change'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useVal } from 'use-value-enhancer'
 import { I18nProvider } from 'val-i18n-react'
 import { FlowCanvasView } from '../../src/canvas/browser/graph/FlowCanvas/FlowCanvasView.tsx'
@@ -23,6 +23,7 @@ import { RunRequestStore } from '../../src/workbench/browser/runtime/runs/runReq
 import { designerGraph } from '../../src/workbench/browser/runtime/workspace.ts'
 import { FixedDefinitionSample } from './fixedDefinitionSample.tsx'
 import { InspectorSamplePanel } from './inspectorSamplePanel.tsx'
+import { useStoryActions } from './storyActions.tsx'
 import { useStorySidebar } from './storySidebar.tsx'
 import { TriggerCatalogStory } from './triggerCatalogStory.tsx'
 import { triggerDraft, triggerFixtures, webhookValueFixtures } from './triggerFixtures.ts'
@@ -226,7 +227,21 @@ function NodeStory({ fixture, dark, language, log, active = true, onActivate }: 
 }
 
 type RunState = 'closed' | 'empty' | 'ready' | 'invalid' | 'starting' | 'direct' | 'disabled'
-function RunSample({ fixture, dark, language, log, state, downstream = false, label }: StoryProps & { state: RunState; downstream?: boolean; label?: string }) {
+function RunSample({
+  fixture,
+  dark,
+  language,
+  log,
+  state,
+  downstream = false,
+  label,
+  onContractChangeReady,
+}: StoryProps & {
+  state: RunState
+  downstream?: boolean
+  label?: string
+  onContractChangeReady?: (change: (() => void) | undefined) => void
+}) {
   const [resource, setResource] = useState<{
     store: RunRequestStore
     inputs: ReturnType<typeof triggerDraft>
@@ -235,9 +250,10 @@ function RunSample({ fixture, dark, language, log, state, downstream = false, la
   logRef.current = log
   useEffect(() => {
     const { flow, draft } = triggerDraft(fixture.trigger, downstream)
+    const inputs = { flow, draft }
     const i18n = createI18n(language)
     let release: (() => void) | undefined
-    const requestRun = async (): Promise<DraftRun> => {
+    const requestRun = async (revisionId: string): Promise<DraftRun> => {
       logRef.current('run.start', fixture.id)
       if (state === 'starting')
         await new Promise<void>((resolve) => {
@@ -246,7 +262,7 @@ function RunSample({ fixture, dark, language, log, state, downstream = false, la
       return {
         createdAt: flow.createdAt,
         flowId: flow.flowId,
-        revisionId: draft.revisionId,
+        revisionId,
         runId: 'lab-run',
         source: 'draft',
         status: 'running',
@@ -262,18 +278,21 @@ function RunSample({ fixture, dark, language, log, state, downstream = false, la
     }
     const store = new RunRequestStore(
       {
-        createDraftRun: requestRun,
+        createDraftRun: async (_flowId, revisionId, options) => {
+          logRef.current('run.parameters', options.trigger.outputs)
+          return await requestRun(revisionId)
+        },
         createLiveRun: async () => {
           throw new Error('No live Lab flow')
         },
         getLive: async () => {
           throw new Error('No live Lab flow')
         },
-        getRevision: async () => draft,
+        getRevision: async () => inputs.draft,
       },
-      { follow: () => true, prepareStart: () => () => true },
+      { captureSelection: () => () => true, follow: () => true, prepareStart: () => () => true },
       (notice) => logRef.current('run.notice', notice),
-      async () => draft.revisionId,
+      async () => inputs.draft,
       i18n,
     )
     let disposed = false
@@ -286,15 +305,29 @@ function RunSample({ fixture, dark, language, log, state, downstream = false, la
         )
         if (state === 'invalid' || state === 'starting') void store.confirmInputs()
       }
-      if (!disposed) setResource({ store, inputs: { flow, draft } })
+      if (!disposed) {
+        setResource({ store, inputs })
+        if (fixture.trigger.kind === 'start') {
+          const trigger = fixture.trigger
+          onContractChangeReady?.(() => {
+            inputs.draft = {
+              ...triggerDraft({ ...trigger, parameters: trigger.parameters.map((port) => Object.assign({}, port, { nullable: false })) }, downstream).draft,
+              revisionId: `${draft.revisionId}-required`,
+            }
+            logRef.current('run.contractChanged', inputs.draft.revisionId)
+            setResource({ store, inputs })
+          })
+        }
+      }
     })()
     return () => {
       disposed = true
+      onContractChangeReady?.(undefined)
       store.dispose()
       release?.()
       i18n.dispose()
     }
-  }, [fixture, language, state, downstream])
+  }, [fixture, language, state, downstream, onContractChangeReady])
   const starting = useVal(resource?.store.$.starting) ?? false
   const request = useVal(resource?.store.$.inputRequest)
   const valid = useVal(request?.valid)
@@ -340,7 +373,23 @@ function RunSample({ fixture, dark, language, log, state, downstream = false, la
   )
 }
 function RunStory(props: StoryProps) {
-  const direct = props.fixture.trigger.kind === 'manual' || props.fixture.trigger.kind === 'cron'
+  const [changeContract, setChangeContract] = useState<(() => void) | undefined>()
+  const contractChangeReady = useCallback((change: (() => void) | undefined) => setChangeContract(() => change), [])
+  const startSamples = useMemo(() => {
+    if (props.fixture.trigger.kind !== 'start') return
+    return {
+      nullable: {
+        ...props.fixture,
+        trigger: { ...props.fixture.trigger, parameters: props.fixture.trigger.parameters.map((port) => ({ ...port, nullable: true })) },
+      },
+      empty: { ...props.fixture, trigger: { ...props.fixture.trigger, parameters: [] }, outputs: {} },
+    }
+  }, [props.fixture])
+  useStoryActions(startSamples == null ? [] : [{ label: 'Make parameters required', onClick: () => changeContract?.(), disabled: changeContract == null }])
+  const direct =
+    props.fixture.trigger.kind === 'manual' ||
+    props.fixture.trigger.kind === 'cron' ||
+    (props.fixture.trigger.kind === 'start' && props.fixture.trigger.parameters.length === 0)
   return (
     <Gallery {...props}>
       <div className="trigger-case-grid">
@@ -359,6 +408,19 @@ function RunStory(props: StoryProps) {
           </>
         )}
         <RunSample {...props} state="disabled" />
+        {startSamples && (
+          <>
+            <RunSample {...props} fixture={startSamples.nullable} state="empty" label="All parameters nullable · Leave empty and confirm" />
+            <RunSample {...props} fixture={startSamples.empty} state="direct" label="No parameters · Run directly" />
+            <RunSample
+              {...props}
+              fixture={startSamples.nullable}
+              state="empty"
+              label="Definition change · Make parameters required, then confirm"
+              onContractChangeReady={contractChangeReady}
+            />
+          </>
+        )}
         {props.fixture.trigger.kind === 'webhook' &&
           webhookValueFixtures.map((fixture) => <RunSample {...props} key={fixture.id} fixture={fixture} state="ready" label={fixture.id} />)}
       </div>
@@ -401,6 +463,7 @@ function SidebarSample({ fixture, dark, language, log, state, framed = true }: S
     if (state === 'unconfigured' || state === 'no-event-sources') {
       if (trigger.kind === 'poll' || trigger.kind === 'integration') trigger = { ...trigger, config: {} }
       else if (trigger.kind === 'cron') trigger = { ...trigger, cronTimes: [] }
+      else if (trigger.kind === 'start') trigger = { ...trigger, parameters: [] }
       else if (trigger.kind === 'webhook') trigger = { ...trigger, bodyFields: [], options: {} }
     }
     if (trigger.kind === 'poll' && trigger.definition.provider === 'linear') {
@@ -698,7 +761,7 @@ export const triggerStories: readonly FrontendStory[] = [
         group: `Trigger ${fixture.trigger.name}`,
         id: `trigger-${fixture.id}-run`,
         title: 'Run menu states',
-        description: `${fixture.trigger.name} · Run panels shown side by side. Test data contains only the selected trigger’s outputs. Manual and scheduled triggers run directly, including with unconfigured downstream inputs.`,
+        description: `${fixture.trigger.name} · Run panels shown side by side. Test data contains only the selected trigger’s parameters or outputs. Start parameters allow empty nullable values after confirmation. Triggers with no test inputs run directly.`,
         standalone: true,
         render: (log, dark, language) => <RunStory fixture={fixture} log={log} dark={dark} language={language} />,
       },
@@ -709,8 +772,8 @@ export const triggerStories: readonly FrontendStory[] = [
         description:
           fixture.trigger.kind === 'error'
             ? 'Flow Error · Verify upstream multi-selection above Outputs in editable and read-only panels, including localized text wrapping.'
-            : fixture.trigger.kind === 'manual'
-              ? 'Manual · Read-only and editable properties share a fixed No outputs state. Changes stay in this Lab session.'
+            : fixture.trigger.kind === 'start'
+              ? 'Start · Edit startup parameter definitions. Compare read-only, editable and empty parameter states. Changes stay in this Lab session.'
               : fixture.trigger.kind === 'webhook'
                 ? 'Webhook · Compare live, unpublished, draft changes, paused, loading and failed deployments. Copy the live URL directly from Properties.'
                 : `${fixture.trigger.name} · Node properties in display and edit states. Changes stay in this Lab session.`,

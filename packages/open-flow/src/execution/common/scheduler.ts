@@ -17,7 +17,7 @@ import { conditionInputPorts, nodeInputMappings, selectConditionBranches } from 
 import { isResolutionNode, nodeOutputPorts, resolutionActions, resolutionOutputPorts } from '../../flow/common/graph.ts'
 import { inputValue } from '../../flow/common/inputValue.ts'
 import { matchesSchema } from '../../flow/common/schema.ts'
-import { matchesTriggerOutputs } from '../../trigger/common/contract.ts'
+import { matchesTriggerOutputs, normalizeTriggerOutputs } from '../../trigger/common/contract.ts'
 import { Dependencies, dependenciesSchema, dependencyValues } from './dependencies.ts'
 import { normalizeWaitComment as normalizeComment, withWaitNotificationMessage as notificationMessage } from './wait.ts'
 
@@ -1113,6 +1113,9 @@ export function runFlow(prepared: PreparedFlow, options: FlowRunOptions): Effect
     if (options.trigger != null && (triggerNode == null || 'inputs' in triggerNode)) {
       return yield* Effect.fail(new Error(`Node "${options.trigger.nodeId}" is not a TriggerNode in Flow "${options.flowId}".`))
     }
+    const outputs = triggerNode == null || 'inputs' in triggerNode ? undefined : normalizeTriggerOutputs(triggerNode, options.trigger!.outputs)
+    if (options.trigger != null && outputs == null) return yield* Effect.fail(new Error('Trigger outputs are invalid.'))
+    const trigger = options.trigger == null ? undefined : { nodeId: options.trigger.nodeId, outputs: outputs! }
     return yield* runGraph(
       {
         failures: new WeakMap(),
@@ -1129,7 +1132,7 @@ export function runFlow(prepared: PreparedFlow, options: FlowRunOptions): Effect
       { flowId: options.flowId, graph: prepared.graph },
       options.runId,
       options.inputs,
-      options.trigger,
+      trigger,
       checkpoint == null ? undefined : { checkpoint },
     )
   })

@@ -11,7 +11,7 @@ import type { Store } from '../storage/store.ts'
 
 import { controlErrorCode, decodeRunEvent, readResult } from '@oomol-lab/open-flow/control-api'
 import { canonicalJsonBytes, digestBytes } from '@oomol-lab/open-flow/flow-encoding'
-import { agentActions, codeActions, prepareFlow, validateFlowInputs, validRunTrigger, variableBindings } from '@oomol-lab/open-flow/flow-semantics'
+import { agentActions, codeActions, normalizeRunTrigger, prepareFlow, validateFlowInputs, variableBindings } from '@oomol-lab/open-flow/flow-semantics'
 import { currentEngineContract, findEngineContract } from '@oomol-lab/open-flow/runtime-contract'
 import { captureConnectorAccess } from '../deployment/connector-access.ts'
 import { checkCodeActions, checkCodePermissions } from '../deployment/connector.ts'
@@ -86,7 +86,8 @@ export class RunControl {
     const stored = readRevisionOrRepair(() => this.store.flows.revision(flowId, revisionId))
     if (stored == null) notFound()
     const content = revisionContent(stored)
-    if (!validRunTrigger(content, trigger)) throw new ControlError(controlErrorCode.runInvalid, 'Select a valid Trigger and outputs.')
+    const seed = normalizeRunTrigger(content, trigger)
+    if (seed == null) throw new ControlError(controlErrorCode.runInvalid, 'Select a valid Trigger and outputs.')
     const fixed = await this.prepareRun(content, engineContract, trigger.nodeId)
     const providerAccess = await captureConnectorAccess(this.connectorAccess, flowId, { ...content.document, ...fixed.flow }, sharedAccess)
     await this.checkRunActions(fixed.flow, flowId, providerAccess, 'draft')
@@ -99,7 +100,7 @@ export class RunControl {
       flowId,
       idempotencyKey,
       inputs,
-      trigger,
+      trigger: seed,
       modelVersion: content.modelVersion,
       providerAccess,
       requestDigest,
@@ -141,7 +142,8 @@ export class RunControl {
     }
     const content = revisionContent(stored)
     const fixed = await this.prepareRun(content, livePublication.engineContract)
-    if (!validRunTrigger(content, trigger)) throw new ControlError(controlErrorCode.runInvalid, 'Select a valid Trigger and outputs.')
+    const seed = normalizeRunTrigger(content, trigger)
+    if (seed == null) throw new ControlError(controlErrorCode.runInvalid, 'Select a valid Trigger and outputs.')
     const inputsValid = validateFlowInputs(content, inputs) == 'valid'
     if (!inputsValid) throw new ControlError(controlErrorCode.runInvalid, 'The Flow inputs are invalid.')
     if (fixed.flow.closureDigest != livePublication.closureDigest || content.modelVersion != livePublication.modelVersion) {
@@ -156,7 +158,7 @@ export class RunControl {
       flowId,
       idempotencyKey,
       inputs,
-      trigger,
+      trigger: seed,
       modelVersion: livePublication.modelVersion,
       requestDigest,
       revisionDigest: livePublication.revisionDigest,

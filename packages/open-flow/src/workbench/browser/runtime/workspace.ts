@@ -331,6 +331,7 @@ function triggerIcon(trigger: TriggerNode): string {
     case 'error':
       return ':lucide-light:siren:'
     case 'manual':
+    case 'start':
       return ':carbon:play:'
     case 'cron':
       return ':carbon:time:'
@@ -491,6 +492,7 @@ function triggerDesignerNode(
   switch (trigger.kind) {
     case 'error':
     case 'manual':
+    case 'start':
       presentation = { kind: trigger.kind, schedules: [] }
       break
     case 'cron':

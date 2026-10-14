@@ -21,7 +21,7 @@ const publication: Publication = {
   version: 1,
 }
 const nodes: Record<string, TriggerNode> = {
-  manual: { kind: 'manual', name: 'Start' },
+  start: { kind: 'start', name: 'Start', parameters: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: false }] },
   webhook: {
     kind: 'webhook',
     name: 'Receive',
@@ -73,7 +73,7 @@ const nodes: Record<string, TriggerNode> = {
 }
 const content: RevisionContent = { modelVersion: currentFlowModelVersion, modules: {}, document: { bindings: {}, graph: { nodes, edges: [] } } }
 const bindings: TriggerBinding[] = Object.entries(nodes).flatMap(([triggerNodeId, node]) =>
-  node.kind == 'manual'
+  node.kind == 'start' || node.kind == 'manual'
     ? []
     : [
         {
@@ -97,7 +97,8 @@ function details() {
 it('projects six published entry types with business fields and independent binding state', () => {
   const result = decodeLiveDetails(details())
   expect(result.entries).toHaveLength(6)
-  expect(result.entries.find((entry) => entry.type == 'manual')).not.toHaveProperty('binding')
+  expect(result.entries.find((entry) => entry.type == 'start')).not.toHaveProperty('binding')
+  expect(result.entries.find((entry) => entry.type == 'start')).toHaveProperty('config.parameters.message', { schema: { type: 'string' }, nullable: false })
   expect(result.entries.find((entry) => entry.type == 'webhook')).toMatchObject({
     config: {
       method: 'POST',
@@ -191,3 +192,14 @@ it.each([{ kind: 'cron' as const }, { endpointUrl: undefined }, { currentRevisio
     expect(() => decodeLiveDetails({ ...current, entries: [{ ...entry, binding: inconsistent }] })).toThrow()
   },
 )
+
+it('reads legacy published Manual entries without creating a runtime binding', () => {
+  const legacy: RevisionContent = {
+    modelVersion: 6,
+    modules: {},
+    document: { bindings: {}, graph: { nodes: { original: { kind: 'manual', name: 'Original' } }, edges: [] } },
+  }
+  const entries = liveEntries(legacy, publication, [])
+  expect(entries).toEqual([{ nodeId: 'original', type: 'manual', name: 'Original', config: {} }])
+  expect(decodeLiveDetails({ ...details(), entries }).entries).toEqual(entries)
+})

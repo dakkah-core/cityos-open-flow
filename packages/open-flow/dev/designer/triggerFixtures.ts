@@ -55,7 +55,15 @@ export interface TriggerFixture {
 
 const builtins: readonly TriggerNode[] = [
   { kind: 'error', name: 'Flow Error' },
-  { kind: 'manual', name: 'Manual' },
+  {
+    kind: 'start',
+    name: 'Start',
+    parameters: [
+      { handle: 'orderId', jsonSchema: { type: 'string' }, nullable: false, description: 'The order to process.' },
+      { handle: 'note', jsonSchema: { type: 'string' }, nullable: true, description: 'An optional note.' },
+      { handle: 'options', jsonSchema: { type: 'object', properties: { dryRun: { type: 'boolean' } }, additionalProperties: false }, nullable: true },
+    ],
+  },
   {
     kind: 'cron',
     name: 'Schedule',
@@ -82,9 +90,11 @@ export const triggerFixtures: readonly TriggerFixture[] = [
       id: trigger.kind,
       trigger,
       outputs:
-        trigger.kind === 'webhook'
-          ? { headers: {}, query: {}, body: { event: 'order.created', orderId: 'order_123' }, webhookUrl: 'https://example.com/webhook' }
-          : Object.fromEntries(triggerOutputDefinitions(trigger).map((port) => [port.handle, sample(port.jsonSchema)])),
+        trigger.kind === 'start'
+          ? { orderId: 'order_123', note: 'Review delivery instructions', options: { dryRun: false } }
+          : trigger.kind === 'webhook'
+            ? { headers: {}, query: {}, body: { event: 'order.created', orderId: 'order_123' }, webhookUrl: 'https://example.com/webhook' }
+            : Object.fromEntries(triggerOutputDefinitions(trigger).map((port) => [port.handle, sample(port.jsonSchema)])),
     }),
   ),
   ...snapshots.map((definition): TriggerFixture => {

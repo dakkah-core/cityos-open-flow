@@ -285,10 +285,10 @@ export function FlowEditor({
   const checkLoading = useVal(store.workspace.$.checkLoading)
   const history = useVal(store.workspace.history$)
   const designer = useVal(store.$.designer)
-  const triggers = designer.nodes.filter((node) => node.kind == 'trigger')
-  const selectedTrigger = triggers.find((node) => node.id == startId) ?? triggers[0]
-  const diagnosticFocus = useVal(store.workspace.$.diagnosticFocus)
   const draft = useVal(store.workspace.$.draft)
+  const triggers = designer.nodes.filter((node) => node.kind == 'trigger')
+  const selectedTrigger = triggers.find((node) => node.id == startId) ?? triggers.find((node) => node.presentation?.kind == 'start') ?? triggers[0]
+  const diagnosticFocus = useVal(store.workspace.$.diagnosticFocus)
   const live = useVal(store.workspace.$.live)
   const nodeFocus = useVal(store.workspace.$.nodeFocus)
   const flowId = useVal(store.workspace.$.flowId)
@@ -579,7 +579,7 @@ export function FlowEditor({
           nodeHeading={
             singleSelected && selection != null
               ? {
-                  titleReadOnly: selection.kind === 'trigger' && selection.trigger.kind === 'manual',
+                  titleReadOnly: selection.kind === 'trigger' && (selection.trigger.kind === 'manual' || selection.trigger.kind === 'start'),
                   title: selection.node.name ?? selectedDesignerNode?.title ?? '',
                   icon: selectedDesignerNode != null && 'icon' in selectedDesignerNode ? selectedDesignerNode.icon : undefined,
                   disabled: authoringDisabled,
@@ -700,7 +700,7 @@ export default function FlowWorkspace({
     if (view == 'publications' && flowId != null) void store.publications.load(flowId)
   }, [flowId, store, view])
 
-  useEffect(() => store.runRequests.dismissInputs(), [draft?.revisionId, flowId, store])
+  useEffect(() => store.runRequests.dismissInputs(), [flowId, store])
 
   useEffect(() => {
     if (submitting == null || !draftReady) return

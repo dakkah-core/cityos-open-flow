@@ -42,7 +42,9 @@
     "webhookDescription": "Receive external events through a dedicated HTTP endpoint.",
     "manual": "Manual trigger",
     "manualDescription": "Start execution manually from here.",
-    "integrationTriggers": "App triggers"
+    "integrationTriggers": "App triggers",
+    "start": "Start",
+    "startDescription": "Start the workflow manually or through an API call with startup parameters."
   },
   "connectorAccess": {
     "searchServices": "Search services",
@@ -418,7 +420,8 @@
           "body": "The body received with this Webhook request.",
           "webhookUrl": "The Webhook URL that received this request, without query parameters."
         }
-      }
+      },
+      "startParametersTitle": "Start parameters"
     }
   },
   "language": {
@@ -802,7 +805,8 @@
         },
         "trigger-not-allowed": "Trigger nodes are only allowed in Flows.",
         "variable-incompatible": "Variable binding \"{{bindingId}}\" is not compatible with this input.",
-        "variable-source-mixed": "A variable must be the only source for an input."
+        "variable-source-mixed": "A variable must be the only source for an input.",
+        "start-trigger-duplicate": "A workflow can contain only one Start node."
       },
       "llm": {
         "unconfigured": "LLM is not configured for this deployment. Configure OPEN_FLOW_LLM_ORIGIN and OPEN_FLOW_LLM_TOKEN."
@@ -868,13 +872,14 @@
     "triggerCount": "{{count}} start nodes",
     "close": "Close test data",
     "description": "Enter data for this run. Your workflow will not be changed.",
-    "invalid": "Set every listed input to a valid JSON value before running.",
+    "invalid": "Fill required parameters and correct invalid JSON values before running.",
     "title": "Test data",
     "trigger": "Start node",
     "selectTrigger": "Select a start node",
     "selectTriggerToTest": "Select a start node to test",
     "noTrigger": "Add a trigger as a start node before running.",
-    "triggerSubtitle": "Trigger · {{name}}"
+    "triggerSubtitle": "Trigger · {{name}}",
+    "startParametersHint": "Nullable parameters may be left empty and are passed as null when the workflow starts."
   },
   "workspace": {
     "check": "Check the current Draft",

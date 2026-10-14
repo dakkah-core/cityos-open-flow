@@ -76,6 +76,8 @@ export function triggerOutputDefinitions(trigger: TriggerNode): readonly Port[] 
       return errorOutputs
     case 'manual':
       return []
+    case 'start':
+      return trigger.parameters
     case 'cron':
       return cronOutputs
     case 'poll':
@@ -114,4 +116,17 @@ export function matchesTriggerOutputs(trigger: TriggerNode, outputs: unknown): o
         Object.hasOwn(outputs, port.handle) && ((outputs[port.handle] === null && port.nullable) || matchesSchema(outputs[port.handle]!, port.jsonSchema)),
     )
   )
+}
+
+/** Resolve caller-supplied Start parameters into the complete output snapshot used by execution. */
+export function normalizeTriggerOutputs(trigger: TriggerNode, outputs: unknown): Readonly<Record<string, JsonValue>> | undefined {
+  if (!isJsonObject(outputs)) return
+  const normalized =
+    trigger.kind == 'start'
+      ? {
+          ...outputs,
+          ...Object.fromEntries(trigger.parameters.filter((port) => port.nullable && !Object.hasOwn(outputs, port.handle)).map((port) => [port.handle, null])),
+        }
+      : outputs
+  return matchesTriggerOutputs(trigger, normalized) ? normalized : undefined
 }

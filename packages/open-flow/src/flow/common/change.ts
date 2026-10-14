@@ -5,7 +5,7 @@ export { fixedInputValue, inputValue, inputValues } from './inputValue.ts'
 import type { WebhookMethod } from './webhookMethod.ts'
 
 import { dequal } from 'dequal/lite'
-import { currentFlowModelVersion } from './changeSchema.ts'
+import { currentFlowModelVersion, decodeRevisionContent } from './changeSchema.ts'
 import { nodeInputMappings, setConditionInput } from './condition.ts'
 
 export { changeOperationsSchema, currentFlowModelVersion, decodeChangeOperations } from './changeSchema.ts'
@@ -457,6 +457,7 @@ interface TriggerNodeBase {
 
 export type TriggerNode =
   | (TriggerNodeBase & { readonly kind: 'manual' })
+  | (TriggerNodeBase & { readonly kind: 'start'; readonly parameters: readonly Port[] })
   | (TriggerNodeBase & { readonly kind: 'error'; readonly sourceFlowIds?: readonly string[] })
   | (TriggerNodeBase & {
       readonly bodyFields: readonly WebhookBodyField[]
@@ -494,7 +495,7 @@ export interface CodeModule {
 
 export interface RevisionContent {
   readonly document: FlowDocument
-  readonly modelVersion: 2 | 4 | 5 | typeof currentFlowModelVersion
+  readonly modelVersion: 2 | 4 | 5 | 6 | typeof currentFlowModelVersion
   readonly modules: Readonly<Record<string, CodeModule>>
 }
 
@@ -502,6 +503,35 @@ export interface GraphEdge {
   readonly source: string
   readonly sourceHandle?: string
   readonly target: string
+}
+
+/** Lossless upgrade of readable content. Historical content and its encoding stay unchanged. */
+export function upgradeRevisionContent(content: RevisionContent): RevisionContent {
+  const upgraded = upgradeDecodedRevisionContent(decodeRevisionContent(content))
+  return dequal(content, upgraded) ? content : upgraded
+}
+
+function upgradeDecodedRevisionContent(content: RevisionContent): RevisionContent {
+  const graph = content.document.graph
+  const hasManual = Object.values(graph.nodes).some((node) => node.kind == 'manual')
+  if (!hasManual && content.modelVersion == currentFlowModelVersion) return content
+  return {
+    ...content,
+    modelVersion: currentFlowModelVersion,
+    document: hasManual
+      ? {
+          ...content.document,
+          graph: {
+            ...graph,
+            nodes: Object.fromEntries(Object.entries(graph.nodes).map(([id, node]) => [id, upgradeManualTrigger(node)])),
+          },
+        }
+      : content.document,
+  }
+}
+
+export function upgradeManualTrigger(node: GraphNode): GraphNode {
+  return node.kind == 'manual' ? { ...node, kind: 'start', parameters: [] } : node
 }
 
 export function normalizeNodeName(value: string): string {
@@ -655,8 +685,12 @@ function invalid(message: string): never {
 }
 
 export function applyFlowChanges(content: RevisionContent, operations: readonly ChangeOperation[]): RevisionContent {
-  const document = { ...content.document }
-  const modules = { ...content.modules }
+  const source =
+    content.modelVersion != currentFlowModelVersion || Object.values(content.document.graph.nodes).some((node) => node.kind == 'manual')
+      ? decodeRevisionContent(content)
+      : content
+  const document = { ...source.document }
+  const modules = { ...source.modules }
   for (const operation of operations) {
     switch (operation.kind) {
       case 'graph.trigger.sources.set': {
@@ -742,8 +776,11 @@ export function applyFlowChanges(content: RevisionContent, operations: readonly 
         if (graph.nodes[operation.nodeId] != null) invalid('A Node with this ID already exists in the target graph.')
         if (operation.node.kind == 'error' && Object.values(graph.nodes).some((node) => node.kind == 'error'))
           invalid('A graph can contain only one Flow Error node.')
-        if (operation.node.kind == 'manual' && Object.values(graph.nodes).some((node) => node.kind == 'manual')) {
-          invalid('A graph can contain only one manual Trigger.')
+        if (
+          (operation.node.kind == 'manual' || operation.node.kind == 'start') &&
+          Object.values(graph.nodes).some((node) => node.kind == 'manual' || node.kind == 'start')
+        ) {
+          invalid('A graph can contain only one Start Trigger.')
         }
         if (operation.node.kind == 'task' && 'moduleId' in operation.node.task && operation.node.task.capabilities !== undefined)
           decodeConnectorCapabilities(operation.node.task.capabilities)
@@ -932,5 +969,5 @@ export function applyFlowChanges(content: RevisionContent, operations: readonly 
     }
   }
   assertOpenApiAuthBindings(document)
-  return { document, modelVersion: currentFlowModelVersion, modules }
+  return upgradeDecodedRevisionContent({ document, modelVersion: currentFlowModelVersion, modules })
 }

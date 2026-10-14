@@ -594,6 +594,7 @@
     },
     "triggerSource": {
       "manual": "手動",
+      "start": "開始",
       "cron": "スケジュール実行",
       "webhook": "Webhook",
       "error": "エラートリガー"

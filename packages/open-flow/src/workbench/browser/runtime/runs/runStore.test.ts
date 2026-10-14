@@ -28,6 +28,32 @@ const details = {
 const terminalEvent = { createdAt: timestamp, kind: 'run.completed', payload: { result: null }, sequence: 1 } as const
 
 describe('RunStore', () => {
+  it('captures the current selection without clearing its Run or stopping observation', async () => {
+    vi.useFakeTimers()
+    const client = new WorkbenchClient(vi.fn())
+    vi.spyOn(client, 'getRun').mockResolvedValue({ ...details, status: 'running' })
+    const events = vi
+      .spyOn(client, 'getRunEvents')
+      .mockResolvedValue({ done: false, events: [], historyComplete: true, nextAfter: 0, runId: run.runId, version: 1 })
+    const store = new RunStore(client, vi.fn())
+    try {
+      store.follow({ ...run, status: 'running' }, store.prepareStart())
+      await vi.advanceTimersByTimeAsync(0)
+      expect(events).toHaveBeenCalledOnce()
+      const current = store.captureSelection()
+      expect(current()).toBe(true)
+      expect(store.$.run.value?.runId).toBe(run.runId)
+      await vi.advanceTimersByTimeAsync(1200)
+      expect(events).toHaveBeenCalledTimes(2)
+      expect(current()).toBe(true)
+      store.prepareStart()
+      expect(current()).toBe(false)
+    } finally {
+      store.dispose()
+      vi.useRealTimers()
+    }
+  })
+
   it('backs off idle polling, caps the delay, and resets on events or status changes', async () => {
     vi.useFakeTimers()
     const client = new WorkbenchClient(vi.fn())

@@ -1183,6 +1183,16 @@ export class ControlClient {
     )
   }
 
+  async upgradeDraft(flowId: string, expectedRevisionId: string, options: { readonly idempotencyKey?: string } = {}): Promise<DraftChange> {
+    return draftChange(
+      await this.request(`/v1/flows/${segment(flowId)}/draft/upgrade`, {
+        body: JSON.stringify({ expectedRevisionId, version: 1 }),
+        headers: { 'idempotency-key': options.idempotencyKey ?? operationKey('upgrade') },
+        method: 'POST',
+      }),
+    )
+  }
+
   async checkFlow(flowId: string, revisionId: string): Promise<FlowCheck> {
     return flowCheck(
       await this.request(`/v1/flows/${segment(flowId)}/revisions/${segment(revisionId)}/check`, {

@@ -42,7 +42,9 @@
     "webhookDescription": "通过专属 HTTP 入口接收外部事件。",
     "manual": "手动触发",
     "manualDescription": "从这里手动启动执行。",
-    "integrationTriggers": "应用触发器"
+    "integrationTriggers": "应用触发器",
+    "start": "开始",
+    "startDescription": "通过启动参数开始工作流，支持手动运行和 API 调用。"
   },
   "connectorAccess": {
     "searchServices": "搜索服务",
@@ -418,7 +420,8 @@
           "body": "此 Webhook 请求携带的请求体。",
           "webhookUrl": "接收此次请求的 Webhook URL，不含查询参数。"
         }
-      }
+      },
+      "startParametersTitle": "启动参数"
     }
   },
   "language": {
@@ -802,7 +805,8 @@
         },
         "trigger-not-allowed": "Trigger 节点只能用于工作流。",
         "variable-incompatible": "变量绑定“{{bindingId}}”与此输入不兼容。",
-        "variable-source-mixed": "变量必须是一个输入的唯一来源。"
+        "variable-source-mixed": "变量必须是一个输入的唯一来源。",
+        "start-trigger-duplicate": "一个工作流只能包含一个 Start 节点。"
       },
       "llm": {
         "unconfigured": "当前部署尚未配置 LLM。请配置 OPEN_FLOW_LLM_ORIGIN 和 OPEN_FLOW_LLM_TOKEN。"
@@ -868,13 +872,14 @@
     "triggerCount": "共 {{count}} 个起始节点",
     "close": "关闭测试数据",
     "description": "填写本次运行需要的数据，不会修改工作流。",
-    "invalid": "请为所有列出的输入设置有效的 JSON 值后再运行。",
+    "invalid": "请填写必填参数，并修正无效的 JSON 值后再运行。",
     "title": "测试数据",
     "trigger": "起始节点",
     "selectTrigger": "选择起始节点",
     "selectTriggerToTest": "选择起始节点进行测试",
     "noTrigger": "请先添加一个触发器作为起始节点。",
-    "triggerSubtitle": "触发器 · {{name}}"
+    "triggerSubtitle": "触发器 · {{name}}",
+    "startParametersHint": "允许 null 的参数可以留空，工作流启动时会传入 null。"
   },
   "workspace": {
     "check": "检查当前草稿",

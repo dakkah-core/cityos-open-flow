@@ -649,3 +649,37 @@ it('saves, clears, undoes and redoes Flow Error sources as ordinary Revision his
     store.dispose()
   }
 })
+
+it('creates Start and saves parameter edits through the existing undo and redo history', async () => {
+  const { store, saved } = await session()
+  try {
+    await store.saveNodeTitle('value', 'Previous edit')
+    await store.addNode(
+      {
+        id: 'trigger:start',
+        kind: 'trigger',
+        trigger: { kind: 'start' },
+        label: 'Start',
+        description: 'Start the workflow',
+        inputs: [],
+        outputs: [],
+      },
+      { x: 0, y: -200 },
+    )
+    const startId = Object.entries(saved().draft.content.document.graph.nodes).find(([, node]) => node.kind === 'start')?.[0]
+    expect(startId).toBeDefined()
+    const parameters = [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: true, description: 'Message to process' }] as const
+    expect(await store.saveStartParameters(startId!, parameters)).toBe(true)
+    expect(saved().draft.content.document.graph.nodes[startId!]).toMatchObject({ kind: 'start', parameters })
+    const projected = designerGraph(saved().draft).nodes.find((node) => node.id === startId)
+    if (projected?.kind !== 'trigger') throw new Error('Expected Start canvas node')
+    expect(projected.outputs).toMatchObject(parameters)
+    await store.undo()
+    expect(saved().draft.content.document.graph.nodes[startId!]).toMatchObject({ kind: 'start', parameters: [] })
+    await store.redo()
+    expect(saved().draft.content.document.graph.nodes[startId!]).toMatchObject({ kind: 'start', parameters })
+    expect(saved().draft.content.document.graph.nodes.value?.name).toBe('Previous edit')
+  } finally {
+    store.dispose()
+  }
+})

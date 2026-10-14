@@ -5,7 +5,19 @@ import type { EventSource } from '../../../../control/common/api.ts'
 import type { ConnectorCapability } from '../../../../flow/common/change.ts'
 import type { Settings as NodeSettings } from '../../../../flow/common/nodeChanges.ts'
 import type { WorkflowFile } from '../../../../flow/common/workflowFile.ts'
-import type { WorkbenchClient, ConnectorConnection, Draft, Flow, GraphNode, InputPort, JsonValue, Live, TriggerKeySnapshot, TriggerSchedule } from '../api.ts'
+import type {
+  WorkbenchClient,
+  ConnectorConnection,
+  Draft,
+  Flow,
+  GraphNode,
+  InputPort,
+  Port,
+  JsonValue,
+  Live,
+  TriggerKeySnapshot,
+  TriggerSchedule,
+} from '../api.ts'
 import type { DesignerViewport, Point } from '../canvasPresentation.ts'
 import type { FlowChangeEvent } from '../contract.ts'
 import type { AddNodeOption } from '../editor/addNodeOptions.ts'
@@ -34,6 +46,7 @@ import {
   repairNodeNames,
   updateTriggerConfig,
   updateTriggerSchedule,
+  updateTrigger,
   setConnectorConnection as changeConnectorConnection,
   setCodeActions as changeCodeActions,
   setTriggerConnection as changeTriggerConnection,
@@ -309,7 +322,18 @@ export class WorkspaceStore {
       this.#stopFlowWatch = subscription.stop
       await subscription.ready
       if (!current()) return false
-      const { flow, draft, live, presentation } = await this.#client.getEditor(flowId)
+      let editor = await this.#client.getEditor(flowId)
+      for (let attempt = 0; current() && Object.values(revisionView(editor.draft).graph().nodes).some((node) => node.kind == 'manual'); attempt += 1) {
+        if (attempt >= 3) throw new ApiError(409, controlErrorCode.flowRevisionConflict, 'The Draft changed while upgrading its Start node.')
+        try {
+          await this.#client.upgradeDraft(flowId, editor.draft.revisionId, { idempotencyKey: this.#identity() })
+        } catch (error) {
+          if (!(error instanceof ApiError) || error.code !== controlErrorCode.flowRevisionConflict || attempt >= 2) throw error
+        }
+        if (!current()) return false
+        editor = await this.#client.getEditor(flowId)
+      }
+      const { flow, draft, live, presentation } = editor
       if (!current()) return false
       this.#draftChanges.reset(draft)
       this.#presentationChanges.reset(presentation)
@@ -320,9 +344,10 @@ export class WorkspaceStore {
         presentation,
         workspaceLoadFailed: false,
         workspaceLoadProblem: undefined,
-        workspaceLoading: false,
       })
       await this.#repairDraftNodeNames(current)
+      if (!current()) return false
+      this.#set({ workspaceLoading: false })
       if (invalidated && pendingRevision != draft.revisionId) void this.#refreshDraft(pendingRevision)
     } catch (error) {
       if (!current()) return false
@@ -707,6 +732,19 @@ export class WorkspaceStore {
     return (await this.#editDraft(resetInputValues(revision.revision.content, nodeId, handles))) != null
   }
 
+  public async saveStartParameters(triggerId: string, parameters: readonly Port[], deletion?: PropertyDeletion): Promise<boolean> {
+    const revision = this.$.revision.value
+    const trigger = revision?.trigger(triggerId)
+    if (revision == null || trigger?.kind !== 'start') return false
+    const changes = updateTrigger(revision.revision.content, triggerId, {
+      kind: 'start',
+      name: trigger.name,
+      description: trigger.description,
+      parameters,
+    })
+    return changes != null && (await this.#editDraft(changes, deletion)) != null
+  }
+
   public async resetTriggerConfig(triggerId: string, names?: readonly string[]): Promise<boolean> {
     const revision = this.$.revision.value
     if (revision == null) return false
@@ -1081,7 +1119,7 @@ export class WorkspaceStore {
     for (let attempt = 0; attempt < 2 && current(); attempt += 1) {
       const draft = this.#model.value.draft
       if (draft == null) return
-      const repairs = repairNodeNames(draft.content)
+      const repairs = repairNodeNames(draft.content, { start: this.#i18n.t('addNode.start') })
       if (repairs.length == 0) {
         void this.#checkDraft()
         return

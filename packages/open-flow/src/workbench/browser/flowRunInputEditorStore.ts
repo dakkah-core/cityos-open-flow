@@ -22,6 +22,7 @@ export class FlowRunInputEditorStore {
   readonly #values = val<Readonly<Record<string, unknown>>>({})
   readonly #draftIssues = val<ReadonlySet<string>>(new Set())
   readonly #validators = new Map<string, readonly [ValidateFunction | undefined, Error | undefined]>()
+  public readonly allowOmittedNullable: boolean
   public readonly values$: ReadonlyVal<Readonly<Record<string, unknown>>> = this.#values
   public readonly issues$: ReadonlyVal<Readonly<Record<string, InputIssue>>>
   public readonly valid$: ReadonlyVal<boolean>
@@ -29,7 +30,9 @@ export class FlowRunInputEditorStore {
   public constructor(
     public readonly definitions: readonly FlowRunInputDefinition[],
     public readonly language: ReadonlyVal<string>,
+    options: { readonly allowOmittedNullable?: boolean } = {},
   ) {
+    this.allowOmittedNullable = options.allowOmittedNullable ?? false
     for (const definition of definitions) this.#validators.set(definition.handle, compile(definition.jsonSchema))
     this.issues$ = compute((get) => {
       const values = get(this.#values)
@@ -37,7 +40,8 @@ export class FlowRunInputEditorStore {
       return Object.fromEntries(
         definitions.flatMap((definition): [string, InputIssue][] => {
           const value = values[definition.handle]
-          if (!Object.hasOwn(values, definition.handle) || value === undefined) return [[definition.handle, { kind: 'required' as const }]]
+          if (!Object.hasOwn(values, definition.handle) || value === undefined)
+            return this.allowOmittedNullable && definition.nullable ? [] : [[definition.handle, { kind: 'required' as const }]]
           if (!isJsonValue(value)) return [[definition.handle, { kind: 'json' as const }]]
           if (value === null && definition.nullable) return []
           const [validator, error] = this.#validators.get(definition.handle)!

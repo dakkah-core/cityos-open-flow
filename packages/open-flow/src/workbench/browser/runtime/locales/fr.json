@@ -42,7 +42,9 @@
     "webhookDescription": "Recevoir des événements externes via un point de terminaison HTTP dédié.",
     "manual": "Déclencheur manuel",
     "manualDescription": "Démarrer manuellement à partir de ce nœud.",
-    "integrationTriggers": "Déclencheurs d’applications"
+    "integrationTriggers": "Déclencheurs d’applications",
+    "start": "Démarrage",
+    "startDescription": "Démarrer le workflow manuellement ou par un appel API avec des paramètres de démarrage."
   },
   "connectorAccess": {
     "searchServices": "Rechercher un service",
@@ -418,7 +420,8 @@
           "body": "Le corps reçu avec cette requête Webhook.",
           "webhookUrl": "L’URL Webhook ayant reçu cette requête, sans les paramètres de requête."
         }
-      }
+      },
+      "startParametersTitle": "Paramètres de démarrage"
     }
   },
   "language": {
@@ -802,7 +805,8 @@
         },
         "trigger-not-allowed": "Les nœuds Trigger sont uniquement autorisés dans les Flows.",
         "variable-incompatible": "La liaison de variable « {{bindingId}} » n’est pas compatible avec cette entrée.",
-        "variable-source-mixed": "Une variable doit être l’unique source d’une entrée."
+        "variable-source-mixed": "Une variable doit être l’unique source d’une entrée.",
+        "start-trigger-duplicate": "Un workflow ne peut contenir qu’un seul nœud Start."
       },
       "llm": {
         "unconfigured": "Aucun LLM n’est configuré pour ce déploiement. Configurez OPEN_FLOW_LLM_ORIGIN et OPEN_FLOW_LLM_TOKEN."
@@ -868,13 +872,14 @@
     "triggerCount": "{{count}} nœuds de départ",
     "close": "Fermer les données de test",
     "description": "Saisissez les données pour cette exécution. Le workflow ne sera pas modifié.",
-    "invalid": "Définissez une valeur JSON valide pour chaque entrée listée avant d'exécuter.",
+    "invalid": "Renseignez les paramètres obligatoires et corrigez les valeurs JSON invalides avant l’exécution.",
     "title": "Données de test",
     "trigger": "Nœud de départ",
     "selectTrigger": "Choisir un nœud de départ",
     "selectTriggerToTest": "Choisir un nœud de départ à tester",
     "noTrigger": "Ajoutez un déclencheur comme nœud de départ avant de lancer le flux.",
-    "triggerSubtitle": "Déclencheur · {{name}}"
+    "triggerSubtitle": "Déclencheur · {{name}}",
+    "startParametersHint": "Les paramètres acceptant null peuvent rester vides. Ils sont transmis comme null au démarrage."
   },
   "workspace": {
     "check": "Vérifier le Brouillon actuel",

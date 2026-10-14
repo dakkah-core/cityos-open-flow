@@ -29,7 +29,55 @@ export async function reference(call: ToolCall, id: string, flowId: string, stag
   }
   const dataPort = { schema: {}, nullable: true },
     stringPort = { schema: { type: 'string' }, nullable: false }
-  if (id == 'connector-responses') {
+  if (id == 'start-parameters') {
+    await call('flow_schema', { type: 'start' })
+    const catalog = await call('connector_search', { flowId, query: 'Archive order' })
+    const archive = (catalog.actions as { actionId: string; serviceId: string }[])[0]!
+    const accounts = await call('connector_connections', { flowId, serviceId: archive.serviceId })
+    await call('flow_schema', { flowId, action: archive.actionId })
+    const before = await read()
+    const created = await submit(before.revision, [
+      {
+        op: 'node.add',
+        as: 'start',
+        type: 'start',
+        name: 'Start',
+        config: {
+          parameters: {
+            message: stringPort,
+            amount: { schema: { type: 'number' }, nullable: false, description: 'Amount' },
+            note: { schema: { type: 'string' }, nullable: true },
+          },
+        },
+      },
+      {
+        op: 'node.add',
+        as: 'combine',
+        type: 'code',
+        name: 'Invoice parameters',
+        config: { outputs: { payload: dataPort } },
+        code: 'export default ({message,amount,note}) => ({payload:{message,amount,note}})',
+        inputs: {
+          message: { kind: 'output', node: '$start', port: 'message' },
+          amount: { kind: 'output', node: '$start', port: 'amount' },
+          note: { kind: 'output', node: '$start', port: 'note' },
+        },
+      },
+      {
+        op: 'node.add',
+        as: 'archive',
+        type: 'connector',
+        name: 'Archive invoice',
+        config: { action: archive.actionId, connectionId: account(accounts, 'Archive test account') },
+        inputs: { payload: { kind: 'output', node: '$combine' } },
+      },
+      { op: 'edge.connect', source: '$start', target: '$combine' },
+      { op: 'edge.connect', source: '$combine', target: '$archive' },
+    ])
+    const start = (created.nodes as Record<string, string>).start!
+    const details = await read([start])
+    await submit(details.revision, [{ op: 'node.update', node: start, set: { config: { parameters: { amount: { description: 'Invoice total' } } } } }])
+  } else if (id == 'connector-responses') {
     const catalog = await call('connector_search', { flowId, query: 'Read' })
     const available = catalog.actions as { actionId: string; name: string; serviceId: string }[]
     const dynamic = available.find((action) => action.name == 'Read dynamic response')!
@@ -41,7 +89,7 @@ export async function reference(call: ToolCall, id: string, flowId: string, stag
     for (const action of [dynamic, cells, archive]) await call('flow_schema', { flowId, action: action.actionId })
     const before = await read()
     await submit(before.revision, [
-      { op: 'node.add', as: 'start', type: 'manual', name: 'Start' },
+      { op: 'node.add', as: 'start', type: 'start', name: 'Start' },
       {
         op: 'node.add',
         as: 'dynamic',
@@ -87,10 +135,10 @@ export async function reference(call: ToolCall, id: string, flowId: string, stag
       notifyAccounts = await call('connector_connections', { flowId, serviceId: notification.serviceId })
     await call('flow_schema', { flowId, action: orderAction.actionId })
     await call('flow_schema', { flowId, action: notification.actionId })
-    for (const type of ['manual', 'code', 'condition']) await call('flow_schema', { type })
+    for (const type of ['start', 'code', 'condition']) await call('flow_schema', { type })
     const before = await read()
     await submit(before.revision, [
-      { op: 'node.add', as: 'start', type: 'manual', name: 'Manual trigger' },
+      { op: 'node.add', as: 'start', type: 'start', name: 'Start' },
       {
         op: 'node.add',
         as: 'orders',

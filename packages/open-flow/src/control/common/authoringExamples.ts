@@ -14,7 +14,7 @@ import {
 import { openApiTask, selectOperation } from '../../openapi/common/openapi.ts'
 
 const descriptions = {
-  'manual': 'A Manual start node.',
+  'start': 'A Start node with a required message parameter. Supply it through trigger.outputs.',
   'error': 'A Flow Error node. Select upstream Flows, then publish and enable this Flow to listen for failures in their automatic runs.',
   'webhook': 'A Webhook start node.',
   'cron': 'An hourly scheduled start node.',
@@ -58,8 +58,12 @@ export function authoringExample(name: string): { version: 1; operations: readon
       operations = createManagedTask({ nodeId: 'api' }, openApiTask(selectOperation(document, 'https://api.example.com/openapi.json', '/items', 'get')))
       break
     }
-    case 'manual':
-      operations = createBuiltinTrigger('start', { kind: 'manual', name: 'Start' })
+    case 'start':
+      operations = createBuiltinTrigger('start', {
+        kind: 'start',
+        name: 'Start',
+        parameters: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: false }],
+      })
       break
     case 'webhook':
       operations = createBuiltinTrigger('start', { kind: 'webhook', method: 'POST', name: 'Webhook', bodyFields: [] })

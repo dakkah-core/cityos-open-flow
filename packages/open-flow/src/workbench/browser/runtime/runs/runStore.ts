@@ -387,6 +387,10 @@ export class RunStore {
     }
   }
 
+  public captureSelection(): Current {
+    return this.#selection.capture()
+  }
+
   public prepareStart(): Current {
     const current = this.#selection.begin()
     this.#lists.invalidate()

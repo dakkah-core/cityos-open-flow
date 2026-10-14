@@ -23,7 +23,7 @@ it('reads authorized published entries independently of edits and unreadable Dra
         nodeId: 'webhook',
         node: { kind: 'webhook', name: 'Online hook', method: 'POST', bodyFields: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: false }] },
       },
-      { kind: 'graph.node.create', nodeId: 'manual', node: { kind: 'manual', name: 'Start' } },
+      { kind: 'graph.node.create', nodeId: 'manual', node: { kind: 'start', name: 'Start', parameters: [] } },
       { kind: 'graph.node.create', nodeId: 'cron', node: { kind: 'cron', name: 'Schedule', cronTimes: [{ type: 'every', unit: 'hour', value: 1 }] } },
     ])
     const op = await service.control.publishFlow('operator', flowId, saved.revision.revisionId, 'open-flow-engine/v5', null, 'publish')
@@ -49,7 +49,7 @@ it('reads authorized published entries independently of edits and unreadable Dra
     await service.tickMaintenance()
     expect(service.control.getPublishOperation(flowId, second.operationId).status).toBe('succeeded')
     expect(service.control.listFlowTriggerBindings(flowId).some((item) => item.triggerNodeId == 'webhook' && item.currentPublicationId == null)).toBe(true)
-    expect((await client.getLiveDetails(flowId)).entries.map((item) => item.type)).toEqual(['cron', 'manual'])
+    expect((await client.getLiveDetails(flowId)).entries.map((item) => item.type)).toEqual(['cron', 'start'])
     const draft = await service.control.changeDraft('operator', flowId, changed.revision.revisionId, [
       { kind: 'graph.node.create', nodeId: 'draft-only', node: { kind: 'webhook', name: 'Draft only', method: 'GET', bodyFields: [] } },
     ])
@@ -58,7 +58,7 @@ it('reads authorized published entries independently of edits and unreadable Dra
       db.prepare("UPDATE revisions SET content = '{}' WHERE revision_id = ?").run(draft.revision.revisionId)
       db.prepare('UPDATE revision_deltas SET patch = ? WHERE revision_id = ?').run('[{"op":"invalid","path":"/"}]', draft.revision.revisionId)
       expect(() => service.control.getDraft(flowId)).toThrow()
-      expect((await client.getLiveDetails(flowId)).entries.map((item) => item.type)).toEqual(['cron', 'manual'])
+      expect((await client.getLiveDetails(flowId)).entries.map((item) => item.type)).toEqual(['cron', 'start'])
       db.prepare("UPDATE publications SET revision_digest = 'invalid' WHERE flow_id = ?").run(flowId)
       await expect(client.getLiveDetails(flowId)).rejects.toMatchObject({ code: 'flow.revision-storage-conflict' })
     } finally {

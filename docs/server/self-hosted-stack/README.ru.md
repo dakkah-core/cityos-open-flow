@@ -243,7 +243,7 @@ oo flow publish "GitHub digest"
 oo flow open "GitHub digest"
 ```
 
-- Подготовьте `edits.json` с `baseRevision`, `requestId` и изменениями узлов, входов и связей, включая Manual Trigger. Укажите Connection ID в настройках Connector. См. [контракт редактирования](../../control/contracts/control-api.md#node-authoring).
+- Подготовьте `edits.json` с `baseRevision`, `requestId` и изменениями узлов, входов и связей, включая Start node. Укажите Connection ID в настройках Connector. См. [контракт редактирования](../../control/contracts/control-api.md#node-authoring).
 - `check` проверяет, корректен ли Revision. Работают ли учётные данные и выполняется ли Action у
   провайдера, проверяет только `run`.
 - `run --wait` выполняет Draft через OpenConnector и печатает результат.

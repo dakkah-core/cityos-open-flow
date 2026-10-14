@@ -42,7 +42,9 @@
     "webhookDescription": "透過專屬的 HTTP 端點接收外部事件。",
     "manual": "手動觸發",
     "manualDescription": "從這裡手動啟動執行。",
-    "integrationTriggers": "應用觸發器"
+    "integrationTriggers": "應用觸發器",
+    "start": "開始",
+    "startDescription": "透過啟動參數開始工作流程，支援手動執行和 API 呼叫。"
   },
   "connectorAccess": {
     "searchServices": "搜尋服務",
@@ -418,7 +420,8 @@
           "body": "此 Webhook 請求攜帶的請求本文。",
           "webhookUrl": "接收此次請求的 Webhook URL，不含查詢參數。"
         }
-      }
+      },
+      "startParametersTitle": "啟動參數"
     }
   },
   "language": {
@@ -802,7 +805,8 @@
         },
         "trigger-not-allowed": "Trigger 節點只能用於 Flow。",
         "variable-incompatible": "變數繫結「{{bindingId}}」與此輸入不相容。",
-        "variable-source-mixed": "變數必須是輸入的唯一來源。"
+        "variable-source-mixed": "變數必須是輸入的唯一來源。",
+        "start-trigger-duplicate": "一個工作流程只能包含一個 Start 節點。"
       },
       "llm": {
         "unconfigured": "目前部署尚未設定 LLM。請設定 OPEN_FLOW_LLM_ORIGIN 和 OPEN_FLOW_LLM_TOKEN。"
@@ -868,13 +872,14 @@
     "triggerCount": "共 {{count}} 個起始節點",
     "close": "關閉測試資料",
     "description": "填寫本次執行需要的資料，不會修改工作流程。",
-    "invalid": "執行前，請將列出的每個輸入都設為有效的 JSON 值。",
+    "invalid": "請填寫必填參數，並修正無效的 JSON 值後再執行。",
     "title": "測試資料",
     "trigger": "起始節點",
     "selectTrigger": "選擇起始節點",
     "selectTriggerToTest": "選擇起始節點進行測試",
     "noTrigger": "請先新增一個觸發器作為起始節點。",
-    "triggerSubtitle": "觸發器 · {{name}}"
+    "triggerSubtitle": "觸發器 · {{name}}",
+    "startParametersHint": "允許 null 的參數可以留空，工作流程啟動時會傳入 null。"
   },
   "workspace": {
     "check": "檢查目前的草稿",

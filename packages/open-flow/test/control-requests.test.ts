@@ -9,7 +9,7 @@ const samples = {
   authoringRead: {},
   authoringSearch: { query: 'test', offset: 0, limit: 20 },
   authoringSchema: { type: 'code' },
-  authoringEdit: { baseRevision: 'r', requestId: 'change', edits: [{ op: 'node.add', as: 'start', type: 'manual', name: 'Start' }] },
+  authoringEdit: { baseRevision: 'r', requestId: 'change', edits: [{ op: 'node.add', as: 'start', type: 'start', name: 'Start', config: { parameters: {} } }] },
   loadOpenApiDocument: { version: 1, url: 'https://api.example.test/spec.json' },
   createEventSource: {
     version: 1,
@@ -28,10 +28,11 @@ const samples = {
   renameFlow: { name: 'Flow', version: 1 },
   changeDraft: {
     expectedRevisionId: 'r1',
-    operations: [{ kind: 'graph.node.create', nodeId: 'start', node: { kind: 'manual', name: 'Start' } }],
+    operations: [{ kind: 'graph.node.create', nodeId: 'start', node: { kind: 'start', name: 'Start', parameters: [] } }],
     version: 1,
   },
   repairDraft: { expectedRevisionId: 'r1', version: 1 },
+  upgradeDraft: { expectedRevisionId: 'r1', version: 1 },
   setEnabled: { enabled: false, expectedPublicationId: 'p1', version: 1 },
   updatePresentation: { expectedRevision: 1, value: {}, version: 1 },
   checkFlow: { engineContract: 'open-flow-engine/v5', version: 1 },

@@ -594,6 +594,7 @@
     },
     "triggerSource": {
       "manual": "Вручную",
+      "start": "Начало",
       "cron": "Расписание",
       "webhook": "Webhook",
       "error": "Триггер ошибки"

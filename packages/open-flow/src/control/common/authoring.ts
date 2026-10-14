@@ -17,7 +17,7 @@ import type { AuthoringAgentTool } from './authoringTools.ts'
 import { dequal } from 'dequal/lite'
 import { connectorOutputMode } from '../../connector/common/actionSchema.ts'
 import { decisionTask } from '../../decision/common/decision.ts'
-import { applyFlowChanges, decodeChangeOperations } from '../../flow/common/change.ts'
+import { applyFlowChanges, decodeChangeOperations, upgradeRevisionContent } from '../../flow/common/change.ts'
 import { nodeInputMappings } from '../../flow/common/condition.ts'
 import { connect, disconnect } from '../../flow/common/edgeChanges.ts'
 import { nodeInputPorts, nodeOutputPorts } from '../../flow/common/graph.ts'
@@ -35,6 +35,7 @@ import {
   createWait,
   createApproval,
   cleanVariableBindings,
+  updateTrigger,
 } from '../../flow/common/nodeChanges.ts'
 import { conditionConfigurationView, prepareConditionConfiguration } from './authoringCondition.ts'
 import { authoringDiagnosticField } from './authoringDiagnosticFields.ts'
@@ -83,7 +84,7 @@ function inputMappings(node: GraphNode) {
 }
 function typeOf(node: GraphNode): AuthoringType {
   const task = taskAt(node)
-  return node.kind != 'task' ? node.kind : task != null && 'executor' in task ? task.executor.kind : 'code'
+  return node.kind == 'manual' ? 'start' : node.kind != 'task' ? node.kind : task != null && 'executor' in task ? task.executor.kind : 'code'
 }
 function outwardSource(content: RevisionContent, value: unknown): unknown {
   if (Array.isArray(value)) return value.map((v) => outwardSource(content, v))
@@ -164,6 +165,9 @@ export function authoringNode(content: RevisionContent, ref: string) {
         texts.prompt = node.prompt
         break
       case 'manual':
+        config = { parameters: {} }
+        break
+      case 'start':
       case 'webhook':
       case 'cron':
       case 'error':
@@ -316,7 +320,8 @@ function clearPath(value: Record<string, unknown>, path: readonly string[]) {
 }
 export async function compileAuthoring(base: RevisionContent, request: AuthoringRequest, host: AuthoringHost) {
   const parsed = authoringRequestSchema.parse(request)
-  let content = base,
+  const upgraded = upgradeRevisionContent(base)
+  let content = upgraded,
     index = 0,
     sequence = 0
   const operations: ChangeOperation[] = [],
@@ -512,6 +517,13 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
         case 'approval':
           next = { ...next, inputDefinitions: fieldsToPorts(config.inputs, node.inputDefinitions) } as GraphNode
           break
+        case 'start': {
+          const parameters = fieldsToPorts(config.parameters, node.parameters).filter((port): port is InputPort => 'handle' in port)
+          const changes = updateTrigger(content, ref, { kind: 'start', name: node.name, description: node.description, parameters })
+          if (changes != null && changes.length > 0) apply(changes)
+          next = { ...next, parameters } as GraphNode
+          break
+        }
         case 'webhook': {
           const { body, ...settings } = config
           const { options: _options, ...withoutOptions } = next as Extract<GraphNode, { kind: 'webhook' }>
@@ -665,6 +677,7 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
                   node: {
                     kind: edit.type,
                     name,
+                    ...(edit.type == 'start' ? { parameters: [] } : {}),
                     ...(edit.type == 'cron' ? { cronTimes: [{ type: 'every', unit: 'hour', value: 1 }] } : {}),
                     ...(edit.type == 'webhook' ? { method: 'POST', bodyFields: [] } : {}),
                   } as GraphNode,
@@ -740,8 +753,8 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
     )
       apply([{ kind: 'module.delete', moduleId }])
   // Shared binding lifecycle remains owned by the existing authoring implementation.
-  const cleaned = cleanVariableBindings(base, operations)
-  return { operations: cleaned, content: cleaned.length == 0 ? base : applyFlowChanges(base, cleaned), nodes: aliases }
+  const cleaned = cleanVariableBindings(upgraded, operations)
+  return { operations: cleaned, content: cleaned.length == 0 ? upgraded : applyFlowChanges(upgraded, cleaned), nodes: aliases }
 }
 
 const escapePointer = (value: string) => value.replaceAll('~', '~0').replaceAll('/', '~1')

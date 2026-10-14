@@ -125,7 +125,7 @@ export const mcpTools = {
     false,
   ),
   flow_run: tool(
-    'Start a Run and return its runId. For draft supply flowId and revisionId; for live supply publicationId. Always fix the source, Trigger and idempotencyKey. Poll run_get for completion.',
+    'Start a Run and return its runId. For draft supply flowId and revisionId; for live supply publicationId. Always fix the source, Trigger and idempotencyKey. Start parameters come from flow_read config.parameters and are supplied in trigger.outputs; required parameters must be present, omitted nullable parameters become null, and unknown parameters are rejected. Poll run_get for completion.',
     z
       .discriminatedUnion('source', [
         z.strictObject({
@@ -230,7 +230,7 @@ export const mcpTools = {
     true,
   ),
   trigger_search: tool(
-    'Search provider Trigger summaries; omit query to list all. Flow trigger instances are in flow_read. Manual, Webhook and Cron are built-in node kinds described by flow_schema.',
+    'Search provider Trigger summaries; omit query to list all. Flow trigger instances are in flow_read. Start, Webhook and Cron are built-in node kinds described by flow_schema.',
     z.strictObject({ query: z.string().trim().min(1).max(256).optional() }),
     true,
   ),

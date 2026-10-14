@@ -31,7 +31,7 @@ function emptyDraft(): Draft {
   }
 }
 
-it('offers a manual trigger again after the existing one is removed', () => {
+it('offers Start again after the existing one is removed', () => {
   const draft: Draft = {
     actorId: 'actor',
     createdAt: '2026-09-07T00:00:00.000Z',
@@ -62,7 +62,7 @@ it('offers a manual trigger again after the existing one is removed', () => {
     label: 'Approval',
     outputs: [{ handle: 'approve' }, { handle: 'reject' }],
   })
-  expect(options.some((option) => option.id == 'trigger:manual')).toBe(false)
+  expect(options.some((option) => option.id == 'trigger:start')).toBe(false)
   const webhook = options.find((option) => option.id == 'trigger:webhook')!
   expect(webhook.outputs).toEqual(triggerOutputDefinitions({ kind: 'webhook', method: 'POST', name: 'Webhook', bodyFields: [] }))
   expect(webhook.outputs.map((port) => port.handle)).toEqual(['headers', 'query', 'body', 'webhookUrl'])
@@ -82,7 +82,7 @@ it('offers a manual trigger again after the existing one is removed', () => {
     },
   ])
   const cleared: Draft = { ...draft, content: { ...draft.content, document: { ...draft.content.document, graph: { edges: [], nodes: {} } } } }
-  expect(deriveAddNodeOptions(cleared, t).find((option) => option.id == 'trigger:manual')).toMatchObject({ outputs: [] })
+  expect(deriveAddNodeOptions(cleared, t).find((option) => option.id == 'trigger:start')).toMatchObject({ outputs: [] })
 })
 
 it('hides legacy LLM nodes from the node library', () => {
@@ -91,6 +91,22 @@ it('hides legacy LLM nodes from the node library', () => {
 
   const options = deriveAddNodeOptions(draft, t)
   expect(options.some((option) => option.id == 'llm:chat' || option.id == 'llm:json')).toBe(false)
+})
+
+it.each([
+  ['zh-CN', '开始'],
+  ['zh-TW', '開始'],
+] as const)('uses the %s Start translation in the node menu and created node', (language, label) => {
+  const i18n = createI18n(language)
+  const draft = emptyDraft()
+  const view = new RevisionView(draft)
+  const option = deriveAddNodeOptions(draft, i18n.t).find((item) => item.id == 'trigger:start')!
+  expect(option.label).toBe(label)
+  const intent = addNodeIntent(option, view, i18n.t)!
+  const changes = addNode(view, 'start', intent)!
+  const created = changes.find((operation) => operation.kind == 'graph.node.create')
+  expect(created?.kind == 'graph.node.create' ? created.node : undefined).toMatchObject({ kind: 'start', name: label, parameters: [] })
+  i18n.dispose()
 })
 
 it.each([

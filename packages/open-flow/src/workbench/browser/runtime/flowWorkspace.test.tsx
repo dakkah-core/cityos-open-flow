@@ -90,7 +90,10 @@ function renderWorkspace(busy?: string, withTrigger = true, invalid = false, sel
             ]
           : [],
       ),
-      designer: value({ nodes: withTrigger ? [{ id: 'start', kind: 'trigger', title: 'Start' }] : [], viewport: { x: 0, y: 0, zoom: 1 } }),
+      designer: value({
+        nodes: withTrigger ? [{ id: 'start', kind: 'trigger', title: 'Start', presentation: { kind: 'start', schedules: [] } }] : [],
+        viewport: { x: 0, y: 0, zoom: 1 },
+      }),
       designerNodeById: value(new Map([['start', { kind: 'trigger', title: 'Start' }]])),
       selectedDesignerNode: value(undefined),
     },
@@ -140,7 +143,11 @@ function renderWorkspace(busy?: string, withTrigger = true, invalid = false, sel
         addNodeOptions: value([]),
         checkLoading: value(false),
         diagnosticFocus: value(undefined),
-        draft: value({ flowId: 'flow', revisionId: 'revision' }),
+        draft: value({
+          flowId: 'flow',
+          revisionId: 'revision',
+          content: { document: { bindings: {}, graph: { edges: [], nodes: withTrigger ? { start: { kind: 'start', name: 'Start', parameters: [] } } : {} } } },
+        }),
         moduleEditor: value(undefined),
         flow: value({ flowId: 'flow', name: 'Example flow' }),
         flowId: value('flow'),
@@ -181,6 +188,38 @@ describe('FlowWorkspace run drawer', () => {
     mocks.setRunDrawerOpen.mockReset()
     mocks.stateCall = 0
     mocks.stateValues.clear()
+    vi.mocked(useEffect).mockReset()
+  })
+
+  it('keeps Run inputs open across Draft saves and dismisses them when switching workflows', () => {
+    const previous: (readonly unknown[] | undefined)[] = []
+    let index = 0
+    let pending: (() => unknown)[] = []
+    vi.mocked(useEffect).mockImplementation((effect, dependencies) => {
+      const slot = index++
+      const old = previous[slot]
+      if (old == null || dependencies == null || old.length != dependencies.length || dependencies.some((entry, i) => entry !== old[i])) pending.push(effect)
+      previous[slot] = dependencies
+    })
+    const flush = () => {
+      for (const effect of pending) effect()
+      pending = []
+      index = 0
+      mocks.stateCall = 0
+    }
+    const { navigation, store } = renderWorkspace()
+    flush()
+    vi.mocked(store.runRequests.dismissInputs).mockClear()
+    const render = () => {
+      FlowWorkspace({ hrefFor: () => '/', navigation, store, theme: 'light' })
+      flush()
+    }
+    Object.assign(store.workspace.$.draft, { value: { ...store.workspace.$.draft.value, revisionId: 'saved-revision' } })
+    render()
+    expect(store.runRequests.dismissInputs).not.toHaveBeenCalled()
+    Object.assign(store.workspace.$.flowId, { value: 'another-flow' })
+    render()
+    expect(store.runRequests.dismissInputs).toHaveBeenCalledOnce()
   })
 
   it('passes the current Draft and unsaved code state into the production canvas boundary', () => {
@@ -194,7 +233,7 @@ describe('FlowWorkspace run drawer', () => {
     expect(context()).toMatchObject({ flowId: 'flow', revisionId: 'revision', syncState: 'saved' })
     Object.assign(store.workspace.$.moduleEditor, { value: { status: 'dirty' } })
     expect(context()).toMatchObject({ flowId: 'flow', revisionId: 'revision', syncState: 'dirty' })
-    Object.assign(store.workspace.$.draft, { value: { flowId: 'flow', revisionId: 'next-revision' } })
+    Object.assign(store.workspace.$.draft, { value: { ...store.workspace.$.draft.value, revisionId: 'next-revision' } })
     Object.assign(store.workspace.$.moduleEditor, { value: undefined })
     expect(context()).toMatchObject({ flowId: 'flow', revisionId: 'next-revision', syncState: 'saved' })
     Object.assign(store.workspace.$.flowId, { value: 'other-flow' })
@@ -356,6 +395,24 @@ describe('FlowWorkspace run drawer', () => {
     const view = (editor.type as (props: typeof editor.props) => ReactElement)(editor.props)
     const designer = (view.props.children as ReactElement[])[0]!
     expect(designer.props.runControl).toBeUndefined()
+  })
+
+  it('selects Start before an earlier event trigger', () => {
+    const { editor, store } = renderWorkspace()
+    Object.assign(store.$.designer, {
+      value: {
+        nodes: [
+          { id: 'timer', kind: 'trigger', title: 'Schedule', presentation: { kind: 'cron', schedules: [] } },
+          { id: 'start', kind: 'trigger', title: 'Start', presentation: { kind: 'start', schedules: [] } },
+        ],
+        viewport: { x: 0, y: 0, zoom: 1 },
+      },
+    })
+    const view = (editor.type as (props: typeof editor.props) => ReactElement)(editor.props)
+    const designer = (view.props.children as ReactElement[])[0]!
+    expect(designer.props.runControl.props.selectedTriggerId).toBe('start')
+    designer.props.runControl.props.onRun()
+    expect(store.requestDraftRun).toHaveBeenCalledWith('start')
   })
 
   it('switches the test trigger without navigating or starting a run', () => {

@@ -5,6 +5,8 @@ import { fieldsView } from './authoringFields.ts'
 /** Shared business configuration for authoring and published entry inspection. */
 export function triggerConfiguration(node: TriggerNode) {
   switch (node.kind) {
+    case 'start':
+      return { parameters: fieldsView(node.parameters) }
     case 'manual':
       return {}
     case 'webhook':

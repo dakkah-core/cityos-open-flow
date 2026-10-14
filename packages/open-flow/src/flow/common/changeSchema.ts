@@ -7,7 +7,7 @@ import { checkJsonDepth } from './json.ts'
 import { triggerScheduleSchema } from './triggerScheduleSchema.ts'
 import { webhookMethods } from './webhookMethod.ts'
 
-export const currentFlowModelVersion = 6
+export const currentFlowModelVersion = 7
 const text = z.string()
 const json = z.json()
 const strings = z.array(text)
@@ -198,6 +198,7 @@ const node = z.union([
   z.strictObject({ ...base, kind: z.literal('approval'), ...wait }).omit({ timeoutMs: true }),
   z.strictObject({ ...base, kind: z.literal('wait'), ...wait }).omit({ timeoutMs: true }),
   z.object({ ...trigger, kind: z.literal('manual') }),
+  z.strictObject({ ...trigger, kind: z.literal('start'), parameters: z.array(port.strict()) }),
   z.strictObject({ ...trigger, kind: z.literal('error'), sourceFlowIds: sourceFlowIds.optional() }),
   z.object({ ...trigger, kind: z.literal('webhook'), ...webhook }),
   z.object({ ...trigger, kind: z.literal('cron'), cronTimes: triggerScheduleSchema }),
@@ -246,7 +247,7 @@ const document = z.preprocess(
   }),
 )
 const revision = z.object({
-  modelVersion: z.union([z.literal(2), z.literal(4), z.literal(5), z.literal(currentFlowModelVersion)]),
+  modelVersion: z.union([z.literal(2), z.literal(4), z.literal(5), z.literal(6), z.literal(currentFlowModelVersion)]),
   document,
   modules: z.record(text, module),
 })
@@ -570,6 +571,8 @@ export function changeOperationsSchema(kind?: string): JsonValue {
 }
 
 function checkModelVersion(content: RevisionContent): void {
+  if (content.modelVersion < 7 && Object.values(content.document.graph.nodes).some((candidateNode) => candidateNode.kind == 'start'))
+    throw new TypeError('Start Triggers require Flow model version 7.')
   if (
     content.modelVersion < 6 &&
     Object.values(content.document.graph.nodes).some((candidateNode) => candidateNode.kind == 'task' && 'executor' in candidateNode.task)

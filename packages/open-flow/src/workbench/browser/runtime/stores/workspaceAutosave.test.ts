@@ -1,16 +1,16 @@
 import type { ChangeOperation } from '../../../../flow/common/change.ts'
-import type { Draft } from '../api.ts'
+import type { Draft, Port } from '../api.ts'
 
 import { currentFlowModelVersion } from '@oomol-lab/open-flow/flow-change'
 import { afterEach, assert, describe, expect, it, vi } from 'vitest'
 import { applyFlowChanges } from '../../../../flow/common/change.ts'
-import { createCodeTask } from '../../../../flow/common/nodeChanges.ts'
+import { createBuiltinTrigger, createCodeTask } from '../../../../flow/common/nodeChanges.ts'
 import { WorkbenchClient } from '../api.ts'
 import { WorkbenchStore } from './workbenchStore.ts'
 
 const timestamp = '2026-09-07T00:00:00.000Z'
 
-async function setup() {
+async function setup(startParameters?: readonly Port[]) {
   const flow = {
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -28,6 +28,7 @@ async function setup() {
   const content = applyFlowChanges({ modelVersion: currentFlowModelVersion, document: { bindings: {}, graph: { nodes: {}, edges: [] } }, modules: {} }, [
     ...createCodeTask({ moduleId: 'a', nodeId: 'a' }, 'A'),
     ...createCodeTask({ moduleId: 'b', nodeId: 'b' }, 'B'),
+    ...(startParameters == null ? [] : createBuiltinTrigger('start', { kind: 'start', name: 'Start', parameters: startParameters })),
   ])
   let revision: Draft = {
     actorId: 'actor',
@@ -339,4 +340,39 @@ describe('code autosave', () => {
       store.dispose()
     }
   })
+})
+
+it('waits for a pending parameter save when confirming an open Run form and reopens the saved contract', async () => {
+  const { client, store, workspace } = await setup([{ handle: 'note', jsonSchema: {}, nullable: true }])
+  const entered = Promise.withResolvers<void>()
+  const held = Promise.withResolvers<void>()
+  try {
+    const startId = 'start'
+    expect(await store.requestDraftRun(startId)).toBe('input')
+    expect(store.runRequests.$.inputRequest.value?.valid.value).toBe(true)
+    const realChange = client.changeDraft.bind(client)
+    vi.spyOn(client, 'changeDraft').mockImplementation(async (...args) => {
+      entered.resolve()
+      await held.promise
+      return realChange(...args)
+    })
+    const createRun = vi.spyOn(client, 'createDraftRun')
+    const changing = workspace.saveStartParameters(startId, [{ handle: 'note', jsonSchema: {}, nullable: false }])
+    await entered.promise
+    const confirming = store.runRequests.confirmInputs()
+    await Promise.resolve()
+    expect(createRun).not.toHaveBeenCalled()
+    held.resolve()
+    expect(await changing).toBe(true)
+    expect(await confirming).toBe(false)
+    expect(createRun).not.toHaveBeenCalled()
+    const request = store.runRequests.$.inputRequest.value
+    expect(request?.revision).toBe(workspace.$.draft.value)
+    expect(request?.editor?.definitions).toEqual([{ handle: 'note', jsonSchema: {}, nullable: false }])
+    expect(request?.editor?.values()).toEqual({})
+    expect(request?.valid.value).toBe(false)
+  } finally {
+    held.resolve()
+    store.dispose()
+  }
 })

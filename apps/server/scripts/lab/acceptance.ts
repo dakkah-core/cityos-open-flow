@@ -16,6 +16,15 @@ export function runtimeAssertions(id: string, sample: Sample, status: string, ca
     return errors
   }
   if (status != 'completed') return [`Run ${sample.name} ended ${status}.`]
+  if (id == 'start-parameters') {
+    const archived = calls.find((call) => call.action == 'lab-archive.save')
+    if (
+      calls.length !== 1 ||
+      archived?.connection !== 'archive-test' ||
+      !isDeepStrictEqual(archived?.input.payload, { ...sample.outputs, note: sample.outputs?.note ?? null })
+    )
+      errors.push('Archive the supplied Start parameters unchanged, with omitted notes normalized to null.')
+  }
   if (id == 'connector-responses') {
     const archives = calls.filter((call) => call.action == 'lab-archive.save')
     if (

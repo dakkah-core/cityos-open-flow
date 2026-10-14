@@ -127,6 +127,31 @@ describe('ControlClient Flow API', () => {
     expect(new Headers(request.mock.calls[0]![1]?.headers).get('idempotency-key')).toBe('repair-1')
   })
 
+  it('upgrades the current Draft with CAS and an idempotency key', async () => {
+    const change = {
+      revision: {
+        actorId: 'actor-1',
+        createdAt: flow.updatedAt,
+        digest: 'digest-2',
+        flowId: flow.flowId,
+        modelVersion: currentFlowModelVersion,
+        parentRevisionId: flow.draftRevisionId,
+        revisionId: 'revision-2',
+        version: 1,
+      },
+      version: 1,
+    } as const
+    const request = vi.fn(async (_path: string, _init?: RequestInit) => Response.json(change))
+    const client = new ControlClient(request)
+
+    await expect(client.upgradeDraft(flow.flowId, flow.draftRevisionId, { idempotencyKey: 'upgrade-1' })).resolves.toEqual(change)
+    expect(request).toHaveBeenCalledWith(
+      '/v1/flows/flow%2F1/draft/upgrade',
+      expect.objectContaining({ body: JSON.stringify({ expectedRevisionId: flow.draftRevisionId, version: 1 }), method: 'POST' }),
+    )
+    expect(new Headers(request.mock.calls[0]![1]?.headers).get('idempotency-key')).toBe('upgrade-1')
+  })
+
   it('scopes Connector resources to an encoded Flow identity', async () => {
     const request = vi.fn(async (path: string, _init?: RequestInit) => {
       if (path == '/v1/connector/providers?flowId=flow%2F1') {

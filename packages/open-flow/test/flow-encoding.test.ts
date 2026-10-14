@@ -140,7 +140,7 @@ describe('Flow Revision encoding', () => {
       modules: { helper: { imports: [] }, main: { imports: ['helper'] } },
       version: 1,
     })
-    await expect(digestBytes(first)).resolves.toBe('sha256:7e801fc1ce3108a6d1359f9cd66e0f6c9a601bbbcb7c8b315032ded4e7d6d7e0')
+    await expect(digestBytes(first)).resolves.toBe('sha256:d61212ffce3d3156916538cd416ac5d12c08a785b1d5192b555c8e47dd8233fc')
   })
 
   it('changes the encoded Revision when workflow semantics change', () => {
@@ -606,7 +606,7 @@ it('upgrades v5 shared Task references into independent node configurations and 
   expect(() => decodeRevision(bytes)).toThrow(/Task/)
   expect(revisionRepairKind(bytes)).toBe('upgrade')
   const upgraded = repairRevision(bytes)
-  expect(upgraded.modelVersion).toBe(6)
+  expect(upgraded.modelVersion).toBe(currentFlowModelVersion)
   expect(upgraded.document).not.toHaveProperty('tasks')
   expect(upgraded.document).not.toHaveProperty('subflows')
   const first = upgraded.document.graph.nodes.first as TaskNode

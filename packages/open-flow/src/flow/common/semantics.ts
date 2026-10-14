@@ -2,13 +2,13 @@ import { decisionTaskIssues } from '../../decision/common/decision.ts'
 import { openApiIssues, authHandles } from '../../openapi/common/openapi.ts'
 export { renderPrompt } from './promptTemplate.ts'
 export { connectionUsage, removeConnectionUsage } from './connectionUsage.ts'
-import { matchesTriggerOutputs } from '../../trigger/common/contract.ts'
+import { matchesTriggerOutputs, normalizeTriggerOutputs } from '../../trigger/common/contract.ts'
 import { nodeInputMappings } from './condition.ts'
 import { connectionUsage } from './connectionUsage.ts'
-export { matchesTriggerOutputs, triggerOutputDefinitions, triggerOutputPorts } from '../../trigger/common/contract.ts'
+export { matchesTriggerOutputs, normalizeTriggerOutputs, triggerOutputDefinitions, triggerOutputPorts } from '../../trigger/common/contract.ts'
 import type { EngineContract } from '../../execution/common/engineContract.ts'
 import type { RuntimeProgram } from '../../execution/common/runtime.ts'
-import type { ConnectorActionCapability, ConnectorCapability, Graph, InputMapping, RevisionContent, SchemaMismatch } from './change.ts'
+import type { ConnectorActionCapability, ConnectorCapability, Graph, InputMapping, JsonValue, RevisionContent, SchemaMismatch } from './change.ts'
 
 import { findEngineContract } from '../../execution/common/engineContract.ts'
 import { agentConfigIssues } from './agent.ts'
@@ -79,6 +79,7 @@ export function flowDependencies(content: RevisionContent, triggerId?: string): 
         case 'cron':
         case 'error':
         case 'manual':
+        case 'start':
         case 'webhook':
           break
       }
@@ -163,6 +164,19 @@ export function validRunTrigger(revision: RevisionContent, value: unknown): bool
     return false
   const node = revision.document.graph.nodes[trigger.nodeId]
   return node != null && !('inputs' in node) && matchesTriggerOutputs(node, trigger.outputs)
+}
+
+export function normalizeRunTrigger(
+  revision: RevisionContent,
+  value: unknown,
+): { readonly nodeId: string; readonly outputs: Readonly<Record<string, JsonValue>> } | undefined {
+  if (value == null || typeof value != 'object' || Array.isArray(value)) return
+  const trigger = value as Readonly<Record<string, unknown>>
+  if (Object.keys(trigger).some((key) => key != 'nodeId' && key != 'outputs') || typeof trigger.nodeId != 'string' || !Object.hasOwn(trigger, 'outputs')) return
+  const node = revision.document.graph.nodes[trigger.nodeId]
+  if (node == null || 'inputs' in node) return
+  const outputs = normalizeTriggerOutputs(node, trigger.outputs)
+  return outputs == null ? undefined : { nodeId: trigger.nodeId, outputs }
 }
 
 export function validateFlowInputs(revision: RevisionContent, value: unknown): FlowInputsValidation {

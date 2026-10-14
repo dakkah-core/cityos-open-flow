@@ -156,7 +156,7 @@ Disabling a Flow blocks new production admission but does not cancel accepted Ru
 Live and the current Trigger binding jointly determine admission authority. Old workers and candidate callbacks cannot bypass this boundary.
 
 Online entry queries read the current Publication's fixed Revision and matching runtime bindings.
-Draft changes do not alter online entries. Manual entries have no managed binding. The view is
+Draft changes do not alter online entries. Start and legacy Manual entries have no managed binding. The view is
 shared by CLI and MCP, with no separate resource store or lifecycle.
 
 The public package owns deterministic Trigger definitions, output validation, and conformance tests.

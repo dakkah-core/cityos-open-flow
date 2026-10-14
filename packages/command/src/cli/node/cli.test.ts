@@ -293,11 +293,14 @@ describe('CLI', () => {
 })
 
 it.each([
-  { multiple: false, options: [], selected: 'start', status: 0 },
-  { multiple: true, options: [], selected: undefined, status: 1 },
-  { multiple: true, options: ['--trigger', 'Other'], selected: 'other', status: 0 },
-  { multiple: true, options: ['--trigger=other', '--outputs={}'], selected: 'other', status: 0 },
-])('runs only an explicit entry or the sole manual trigger: %j', async ({ multiple, options, selected, status }) => {
+  { legacy: true, multiple: false, options: [], selected: 'start', status: 0 },
+  { legacy: true, multiple: true, options: [], selected: undefined, status: 1 },
+  { legacy: false, multiple: false, options: [], selected: 'start', status: 0 },
+  { legacy: false, multiple: true, options: [], selected: 'start', status: 0 },
+  { legacy: false, multiple: true, options: ['--outputs', '{"message":"Hello"}'], selected: 'start', status: 0 },
+  { legacy: false, multiple: true, options: ['--trigger', 'Other'], selected: 'other', status: 0 },
+  { legacy: false, multiple: true, options: ['--trigger=other', '--outputs={}'], selected: 'other', status: 0 },
+])('prefers Start while preserving explicit triggers and legacy sole manual selection: %j', async ({ legacy, multiple, options, selected, status }) => {
   const output = runtime()
   const bodies: unknown[] = []
   const request = async (path: string, init?: RequestInit) => {
@@ -308,12 +311,12 @@ it.each([
         createdAt: flow.createdAt,
         digest: 'digest',
         flowId: flow.flowId,
-        modelVersion: currentFlowModelVersion,
+        modelVersion: legacy ? 6 : currentFlowModelVersion,
         parentRevisionId: null,
         revisionId: 'revision-1',
         version: 1,
         content: {
-          modelVersion: currentFlowModelVersion,
+          modelVersion: legacy ? 6 : currentFlowModelVersion,
           modules: {},
           document: {
             bindings: {},
@@ -321,8 +324,10 @@ it.each([
             graph: {
               edges: [],
               nodes: {
-                start: { kind: 'manual', name: 'Start' },
-                ...(multiple ? { other: { kind: 'manual', name: 'Other' } } : {}),
+                start: legacy
+                  ? { kind: 'manual', name: 'Start' }
+                  : { kind: 'start', name: 'Start', parameters: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: true }] },
+                ...(multiple ? { other: { kind: 'cron', name: 'Other', cronTimes: [] } } : {}),
               },
             },
           },
@@ -342,7 +347,7 @@ it.each([
         closureDigest: 'closure',
         engineContract: 'open-flow-engine/v5',
         engineDigest: 'engine',
-        modelVersion: currentFlowModelVersion,
+        modelVersion: legacy ? 6 : currentFlowModelVersion,
         sharedAccessDigest: 'implicit:1',
         revisionDigest: 'digest',
       })
@@ -354,7 +359,7 @@ it.each([
     expect(bodies).toEqual([])
     expect(JSON.parse(output.stderr())).toMatchObject({ error: { code: 'run.trigger-required' } })
   } else {
-    expect(bodies).toEqual([expect.objectContaining({ trigger: { nodeId: selected, outputs: {} } })])
+    expect(bodies).toEqual([expect.objectContaining({ trigger: { nodeId: selected, outputs: options.includes('--outputs') ? { message: 'Hello' } : {} } })])
   }
 })
 

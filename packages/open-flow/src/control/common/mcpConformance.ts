@@ -87,7 +87,7 @@ export const mcpConformanceCases: readonly ControlApiConformanceCase[] = [
       const client = new ControlClient((url, init) => harness.request(new Request(new URL(url, harness.origin), init)))
       const flow = await client.createFlow('MCP Run listing')
       const changed = await client.changeDraft(flow.flowId, flow.draftRevisionId, [
-        { kind: 'graph.node.create', nodeId: 'start', node: { kind: 'manual', name: 'Start' } },
+        { kind: 'graph.node.create', nodeId: 'start', node: { kind: 'start', name: 'Start', parameters: [] } },
       ])
       const args = {
         source: 'draft',

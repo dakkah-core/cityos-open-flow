@@ -90,3 +90,33 @@ describe('FlowRunInputEditorStore', () => {
     }
   })
 })
+
+it('allows omitted nullable Start parameters without changing the explicit output policy', () => {
+  const language = val('en')
+  const definitions = [
+    { handle: 'required', jsonSchema: { type: 'string' }, nullable: false },
+    { handle: 'optional', jsonSchema: { type: 'string' }, nullable: true },
+  ]
+  const start = new FlowRunInputEditorStore(definitions, language, { allowOmittedNullable: true })
+  const other = new FlowRunInputEditorStore(definitions, language)
+  try {
+    expect(start.valid$.value).toBe(false)
+    start.setValue('required', 'order-1')
+    other.setValue('required', 'order-1')
+    expect(start.valid$.value).toBe(true)
+    expect(start.values()).toEqual({ required: 'order-1' })
+    expect(other.valid$.value).toBe(false)
+    start.setValue('optional', 12)
+    expect(start.valid$.value).toBe(false)
+    start.setValue('optional', null)
+    expect(start.valid$.value).toBe(true)
+    start.setValue('optional', undefined)
+    expect(start.valid$.value).toBe(true)
+    start.setDraftIssue('/optional', true)
+    expect(start.valid$.value).toBe(false)
+  } finally {
+    start.dispose()
+    other.dispose()
+    language.dispose()
+  }
+})

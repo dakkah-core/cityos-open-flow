@@ -791,9 +791,9 @@ describe('Webhook product editing', () => {
   })
 })
 
-it('copies a trigger group while preserving the single manual trigger contract', () => {
+it('copies a trigger group while preserving the single Start contract', () => {
   const current = applyFlowChanges(draft(''), [
-    { kind: 'graph.node.create', nodeId: 'manual', node: { kind: 'manual', name: 'Start' } },
+    { kind: 'graph.node.create', nodeId: 'manual', node: { kind: 'start', name: 'Start', parameters: [] } },
     { kind: 'graph.node.create', nodeId: 'timer', node: { kind: 'cron', name: 'Schedule', cronTimes: [] } },
     { kind: 'graph.edge.connect', edge: { source: 'timer', target: 'task' } },
   ])
@@ -802,7 +802,7 @@ it('copies a trigger group while preserving the single manual trigger contract',
   const pasted = pasteNodes(revisionView(current), clipboard, () => `group-${++id}`)
   const copied = applyFlowChanges(current, pasted.changes)
   expect(pasted.sourceIds).toEqual(['timer', 'task'])
-  expect(Object.values(copied.content.document.graph.nodes).filter((node) => node.kind === 'manual')).toHaveLength(1)
+  expect(Object.values(copied.content.document.graph.nodes).filter((node) => node.kind === 'start')).toHaveLength(1)
   expect(copied.content.document.graph.edges).toContainEqual({ source: pasted.nodeIds[0], target: pasted.nodeIds[1] })
 })
 

@@ -33,7 +33,7 @@ const triggerNode: FlowCanvasViewTriggerNode = {
   inputs: [],
   outputs: [],
   position: { x: 60, y: 20 },
-  presentation: { kind: 'manual', schedules: [] },
+  presentation: { kind: 'start', schedules: [] },
 }
 const content: RevisionContent = {
   modelVersion: currentFlowModelVersion,

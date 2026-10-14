@@ -7,7 +7,7 @@ const id = z.string().min(1)
 const json = z.json()
 const patch = z.record(id, json)
 export const authoringTypes = [
-  'manual',
+  'start',
   'webhook',
   'cron',
   'error',
@@ -76,7 +76,13 @@ const expression = z.strictObject({
 const all = z.strictObject({ all: z.array(expression) })
 const when = z.union([expression, all, z.strictObject({ any: z.array(z.union([expression, all])) })])
 export const authoringConfigurations = {
-  manual: z.strictObject({}),
+  start: z.strictObject({
+    parameters: z
+      .record(id, field)
+      .describe(
+        'Workflow entry parameters by name. Supply values as trigger.outputs when calling the Flow. Omitted schema accepts any JSON; omitted nullable is true. Nullable parameters may be omitted and become null. Parameters have no defaults.',
+      ),
+  }),
   error: z.strictObject({ sourceFlowIds: z.array(id).optional() }),
   webhook: definitions.webhook.omit({ bodyFields: true }).extend({ body: inputFields }).strict(),
   cron: z.strictObject({ schedule: definitions.schedule }),
@@ -189,7 +195,7 @@ const requestContracts = {
         baseRevision: 'REVISION',
         requestId: 'CREATE_REQUEST',
         edits: [
-          { op: 'node.add', as: 'start', type: 'manual', name: 'Start' },
+          { op: 'node.add', as: 'start', type: 'start', name: 'Start' },
           { op: 'node.add', as: 'step', type: 'code', name: 'Process', code: 'export default ({value}) => ({result:value})' },
           { op: 'edge.connect', source: '$start', target: '$step' },
           { op: 'node.update', node: '$step', set: { description: 'Created and connected in one atomic edit.' } },
@@ -228,20 +234,22 @@ export function authoringSchema(kind?: AuthoringType) {
         type: kind,
         inputSources: ['poll', 'integration'].includes(kind)
           ? ['value', 'unset', 'default']
-          : ['manual', 'error', 'cron', 'webhook', 'value', 'condition'].includes(kind)
+          : ['start', 'error', 'cron', 'webhook', 'value', 'condition'].includes(kind)
             ? []
             : ['value', 'unset', 'default', 'output', 'variable', 'sources'],
         extensibleInputs: ['code', 'agent', 'llm', 'wait', 'approval'].includes(kind),
         guidance:
-          kind == 'condition'
-            ? 'Edit branch operands through config.branches. A branch can test one expression, all expressions, or any alternatives. Unmatched execution uses branch otherwise.'
-            : ['poll', 'integration'].includes(kind)
-              ? 'Configure static parameters with node.add.inputs or input.set. Definitions come from the selected Trigger key; execution output and variable sources are unavailable.'
-              : kind == 'llm'
-                ? 'Configure model settings, message templates and history as defaults. Input bindings with the same names override these defaults; named business inputs can be bound directly. Template strings interpolate {{name}}.'
-                : kind == 'openapi'
-                  ? 'Select an operation; the tool resolves its ports and authentication. Read authenticationChoices from node details. authentication is replaced as a complete choice. Bind advertised credentials through inputs.'
-                  : 'Supply business configuration and input data. Fixed definitions are assembled by the tool. Existing constraints and defaults are preserved on partial updates.',
+          kind == 'start'
+            ? 'Declare workflow entry parameters through config.parameters. REST calls and manual runs supply them as trigger.outputs. Downstream nodes bind these parameters as Start outputs. Start has no input sources or defaults; non-nullable parameters are required, and omitted nullable parameters become null.'
+            : kind == 'condition'
+              ? 'Edit branch operands through config.branches. A branch can test one expression, all expressions, or any alternatives. Unmatched execution uses branch otherwise.'
+              : ['poll', 'integration'].includes(kind)
+                ? 'Configure static parameters with node.add.inputs or input.set. Definitions come from the selected Trigger key; execution output and variable sources are unavailable.'
+                : kind == 'llm'
+                  ? 'Configure model settings, message templates and history as defaults. Input bindings with the same names override these defaults; named business inputs can be bound directly. Template strings interpolate {{name}}.'
+                  : kind == 'openapi'
+                    ? 'Select an operation; the tool resolves its ports and authentication. Read authenticationChoices from node details. authentication is replaced as a complete choice. Bind advertised credentials through inputs.'
+                    : 'Supply business configuration and input data. Fixed definitions are assembled by the tool. Existing constraints and defaults are preserved on partial updates.',
         example: {
           op: 'node.add',
           as: 'step',
@@ -249,6 +257,7 @@ export function authoringSchema(kind?: AuthoringType) {
           name: 'Step',
           ...((
             {
+              start: { config: { parameters: { message: { schema: { type: 'string' }, nullable: false } } } },
               connector: { config: { action: '<Action ID>', connectionId: '<Connection ID>' } },
               poll: { config: { key: '<Trigger key>', schedule: [{ type: 'every', unit: 'minute', value: 5 }] } },
               integration: { config: { key: '<Trigger key>' } },

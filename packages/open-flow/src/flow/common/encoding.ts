@@ -24,6 +24,7 @@ export * from './workflowFile.ts'
 export { maxJsonDepth } from './json.ts'
 
 export { decodeFlowDocument, decodeRevisionContent } from './changeSchema.ts'
+export { upgradeRevisionContent } from '@oomol-lab/open-flow/flow-change'
 
 const encoder = new TextEncoder()
 
@@ -299,6 +300,8 @@ function canonicalTriggerNode(trigger: TriggerNode): JsonValue {
       return { ...common(trigger.kind), ...(trigger.sourceFlowIds == null ? {} : { sourceFlowIds: [...trigger.sourceFlowIds] }) }
     case 'manual':
       return common(trigger.kind)
+    case 'start':
+      return { ...common(trigger.kind), parameters: trigger.parameters.map(canonicalPort) }
     case 'webhook':
       return {
         ...common(trigger.kind),

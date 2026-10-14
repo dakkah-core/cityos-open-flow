@@ -65,7 +65,7 @@ it('rejects adding a second manual trigger and allows replacing the existing one
     document: { bindings: {}, graph: { edges: [], nodes: { start: { kind: 'manual', name: 'Start' } } } },
   }
   const create = { kind: 'graph.node.create', nodeId: 'other', node: { kind: 'manual', name: 'Other' } } as const
-  expect(() => applyFlowChanges(content, [create])).toThrow('only one manual Trigger')
+  expect(() => applyFlowChanges(content, [create])).toThrow('only one Start Trigger')
   const replaced = applyFlowChanges(content, [{ kind: 'graph.node.delete', nodeId: 'start' }, create])
   expect(Object.keys(replaced.document.graph.nodes)).toEqual(['other'])
   expect(Object.keys(content.document.graph.nodes)).toEqual(['start'])
@@ -90,5 +90,5 @@ it('rejects imported graphs with multiple manual triggers during preparation', a
   const result = await prepareFlow(content, currentEngineContract)
   expect(result.kind).toBe('flow-invalid')
   if (result.kind != 'flow-invalid') throw new Error('Expected invalid Flow.')
-  expect(result.validation.diagnostics.filter((item) => item.code == 'graph.manual-trigger-duplicate')).toHaveLength(2)
+  expect(result.validation.diagnostics.filter((item) => item.code == 'graph.start-trigger-duplicate')).toHaveLength(2)
 })

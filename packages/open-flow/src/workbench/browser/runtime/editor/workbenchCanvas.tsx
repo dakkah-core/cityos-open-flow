@@ -252,7 +252,7 @@ export const WorkbenchCanvas = forwardRef<WorkbenchCanvasHandle, Props>(function
       screenPosition: screenPosition(canvasPosition),
     })
   }
-  const manualTrigger = staticOptions.get('trigger:manual')
+  const startTrigger = staticOptions.get('trigger:start')
   const needsTrigger = !model.nodes.some((node) => node.kind == 'trigger')
   const addRecommended = async (option: AddNodeOption): Promise<void> => {
     if (addingRecommended.current) return
@@ -344,7 +344,7 @@ export const WorkbenchCanvas = forwardRef<WorkbenchCanvasHandle, Props>(function
             disabled={disabled}
             onOpenNodePicker={openAddNode}
             runControl={runControl}
-            onAddTrigger={needsTrigger && model.nodes.length > 0 && manualTrigger != null ? () => void addRecommended(manualTrigger) : undefined}
+            onAddTrigger={needsTrigger && model.nodes.length > 0 && startTrigger != null ? () => void addRecommended(startTrigger) : undefined}
           />
         }
         onAddNode={async (itemId, position, connection) => {

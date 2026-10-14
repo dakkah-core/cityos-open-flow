@@ -206,7 +206,7 @@ it('creates an Agent from the advertised business configuration without declarin
     baseRevision: 'base',
     requestId: 'agent-example',
     edits: [
-      { op: 'node.add', as: 'start', type: 'manual', name: 'Start' },
+      { op: 'node.add', as: 'start', type: 'start', name: 'Start' },
       contract.example,
       { op: 'edge.connect', source: '$start', target: `$${contract.example.as}` },
     ],

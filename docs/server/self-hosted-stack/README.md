@@ -240,7 +240,7 @@ oo flow publish "GitHub digest"
 oo flow open "GitHub digest"
 ```
 
-- Prepare `edits.json` with `baseRevision`, `requestId` and node/input/edge edits, including a Manual trigger. Select an explicit Connection ID in the Connector configuration. See the [authoring contract](../../control/contracts/control-api.md#node-authoring).
+- Prepare `edits.json` with `baseRevision`, `requestId` and node/input/edge edits, including a Start node. Select an explicit Connection ID in the Connector configuration. See the [authoring contract](../../control/contracts/control-api.md#node-authoring).
 - `check` validates the Revision. Whether credentials work, and whether the provider actually
   runs the Action, is only tested by `run`.
 - `run --wait` executes the Draft through OpenConnector and prints the result.

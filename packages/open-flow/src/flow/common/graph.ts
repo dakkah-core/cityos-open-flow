@@ -37,7 +37,13 @@ function graphDiagnostic(
 function validateTrigger(triggerId: string, trigger: TriggerNode, path: string, diagnostics: Diagnostic[]): void {
   const outputHandles = triggerOutputDefinitions(trigger).map((port) => port.handle)
   if (new Set(outputHandles).size !== outputHandles.length)
-    diagnostics.push(graphDiagnostic('graph.port-duplicate', 'Trigger output handles must be unique.', `${path}/definition/outputs`))
+    diagnostics.push(
+      graphDiagnostic(
+        'graph.port-duplicate',
+        'Trigger output handles must be unique.',
+        trigger.kind == 'start' ? `${path}/parameters` : `${path}/definition/outputs`,
+      ),
+    )
   if (trigger.kind == 'webhook') {
     if (!webhookSupportsBody(trigger.method) && trigger.bodyFields.length > 0) {
       diagnostics.push(graphDiagnostic('trigger.webhook-body-unsupported', 'GET Webhook triggers cannot declare request body fields.', `${path}/bodyFields`))
@@ -58,7 +64,7 @@ function validateTrigger(triggerId: string, trigger: TriggerNode, path: string, 
     }
     return
   }
-  if (trigger.kind == 'error' || trigger.kind == 'cron' || trigger.kind == 'manual') return
+  if (trigger.kind == 'error' || trigger.kind == 'cron' || trigger.kind == 'manual' || trigger.kind == 'start') return
   if (trigger.connectionId == null)
     diagnostics.push(graphDiagnostic('trigger.connection-missing', 'Select a connection account for this Trigger.', `${path}/connectionId`))
   const missingConfig = missingTriggerConfig(trigger.definition.configInputs, trigger.config)
@@ -96,6 +102,7 @@ export function nodeInputPorts(node: GraphNode): Readonly<Record<string, InputPo
     case 'poll':
     case 'error':
     case 'manual':
+    case 'start':
     case 'webhook':
       return {}
   }
@@ -158,6 +165,7 @@ export function nodeOutputPorts(node: GraphNode): Readonly<Record<string, PortDe
     case 'poll':
     case 'error':
     case 'manual':
+    case 'start':
     case 'webhook':
       return triggerOutputPorts(node)
   }
@@ -534,10 +542,10 @@ function validateGraph(graph: Graph, document: FlowDocument, path: string, diagn
   if (errorTriggers.length > 1)
     for (const [nodeId] of errorTriggers)
       diagnostics.push(graphDiagnostic('graph.error-trigger-duplicate', 'A graph can contain only one Flow Error node.', `${path}/nodes/${nodeId}`))
-  const manualTriggers = Object.entries(graph.nodes).filter(([, node]) => node.kind == 'manual')
-  if (manualTriggers.length > 1) {
-    for (const [nodeId] of manualTriggers) {
-      diagnostics.push(graphDiagnostic('graph.manual-trigger-duplicate', 'A graph can contain only one manual Trigger.', `${path}/nodes/${nodeId}`))
+  const startTriggers = Object.entries(graph.nodes).filter(([, node]) => node.kind == 'manual' || node.kind == 'start')
+  if (startTriggers.length > 1) {
+    for (const [nodeId] of startTriggers) {
+      diagnostics.push(graphDiagnostic('graph.start-trigger-duplicate', 'A graph can contain only one Start Trigger.', `${path}/nodes/${nodeId}`))
     }
   }
   const seen = new Set<string>()

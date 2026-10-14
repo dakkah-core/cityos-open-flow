@@ -1,5 +1,15 @@
 # Public contracts and version evolution
 
+## Flow model v7: Start parameters
+
+Flow model v7 replaces new Manual Trigger nodes with `{ kind: 'start', name, parameters }`. `parameters` is an ordered list of output ports with JSON schema, nullable and description fields. The public authoring type is `start`; `config.parameters` uses named business field maps. Start has no input mappings or parameter defaults. Callers supply parameter values through the existing Run request's `trigger.outputs` object. Required fields must be present, undeclared fields are rejected, and omitted nullable Start parameters become `null` before execution. Other Trigger output contracts remain complete and unchanged.
+
+Strict decoders retain v2/v4/v5/v6 Manual nodes and preserve their original bytes, model version and digests. Their execution still has empty outputs. Public authoring reads present them as Start with no parameters without modifying the stored Revision. New writes, authoring compilation and workflow-file import use the shared lossless upgrade: retain node IDs, edges, names, metadata, Modules and other configuration, replace each Manual node with an empty-parameter Start, and produce model v7.
+
+Workbench automatically requests the deterministic Draft upgrade when opening an editable legacy Flow. The upgrade creates a child Revision with CAS and a stable request identity. It does not use tolerant repair, drop malformed resources, overwrite historical content, or change Live, Publications, existing Runs or Presentation. Production keeps the published contract until the upgraded Draft is published. Ordinary GET requests remain read-only. Unsupported or corrupt content requires its existing explicit recovery process.
+
+On opening a Draft, the shared node-name repair updates recognized legacy Manual default titles to the localized Start title, including Start nodes already converted by an earlier edit. Custom titles remain unchanged. Name collisions retain the other node's title and give Start the existing numbered suffix.
+
 ## Flow model v6: removal of shared Tasks and legacy Subflows
 
 Flow model v6 removes `document.tasks` and node `taskId`. Each execution node stores its configuration in `node.task`.
@@ -18,14 +28,14 @@ Public entry points, serialization formats, Control API, and execution semantics
 | ----------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | npm package       | Exact version in the package manifest                             | Pins implementation, types, Workbench assets, and the conformance suite. Deployments pin the same version. |
 | Revision envelope | `kind: open-flow-flow-revision`, `version: 1`                     | UTF-8 JSON envelope fields and canonical byte rules.                                                       |
-| Flow model        | `modelVersion: 6`                                                 | Serialization of documents, modules, nodes, and ports.                                                     |
+| Flow model        | `modelVersion: 7`                                                 | Serialization of documents, modules, nodes, and ports.                                                     |
 | Control API       | `/v1`; Run creation request `version: 2`, all others `version: 1` | Request fields, responses, error codes, CAS, and idempotency.                                              |
 | Engine Contract   | `open-flow-engine/v5`                                             | Execution, Trigger, Task return, Wait, and cancellation semantics.                                         |
 | MCP               | `2026-07-28`                                                      | Streamable HTTP negotiation; tool product semantics reuse Control API.                                     |
 
 Equal or different version numbers do not establish compatibility. Older formats may also have used `modelVersion: 1`; do not accept content based only on this field. Decode the complete structure before semantic validation and execution. Reject execution of Revisions that do not match the current structure. Do not rewrite them or recompute their original digest on read. Create a new Revision through a separate, auditable migration or rebuild.
 
-Before upgrading a deployment, finish or cancel active Runs on the old Engine, or explicitly retain a recovery environment that can execute the pinned old Engine. Public decoders provide no implicit model migration.
+Before upgrading a deployment, finish or cancel active Runs on the old Engine, or explicitly retain a recovery environment that can execute the pinned old Engine. Immutable Revision decoders provide no implicit model migration.
 
 ## Legacy Project data
 

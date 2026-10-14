@@ -594,6 +594,7 @@
     },
     "triggerSource": {
       "manual": "手动",
+      "start": "开始",
       "cron": "定时",
       "webhook": "Webhook",
       "error": "工作流错误"

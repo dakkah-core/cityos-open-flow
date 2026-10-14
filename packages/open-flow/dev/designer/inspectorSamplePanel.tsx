@@ -56,7 +56,7 @@ export function InspectorSamplePanel({
           title: selection.node.name ?? '',
           icon: canvasNode && 'icon' in canvasNode ? canvasNode.icon : selection.node.icon,
           disabled,
-          titleReadOnly: selection.kind === 'trigger' && selection.trigger.kind === 'manual',
+          titleReadOnly: selection.kind === 'trigger' && (selection.trigger.kind === 'manual' || selection.trigger.kind === 'start'),
           fallback: <Icon name={icon} />,
           validate: (name) => {
             const graph = revision.graph()

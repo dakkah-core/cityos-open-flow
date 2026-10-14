@@ -19,7 +19,7 @@ import { closeService, openService, startService } from './serviceFixture.ts'
 
 const token = 'mcp-test-operator-token-000000000001'
 const version = '2026-07-28'
-const start = { kind: 'graph.node.create', nodeId: 'start', node: { kind: 'manual', name: 'Start' } }
+const start = { kind: 'graph.node.create', nodeId: 'start', node: { kind: 'start', name: 'Start', parameters: [] } }
 
 it('broadcasts REST and MCP canvas commands to every subscriber of only the authorized Flow', async () => {
   const { call, control, service, app, client } = await fixture()
@@ -233,7 +233,7 @@ it('shares semantic authoring between MCP and REST and replays before catalog lo
   expect(await control.editAuthoring(flow.flowId, request as Parameters<ControlClient['editAuthoring']>[1])).toEqual(changed)
   expect(lookup).not.toHaveBeenCalled()
   expect(
-    (await client.callTool({ name: 'flow_edit', arguments: { ...args, edits: [{ op: 'node.add', as: 'other', type: 'manual', name: 'Other' }] } }))
+    (await client.callTool({ name: 'flow_edit', arguments: { ...args, edits: [{ op: 'node.add', as: 'other', type: 'start', name: 'Other' }] } }))
       .structuredContent,
   ).toMatchObject({ error: { code: 'flow.conflict' } })
 })
@@ -366,7 +366,7 @@ it('serves discovery and an atomic authoring, validation and execution workflow 
     baseRevision: flow.draftRevisionId,
     requestId: 'edit',
     edits: [
-      { op: 'node.add', as: 'start', type: 'manual', name: 'Start' },
+      { op: 'node.add', as: 'start', type: 'start', name: 'Start' },
       {
         op: 'node.add',
         as: 'answer',
@@ -415,7 +415,7 @@ it('shares business node configuration across MCP and REST and executes only the
     baseRevision: flow.draftRevisionId,
     requestId: 'business-create',
     edits: [
-      { op: 'node.add', as: 'start', type: 'manual', name: 'Start' },
+      { op: 'node.add', as: 'start', type: 'start', name: 'Start' },
       {
         op: 'node.add',
         as: 'order',
@@ -501,7 +501,7 @@ it('shares business node configuration across MCP and REST and executes only the
 it('rejects stale concurrent edits and mismatched idempotent requests without losing accepted changes', async () => {
   const { call, client, connect, control } = await fixture()
   const flow = await call('flow_create', { name: 'Conflict', idempotencyKey: 'conflict-create' })
-  const args = { flowId: flow.flowId, baseRevision: flow.draftRevisionId, edits: [{ op: 'node.add', as: 'start', type: 'manual', name: 'Start' }] }
+  const args = { flowId: flow.flowId, baseRevision: flow.draftRevisionId, edits: [{ op: 'node.add', as: 'start', type: 'start', name: 'Start' }] }
   const other = await connect()
   const replies = await Promise.all([
     client.callTool({ name: 'flow_edit', arguments: { ...args, requestId: 'first' } }),
@@ -512,7 +512,7 @@ it('rejects stale concurrent edits and mismatched idempotent requests without lo
   const conflict = await client.callTool({ name: 'flow_create', arguments: { name: 'Different', idempotencyKey: 'conflict-create' } })
   expect(conflict.structuredContent).toMatchObject({ error: { code: 'flow.conflict' } })
   const draft = await control.getDraft(z.string().parse(flow.flowId))
-  expect(Object.values(draft.content.document.graph.nodes)).toEqual([expect.objectContaining({ kind: 'manual' })])
+  expect(Object.values(draft.content.document.graph.nodes)).toEqual([expect.objectContaining({ kind: 'start', parameters: [] })])
 })
 
 it('shares pagination cursors with the Control API and preserves invalid input and business errors', async () => {

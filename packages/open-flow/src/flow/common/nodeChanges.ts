@@ -9,6 +9,7 @@ import type {
   InputValues,
   InputPort,
   JsonValue,
+  Port,
   PortDefinition,
   RevisionContent,
   TaskDefinition,
@@ -24,6 +25,7 @@ import { applyFlowChanges, nextNodeName, normalizeNodeName } from './change.ts'
 import { codeSharedPermissionsEnabled } from './codePermissions.ts'
 import { nodeInputMappings } from './condition.ts'
 import { fixedInputValue, inputValues } from './inputValue.ts'
+import { renamedPort, renameOutputMapping } from './portChanges.ts'
 
 const codeTaskTemplate = `export default async function (inputs, context) {
   return { result: inputs.value }
@@ -63,6 +65,8 @@ export function defaultNodeName(_content: RevisionContent, node: GraphNode): str
       return 'Flow Error'
     case 'manual':
       return 'Manual Trigger'
+    case 'start':
+      return 'Start'
     case 'webhook':
       return 'Webhook'
     case 'cron':
@@ -73,11 +77,31 @@ export function defaultNodeName(_content: RevisionContent, node: GraphNode): str
   }
 }
 
-function graphNameRepairs(content: RevisionContent, targetGraph: Graph): readonly ChangeOperation[] {
+const legacyManualNames = new Set([
+  'Manual trigger',
+  'Manual Trigger',
+  '手动触发',
+  '手動觸發',
+  '手動トリガー',
+  'Déclencheur manuel',
+  '수동 트리거',
+  'Ручной триггер',
+])
+
+function graphNameRepairs(content: RevisionContent, targetGraph: Graph, startName: string | undefined): readonly ChangeOperation[] {
   const names = new Set<string>()
   const changed: { readonly nodeId: string; readonly node: GraphNode; readonly name: string }[] = []
   for (const [nodeId, node] of Object.entries(targetGraph.nodes)) {
-    const requested = normalizeNodeName(node.name ?? '') || defaultNodeName(content, node)
+    const previousName = normalizeNodeName(node.name ?? '')
+    const requested =
+      node.kind == 'start' && legacyManualNames.has(previousName)
+        ? nextNodeName(
+            startName ?? defaultNodeName(content, node),
+            Object.entries(targetGraph.nodes)
+              .filter(([id]) => id != nodeId)
+              .map(([, other]) => other.name ?? ''),
+          )
+        : previousName || defaultNodeName(content, node)
     const name = nextNodeName(requested, names)
     names.add(name)
     if (node.name != name) changed.push({ name, node, nodeId })
@@ -85,8 +109,8 @@ function graphNameRepairs(content: RevisionContent, targetGraph: Graph): readonl
   return changed.toReversed().map(({ name, node, nodeId }) => ({ before: node.name, field: 'name', kind: 'graph.node.field.set', nodeId, value: name }))
 }
 
-export function repairNodeNames(content: RevisionContent): readonly ChangeOperation[] {
-  return graphNameRepairs(content, content.document.graph)
+export function repairNodeNames(content: RevisionContent, defaults: { readonly start?: string } = {}): readonly ChangeOperation[] {
+  return graphNameRepairs(content, content.document.graph, defaults.start)
 }
 
 interface TriggerSettingsBase {
@@ -96,6 +120,7 @@ interface TriggerSettingsBase {
 
 export type TriggerSettings =
   | (TriggerSettingsBase & { readonly kind: 'manual' })
+  | (TriggerSettingsBase & { readonly kind: 'start'; readonly parameters: readonly Port[] })
   | (TriggerSettingsBase & { readonly kind: 'error' })
   | (TriggerSettingsBase & {
       readonly bodyFields: Extract<TriggerNode, { readonly kind: 'webhook' }>['bodyFields']
@@ -290,7 +315,7 @@ export function createApproval(nodeId: string, name: string): readonly ChangeOpe
 
 export function createBuiltinTrigger(
   nodeId: string,
-  node: Extract<TriggerNode, { readonly kind: 'error' | 'cron' | 'manual' | 'webhook' }>,
+  node: Extract<TriggerNode, { readonly kind: 'error' | 'cron' | 'manual' | 'start' | 'webhook' }>,
 ): readonly ChangeOperation[] {
   return [{ kind: 'graph.node.create', node, nodeId }]
 }
@@ -483,6 +508,24 @@ export function updateTrigger(content: RevisionContent, nodeId: string, settings
     operations.push({ before: trigger.description, field: 'description', kind: 'graph.node.field.set', nodeId, value: settings.description })
   }
   switch (settings.kind) {
+    case 'start': {
+      if (trigger.kind != 'start') return
+      if (!dequal(trigger.parameters, settings.parameters)) {
+        operations.unshift({ before: trigger, kind: 'graph.node.replace', nodeId, node: { ...trigger, parameters: settings.parameters } })
+        const rename = renamedPort(trigger.parameters, settings.parameters)
+        if (rename != null) {
+          const instances = new Set([nodeId])
+          for (const [id, node] of Object.entries(content.document.graph.nodes)) {
+            if (!('inputs' in node)) continue
+            for (const [handle, before] of Object.entries(nodeInputMappings(node))) {
+              const value = renameOutputMapping(before, instances, rename)
+              if (before !== value) operations.push({ before, kind: 'graph.node.input.set', nodeId: id, handle, value })
+            }
+          }
+        }
+      }
+      break
+    }
     case 'error':
     case 'manual':
       if (trigger.kind != settings.kind) return

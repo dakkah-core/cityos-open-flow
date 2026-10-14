@@ -51,10 +51,10 @@ export function copyNodes(revision: RevisionView, nodeIds: readonly string[]): N
 
 export function pasteNodes(revision: RevisionView, clipboard: NodeClipboard, identity: () => string): PastedNodes {
   const hasErrorTrigger = Object.values(revision.graph()?.nodes ?? {}).some((node) => node.kind === 'error')
-  const hasManualTrigger = Object.values(revision.graph()?.nodes ?? {}).some((node) => node.kind === 'manual')
+  const hasStartTrigger = Object.values(revision.graph()?.nodes ?? {}).some((node) => node.kind === 'manual' || node.kind === 'start')
   const entries = Object.entries(clipboard.nodes).filter(
     ([, node]) =>
-      (node.kind !== 'manual' || !hasManualTrigger) &&
+      ((node.kind !== 'manual' && node.kind !== 'start') || !hasStartTrigger) &&
       (node.kind !== 'error' || !hasErrorTrigger) &&
       (node.kind != 'task' || !('moduleId' in node.task) || clipboard.modules[node.task.moduleId] != null),
   )

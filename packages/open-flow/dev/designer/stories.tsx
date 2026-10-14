@@ -471,7 +471,7 @@ function RunControlStory({ dark, language, log }: { readonly dark: boolean; read
   const multiple = [
     { id: 'schedule', title: 'Daily schedule', icon: ':carbon:time:' },
     { id: 'webhook', title: 'Order webhook', icon: ':carbon:webhook:' },
-    { id: 'manual', title: 'Manual trigger', icon: ':carbon:play:' },
+    { id: 'start', title: 'Start', icon: ':carbon:play:' },
   ]
   return (
     <I18nProvider i18n={i18n}>
@@ -555,9 +555,9 @@ function CanvasControlWidthsStory({ dark, language, log }: { readonly dark: bool
                     onInputOpenChange={() => {}}
                     onRun={() => log('run-control.run')}
                     onSelectTrigger={() => {}}
-                    selectedTriggerId="manual"
+                    selectedTriggerId="start"
                     starting={false}
-                    triggers={[{ id: 'manual', title: 'Manual trigger' }]}
+                    triggers={[{ id: 'start', title: 'Start' }]}
                   />
                 }
               />

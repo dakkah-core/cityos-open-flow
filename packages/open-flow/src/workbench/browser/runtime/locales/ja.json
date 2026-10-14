@@ -42,7 +42,9 @@
     "webhookDescription": "専用の HTTP エンドポイントで外部イベントを受信します。",
     "manual": "手動トリガー",
     "manualDescription": "ここから手動で実行を開始します。",
-    "integrationTriggers": "アプリのトリガー"
+    "integrationTriggers": "アプリのトリガー",
+    "start": "開始",
+    "startDescription": "開始パラメーターを指定して、手動または API 呼び出しでワークフローを開始します。"
   },
   "connectorAccess": {
     "searchServices": "サービスを検索",
@@ -418,7 +420,8 @@
           "body": "この Webhook リクエストで受信したリクエストボディです。",
           "webhookUrl": "このリクエストを受信した Webhook URL（クエリパラメーターを除く）です。"
         }
-      }
+      },
+      "startParametersTitle": "開始パラメーター"
     }
   },
   "language": {
@@ -802,7 +805,8 @@
         },
         "trigger-not-allowed": "Trigger ノードは Flow 内でのみ使用できます。",
         "variable-incompatible": "変数バインディング「{{bindingId}}」はこの入力と互換性がありません。",
-        "variable-source-mixed": "変数は入力の唯一のソースである必要があります。"
+        "variable-source-mixed": "変数は入力の唯一のソースである必要があります。",
+        "start-trigger-duplicate": "ワークフローに配置できる Start ノードは 1 つだけです。"
       },
       "llm": {
         "unconfigured": "このデプロイには LLM が設定されていません。OPEN_FLOW_LLM_ORIGIN と OPEN_FLOW_LLM_TOKEN を設定してください。"
@@ -868,13 +872,14 @@
     "triggerCount": "開始ノード {{count}} 件",
     "close": "テストデータを閉じる",
     "description": "今回の実行に必要なデータを入力してください。ワークフローは変更されません。",
-    "invalid": "実行する前に、表示されているすべての入力へ有効な JSON 値を設定してください。",
+    "invalid": "実行前に必須パラメーターを入力し、無効な JSON 値を修正してください。",
     "title": "テストデータ",
     "trigger": "開始ノード",
     "selectTrigger": "開始ノードを選択",
     "selectTriggerToTest": "テストする開始ノードを選択",
     "noTrigger": "実行する前に開始ノードとなるトリガーを追加してください。",
-    "triggerSubtitle": "トリガー · {{name}}"
+    "triggerSubtitle": "トリガー · {{name}}",
+    "startParametersHint": "null を許可するパラメーターは空欄にでき、開始時に null が渡されます。"
   },
   "workspace": {
     "check": "現在のドラフトを検査",

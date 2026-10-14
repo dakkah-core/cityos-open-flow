@@ -169,6 +169,7 @@ export class RevisionView {
         break
       case 'error':
       case 'manual':
+      case 'start':
       case 'cron':
       case 'integration':
       case 'poll':

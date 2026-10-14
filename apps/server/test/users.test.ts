@@ -200,7 +200,7 @@ it('rejects another owner’s run, publication and error subscription through RE
   const headers = await f.login(account.user.email, account.password)
   const flow = await f.flow(headers)
   const changed = await f.service.control.changeDraft(account.user.userId, flow.flowId, flow.draftRevisionId, [
-    { kind: 'graph.node.create', nodeId: 'start', node: { kind: 'manual', name: 'Start' } },
+    { kind: 'graph.node.create', nodeId: 'start', node: { kind: 'start', name: 'Start', parameters: [] } },
   ])
   const revisionId = changed.revision.revisionId
   const operation = await f.service.control.publishFlow(account.user.userId, flow.flowId, revisionId, currentEngineContract, null, 'publish')
@@ -286,7 +286,7 @@ it('lets ordinary users execute workflows with the administrator’s configured 
     const flow = await f.flow(headers)
     expect((await f.request(`/v1/connector/providers?flowId=${flow.flowId}`, headers)).status).toBe(200)
     const changed = await f.service.control.changeDraft(account.user.userId, flow.flowId, flow.draftRevisionId, [
-      ...authoringExample('manual').operations,
+      ...authoringExample('start').operations,
       ...authoringExample('llm-chat').operations,
       { kind: 'graph.edge.connect', edge: { source: 'start', target: 'llm' } },
     ])
@@ -298,7 +298,7 @@ it('lets ordinary users execute workflows with the administrator’s configured 
       {
         version: 2,
         inputs: {},
-        trigger: { nodeId: 'start', outputs: {} },
+        trigger: { nodeId: 'start', outputs: { message: 'Start shared model' } },
         engineContract: currentEngineContract,
       },
     )
@@ -324,7 +324,7 @@ it('closes existing notification streams after the account password is reset', a
   await catalog.read()
   await changes.read()
   await f.request(`/auth/users/${account.user.userId}/password`, administrator, 'POST', { expectedRevision: 1 })
-  await f.service.control.changeDraft(account.user.userId, flow.flowId, flow.draftRevisionId, authoringExample('manual').operations)
+  await f.service.control.changeDraft(account.user.userId, flow.flowId, flow.draftRevisionId, authoringExample('start').operations)
   expect((await catalog.read()).done).toBe(true)
   expect((await changes.read()).done).toBe(true)
 })
@@ -392,7 +392,7 @@ it('issues private, persistent personal tokens and enforces owner isolation thro
   const edit = {
     baseRevision: before.revisionId,
     requestId: 'foreign-edit',
-    edits: [{ op: 'node.add', as: 'stolen', type: 'manual', name: 'Unauthorized trigger' }],
+    edits: [{ op: 'node.add', as: 'stolen', type: 'start', name: 'Unauthorized trigger' }],
   }
   const deniedEdit = await f.mcp('flow_edit', { flowId: other.flowId, ...edit }, headers)
   expect(deniedEdit.isError).toBe(true)
@@ -552,7 +552,7 @@ it('publishes and runs with the Flow owner’s variables without falling back to
   const headers = await f.login(account.user.email, account.password)
   const flow = await f.flow(headers)
   const changed = await f.service.control.changeDraft(account.user.userId, flow.flowId, flow.draftRevisionId, [
-    { kind: 'graph.node.create', nodeId: 'start', node: { kind: 'manual', name: 'Start' } },
+    { kind: 'graph.node.create', nodeId: 'start', node: { kind: 'start', name: 'Start', parameters: [] } },
     { kind: 'binding.create', bindingId: 'token', binding: { kind: 'variable', target: 'TOKEN' } },
     { kind: 'module.create', moduleId: 'main', module: { imports: [], name: 'Main', source: 'export default ({ token }) => ({ token })' } },
     {

@@ -80,7 +80,7 @@ async function roundTrip(content: RevisionContent, ref: string) {
 describe('business configuration authoring contracts', () => {
   it('creates named values without port definitions, preserves null, and executes their values', async () => {
     const created = await edit(empty, [
-      { op: 'node.add', type: 'manual', as: 'start', name: 'Start' },
+      { op: 'node.add', type: 'start', as: 'start', name: 'Start' },
       { op: 'node.add', type: 'value', as: 'constants', name: 'Constants', config: { values: { amount: 42, optional: null, order: { id: 'A-1' } } } },
       { op: 'edge.connect', source: '$start', target: '$constants' },
     ])
@@ -121,7 +121,7 @@ describe('business configuration authoring contracts', () => {
 
   it.each(['wait', 'approval'] as const)('automatically declares %s business input data and preserves explicit constraints', async (type) => {
     const created = await edit(empty, [
-      { op: 'node.add', type: 'manual', as: 'start', name: 'Start' },
+      { op: 'node.add', type: 'start', as: 'start', name: 'Start' },
       {
         op: 'node.add',
         type,
@@ -189,7 +189,7 @@ describe('business configuration authoring contracts', () => {
 
   it('configures LLM business defaults, automatically declares template data, and passes real inputs to execution', async () => {
     const created = await edit(empty, [
-      { op: 'node.add', type: 'manual', as: 'start', name: 'Start' },
+      { op: 'node.add', type: 'start', as: 'start', name: 'Start' },
       {
         op: 'node.add',
         type: 'llm',
@@ -334,7 +334,7 @@ it.each<{ schema: JsonValue; response: JsonValue; expected: JsonValue }>([
   const created = await edit(
     empty,
     [
-      { op: 'node.add', type: 'manual', as: 'start', name: 'Start' },
+      { op: 'node.add', type: 'start', as: 'start', name: 'Start' },
       { op: 'node.add', type: 'connector', as: 'source', name: 'Source', config: { action: 'test.read', connectionId: 'marketplace:oomol:test' } },
       {
         op: 'node.add',

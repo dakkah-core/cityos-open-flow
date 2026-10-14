@@ -106,7 +106,7 @@ it('executes the skill examples through the repository CLI against an isolated S
     const modelFlow = (await cli(['create', 'Model examples'])).flow.flowId
     const modelBefore = await cli(['read', modelFlow])
     const seeded = await edit(modelFlow, modelBefore.revision, [
-      { op: 'node.add', as: 'start', type: 'manual', name: 'Start' },
+      { op: 'node.add', as: 'start', type: 'start', name: 'Start' },
       { op: 'node.add', as: 'order', type: 'value', name: 'Order', config: { values: { order: { id: 'A-1', total: 42 } } } },
       { op: 'edge.connect', source: '$start', target: '$order' },
     ])
@@ -148,7 +148,7 @@ it('executes the skill examples through the repository CLI against an isolated S
     const aggregateFlow = (await cli(['create', 'Collection conversion'])).flow.flowId
     const aggregateBefore = await cli(['read', aggregateFlow])
     let aggregate = await edit(aggregateFlow, aggregateBefore.revision, [
-      { op: 'node.add', as: 'start', type: 'manual', name: 'Start' },
+      { op: 'node.add', as: 'start', type: 'start', name: 'Start' },
       {
         op: 'node.add',
         as: 'aggregate',

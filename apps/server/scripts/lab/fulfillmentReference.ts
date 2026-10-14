@@ -60,10 +60,10 @@ export async function referenceFulfillment(call: ToolCall, flowId: string, stage
   if (stage == 0) {
     const query = await action('List fulfillment batch', 'Orders test account')
     const archive = await action('Archive order', 'Archive test account')
-    for (const type of ['manual', 'code']) await call('flow_schema', { type })
+    for (const type of ['start', 'code']) await call('flow_schema', { type })
     const before = await read()
     await submit(before.revision, [
-      { op: 'node.add', as: 'start', type: 'manual', name: 'Start fulfillment review' },
+      { op: 'node.add', as: 'start', type: 'start', name: 'Start fulfillment review' },
       { op: 'node.add', as: 'orders', type: 'connector', name: 'Read fulfillment batch', config: query },
       {
         op: 'node.add',

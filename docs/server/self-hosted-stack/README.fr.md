@@ -251,7 +251,7 @@ oo flow publish "GitHub digest"
 oo flow open "GitHub digest"
 ```
 
-- Préparez `edits.json` avec `baseRevision`, `requestId` et les modifications de nœuds, entrées et liens, dont un Manual Trigger. Indiquez le Connection ID dans la configuration Connector. Voir le [contrat de modification](../../control/contracts/control-api.md#node-authoring).
+- Préparez `edits.json` avec `baseRevision`, `requestId` et les modifications de nœuds, entrées et liens, dont un Start node. Indiquez le Connection ID dans la configuration Connector. Voir le [contrat de modification](../../control/contracts/control-api.md#node-authoring).
 - `check` valide la Revision. Que les identifiants fonctionnent, et que le Provider exécute
   vraiment l'Action, n'est testé que par `run`.
 - `run --wait` exécute le Draft via OpenConnector et affiche le résultat.

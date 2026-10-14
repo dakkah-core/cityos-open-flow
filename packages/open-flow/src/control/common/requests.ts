@@ -36,6 +36,7 @@ const schemas = {
   renameFlow: z.strictObject({ name: flowName, version }),
   changeDraft: z.strictObject({ expectedRevisionId: id, operations: z.array(json).min(1), version }),
   repairDraft: z.strictObject({ expectedRevisionId: id, version }),
+  upgradeDraft: z.strictObject({ expectedRevisionId: id, version }),
   setEnabled: z.strictObject({ enabled: z.boolean(), expectedPublicationId: id, version }),
   updatePresentation: z.strictObject({ expectedRevision: z.int().positive(), value: z.record(z.string(), json), version }),
   checkFlow: z.strictObject({ engineContract: id, version }),
@@ -84,6 +85,7 @@ export const controlRequests = {
     return { ...body, operations: decodeDraftOperations(body.operations) }
   },
   repairDraft: decoder(schemas.repairDraft),
+  upgradeDraft: decoder(schemas.upgradeDraft),
   setEnabled: decoder(schemas.setEnabled),
   updatePresentation: decoder(schemas.updatePresentation),
   checkFlow: decoder(schemas.checkFlow),

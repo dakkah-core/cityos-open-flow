@@ -36,7 +36,7 @@ type AddTrigger =
       readonly definition: TriggerKeySnapshot
     }
   | { readonly kind: 'connect'; readonly provider: string }
-  | { readonly kind: 'manual' }
+  | { readonly kind: 'start' }
   | { readonly kind: 'error' }
   | { readonly kind: 'cron' }
   | { readonly kind: 'webhook' }
@@ -153,15 +153,15 @@ export function deriveAddNodeOptions(draft: Draft | undefined, t: TFunction): re
   const group = t('addNode.triggers')
   const triggers: readonly AddNodeOption[] = [
     {
-      description: t('addNode.manualDescription'),
+      description: t('addNode.startDescription'),
       group,
-      id: 'trigger:manual',
+      id: 'trigger:start',
       icon: ':carbon:play:',
       inputs: [],
       kind: 'trigger',
-      label: t('addNode.manual'),
+      label: t('addNode.start'),
       outputs: [],
-      trigger: { kind: 'manual' },
+      trigger: { kind: 'start' },
     },
     {
       description: t('addNode.webhookDescription'),
@@ -222,7 +222,12 @@ export function deriveAddNodeOptions(draft: Draft | undefined, t: TFunction): re
     },
   ]
   const nodes = Object.values(revisionView(draft).graph()?.nodes ?? {})
-  return triggers.filter((option) => !nodes.some((node) => (node.kind == 'manual' || node.kind == 'error') && option.id == `trigger:${node.kind}`))
+  return triggers.filter(
+    (option) =>
+      !nodes.some((node) =>
+        node.kind == 'manual' || node.kind == 'start' ? option.id == 'trigger:start' : node.kind == 'error' && option.id == 'trigger:error',
+      ),
+  )
 }
 
 export function addNodeIntent(option: AddNodeOption, revision: RevisionView, t: TFunction): AddNodeIntent | undefined {
@@ -262,8 +267,8 @@ export function addNodeIntent(option: AddNodeOption, revision: RevisionView, t: 
       switch (option.trigger.kind) {
         case 'error':
           return { kind: 'error', name: t('errorWorkflow.trigger') }
-        case 'manual':
-          return { kind: 'manual', name: t('addNode.manual') }
+        case 'start':
+          return { kind: 'start', name: t('addNode.start') }
         case 'webhook':
           return { kind: 'webhook', name: t('addNode.webhook') }
         case 'cron':

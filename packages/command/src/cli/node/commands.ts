@@ -72,7 +72,10 @@ const optionDetails: Record<
   'expected-publication': { description: 'Fixed Publication ID. Use none when publishing without a Live Publication.', type: 'string' },
   'idempotency-key': { description: 'Stable identity of one mutation. Reuse only with the identical arguments and base identity.', type: 'string' },
   'source': { description: 'Execution source.', type: 'string', enum: ['draft', 'live'], default: 'draft' },
-  'trigger': { description: 'Exact Trigger ID or unambiguous name. A sole Manual Trigger is selected automatically.', type: 'string' },
+  'trigger': {
+    description: 'Exact Trigger ID or unambiguous name. The Start node is selected automatically; a sole legacy Manual Trigger remains supported.',
+    type: 'string',
+  },
   'timeout': {
     description: 'Wait budget in milliseconds; expiration does not cancel the operation. For node set, the node execution timeout.',
     type: 'integer',
@@ -92,7 +95,7 @@ const optionDetails: Record<
   'file': { description: 'Authoring request or workflow JSON file path, or - for stdin.', type: 'string' },
   'code': { description: 'JavaScript source, @file, or - for stdin.', type: 'string' },
   'input': { description: 'Authoring request JSON; literal JSON, @file, or -. For run, node ID to input values.', type: 'string' },
-  'outputs': { description: 'Trigger outputs: literal JSON, @file, or -. Defaults to {}.', type: 'string' },
+  'outputs': { description: 'Start parameters or other Trigger outputs: literal JSON, @file, or -. Defaults to {}.', type: 'string' },
   'set': { description: 'handle=value; repeat for multiple fields. Values use port schemas, JSON, @file, or -.', type: 'string' },
   'unset': { description: 'Input/config handle to remove; repeat for multiple fields.', type: 'string' },
   'connection': { description: 'Exact active Connection ID, unambiguous display name, or default.', type: 'string' },
@@ -147,7 +150,8 @@ export function commandSchema(name = 'edits') {
     return {
       $schema: 'https://json-schema.org/draft/2020-12/schema',
       type: 'object',
-      description: 'Named JSON trigger outputs. The selected trigger defines its outputs contract.',
+      description:
+        'Named Start parameters or other Trigger outputs. The selected trigger defines its contract. Omitted nullable Start parameters become null; required parameters must be supplied.',
     }
   if (name == 'input')
     return {

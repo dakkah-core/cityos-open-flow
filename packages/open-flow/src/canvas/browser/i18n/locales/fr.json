@@ -594,6 +594,7 @@
     },
     "triggerSource": {
       "manual": "Manuel",
+      "start": "Démarrage",
       "cron": "Planification",
       "webhook": "Webhook",
       "error": "Déclencheur d’erreur"

@@ -87,6 +87,8 @@ function nodePurposePlaceholder(
       switch (node.kind) {
         case 'manual':
           return t('addNode.manualDescription')
+        case 'start':
+          return t('addNode.startDescription')
         case 'error':
           return t('errorWorkflow.description')
         case 'cron':
@@ -420,7 +422,22 @@ export function NodeInspector({
             )}
           </>
         )}
-        {selection?.kind === 'trigger' && selection.trigger.kind !== 'webhook' && (
+        {selection?.kind === 'trigger' && selection.trigger.kind === 'start' && (
+          <section className="inspector-port-section" data-inspector-section="outputs">
+            <PortDefinitionEditor
+              layout="ports"
+              title={t('inspector.ports.startParametersTitle')}
+              output
+              readOnly={readOnly}
+              disabled={disabled}
+              values={selection.trigger.parameters}
+              onChange={(parameters, deletion) => {
+                void store?.saveStartParameters(selection.id, parameters, deletion)
+              }}
+            />
+          </section>
+        )}
+        {selection?.kind === 'trigger' && selection.trigger.kind !== 'webhook' && selection.trigger.kind !== 'start' && (
           <TriggerSummary
             trigger={selection.trigger}
             display={

@@ -42,7 +42,8 @@ export async function createRunCommand(client: ControlClient, operands: readonly
   const revisionId = live?.publication?.revisionId ?? args.expectedRevision ?? flow.draftRevisionId
   const revision = await client.getRevision(flow.flowId, revisionId)
   const triggers = Object.entries(revision.content.document.graph.nodes).filter(([, node]) => !('inputs' in node))
-  const only = triggers.length == 1 && triggers[0]?.[1].kind == 'manual' ? triggers[0][0] : undefined
+  const starts = triggers.filter(([, node]) => node.kind == 'start')
+  const only = starts.length == 1 ? starts[0]![0] : triggers.length == 1 && triggers[0]?.[1].kind == 'manual' ? triggers[0][0] : undefined
   const reference = args.trigger ?? only
   if (reference == null)
     throw new CliError('run.trigger-required', 'Choose a start node with --trigger <name|id>.', {

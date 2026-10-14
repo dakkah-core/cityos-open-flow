@@ -104,12 +104,12 @@ describe('Context Panel', () => {
           options={[
             { ...group, group: label },
             {
-              id: 'manual',
+              id: 'start',
               description: 'Start manually.',
               kind: 'trigger',
-              trigger: { kind: 'manual' },
+              trigger: { kind: 'start' },
               group: 'Triggers',
-              label: 'Manual trigger',
+              label: 'Start',
               inputs: [],
               outputs: [],
             },
@@ -120,7 +120,7 @@ describe('Context Panel', () => {
       </I18nProvider>,
     )
     expect(markup).toContain(label)
-    expect(markup).toContain('Manual trigger')
+    expect(markup).toContain('Start')
     expect(markup).toContain('aria-expanded="false"')
     expect(markup).not.toContain('GitHub')
     expect(markup).toContain('Code task')

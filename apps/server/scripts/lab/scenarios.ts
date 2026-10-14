@@ -6,10 +6,17 @@ import { fulfillmentSamples, fulfillmentStages } from './fulfillment.ts'
 
 export const scenarios = [
   {
-    id: 'connector-responses',
-    entry: { kind: 'manual' },
-    name: 'Consume dynamic and spreadsheet Connector responses',
+    id: 'start-parameters',
+    entry: { kind: 'start' },
+    name: 'Call a Flow with Start parameters',
     version: 1,
+    task: 'Build a workflow with one Start node accepting required string message and required number amount parameters plus nullable string note. Describe amount as "Invoice total". Archive exactly {message,amount,note} using Archive test account. These values must come from the Start parameters, including zero amounts and omitted notes becoming null. Preserve the parameter schemas when updating their descriptions.',
+  },
+  {
+    id: 'connector-responses',
+    entry: { kind: 'start' },
+    name: 'Consume dynamic and spreadsheet Connector responses',
+    version: 2,
     task: 'Build a manually triggered workflow. Read the dynamic response and spreadsheet cells from Lab Data using Data test account. Pass both results to a code node, then archive {dynamic, values} using Archive test account. Preserve the complete dynamic response, including its output field, and all spreadsheet cell types, including null. Do not hardcode response data.',
   },
   {
@@ -17,56 +24,56 @@ export const scenarios = [
     transport: 'cli',
     entry: { kind: 'webhook' },
     name: 'Publish and discover a Webhook entry',
-    version: 1,
+    version: 2,
     task: 'Create a POST Webhook named Published hook with a required string message field and a code node returning that message. Publish it, inspect its online URL and request contract, then change only the Draft hook to PUT and name it Draft hook. Confirm the online entry still describes the published POST contract. Leave the published workflow enabled for acceptance verification.',
   },
   {
     id: 'fulfillment-ops',
-    entry: { kind: 'manual' },
+    entry: { kind: 'start' },
     name: 'Evolve a fulfillment operations workflow',
-    version: 1,
+    version: 2,
     task: fulfillmentStages[0]!.task,
   },
   {
     id: 'order-alert',
-    entry: { kind: 'manual' },
+    entry: { kind: 'start' },
     name: 'Build an order alert',
-    version: 1,
-    task: 'Build a workflow with a Manual trigger. Find the action that lists orders and use Orders test account. Sum their amounts. If the total is greater than 100, send its decimal total as a notification using Notifications test account. Empty orders produce zero and no notification.',
+    version: 2,
+    task: 'Build a workflow with a Start node. Find the action that lists orders and use Orders test account. Sum their amounts. If the total is greater than 100, send its decimal total as a notification using Notifications test account. Empty orders produce zero and no notification.',
   },
   {
     id: 'customer-redaction',
     entry: { node: 'start' },
     name: 'Add customer data redaction',
-    version: 1,
+    version: 2,
     task: 'Customer notification must contain JSON with only orderId and total. Insert a processing step on its execution path. Internal archive must continue receiving the complete original order. Keep the existing accounts, other settings and behavior.',
   },
   {
     id: 'specialize-summary',
     entry: { node: 'start' },
     name: 'Specialize one independent summary',
-    version: 2,
+    version: 3,
     task: 'Find Customer summary and replace only the prompt rule "Include internal cost breakdown." with "Exclude internal cost breakdown." Keep all other prompt content and configuration. Internal summary and the other nodes must remain unchanged.',
   },
   {
     id: 'specialize-summary-large',
     entry: { node: 'start' },
     name: 'Specialize one independent summary in a larger flow',
-    version: 2,
+    version: 3,
     task: 'Find Customer summary and replace only the prompt rule "Include internal cost breakdown." with "Exclude internal cost breakdown." Keep all other prompt content and configuration. Internal summary and the other nodes must remain unchanged.',
   },
   {
     id: 'repair-amount',
     entry: { node: 'start' },
     name: 'Repair a failed amount formatter',
-    version: 1,
+    version: 2,
     task: 'Inspect the existing failed Run and fix the amount formatter. Null amounts must format as zero, while zero and ordinary amounts keep two decimal places. A missing order list must still fail. Preserve schemas, unrelated code and workflow behavior.',
   },
   {
     id: 'concurrent-edit',
     entry: { node: 'start' },
     name: 'Recover from a concurrent edit',
-    version: 1,
+    version: 2,
     task: 'Change Customer notification to send "Order received". Another operator may edit the workflow while you work; preserve their changes and all other settings. Do not create duplicate nodes or run the workflow unnecessarily.',
   },
 ] as const
@@ -128,8 +135,8 @@ function source(nodeId: string, handle: string, from: string, output: string): C
   return { kind: 'graph.node.input.set', nodeId, handle, value: { kind: 'sources', sources: [{ kind: 'node', nodeId: from, output }] } }
 }
 export function initialOperations(id: string): ChangeOperation[] {
-  if (id == 'connector-responses' || id == 'order-alert' || id == 'fulfillment-ops' || id == 'webhook-live') return []
-  const start = node('start', { kind: 'manual', name: 'Manual trigger' })
+  if (id == 'start-parameters' || id == 'connector-responses' || id == 'order-alert' || id == 'fulfillment-ops' || id == 'webhook-live') return []
+  const start = node('start', { kind: 'start', name: 'Start', parameters: [] })
   if (id.startsWith('specialize-summary')) {
     const task: ManagedTaskDefinition = {
       name: 'Order summary',
@@ -291,6 +298,14 @@ export interface Sample {
   parameters?: Record<string, JsonValue>
 }
 export function samples(id: string, stage = 0): Sample[] {
+  if (id == 'start-parameters') {
+    const cases: Pick<Sample, 'name' | 'outputs'>[] = [
+      { name: 'zero-and-omitted', outputs: { message: 'Created', amount: 0 } },
+      { name: 'explicit-null', outputs: { message: 'Refunded', amount: -2.5, note: null } },
+      { name: 'ordinary', outputs: { message: 'Paid', amount: 12.5, note: 'Invoice A-1' } },
+    ]
+    return cases.map((sample) => Object.assign({}, sample, { orders: [], order }))
+  }
   if (id == 'fulfillment-ops') return fulfillmentSamples(stage)
   if (id == 'connector-responses')
     return [
@@ -346,6 +361,24 @@ function effectiveNode(content: RevisionContent, id: string): unknown {
 }
 /** Independent assertions: compare behavior and preserved effective configurations, not generated IDs. */
 export function assertions(id: string, base: RevisionContent, current: RevisionContent): string[] {
+  if (id == 'start-parameters') {
+    const starts = Object.values(current.document.graph.nodes).filter((candidate) => candidate.kind == 'start')
+    if (starts.length != 1 || starts[0]?.kind != 'start') return ['Create one Start node.']
+    const parameters = Object.fromEntries(starts[0].parameters.map((port) => [port.handle, port]))
+    const amount = parameters.amount
+    if (
+      parameters.message?.nullable !== false ||
+      !isDeepStrictEqual(parameters.message.jsonSchema, { type: 'string' }) ||
+      amount?.nullable !== false ||
+      !isDeepStrictEqual(amount.jsonSchema, { type: 'number' }) ||
+      amount.description !== 'Invoice total' ||
+      parameters.note?.nullable !== true ||
+      !isDeepStrictEqual(parameters.note.jsonSchema, { type: 'string' }) ||
+      Object.keys(parameters).length !== 3
+    )
+      return ['Declare required message/amount and nullable note parameters while preserving their schemas.']
+    return []
+  }
   if (id == 'connector-responses' || id == 'fulfillment-ops' || id == 'webhook-live') return []
   const errors: string[] = []
   const allowed = new Set(

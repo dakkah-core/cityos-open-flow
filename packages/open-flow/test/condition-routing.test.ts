@@ -33,7 +33,7 @@ function content(condition: ConditionNode): RevisionContent {
 
       graph: {
         nodes: {
-          start: { kind: 'manual', name: 'Start' },
+          start: { kind: 'start', name: 'Start', parameters: [] },
           data: {
             kind: 'value',
             inputs: {},

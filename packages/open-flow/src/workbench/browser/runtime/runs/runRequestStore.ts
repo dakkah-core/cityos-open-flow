@@ -9,7 +9,7 @@ import type { RunStore } from './runStore.ts'
 import { compute, derive, val } from 'value-enhancer'
 import { randomId } from '../../../../control/common/random.ts'
 import { sampleErrorOutputs } from '../../../../trigger/common/contract.ts'
-import { triggerOutputDefinitions } from '../../../../trigger/common/contract.ts'
+import { normalizeTriggerOutputs, triggerOutputDefinitions } from '../../../../trigger/common/contract.ts'
 import { createI18n } from '../i18n.ts'
 import { revisionView } from '../revisionView.ts'
 import { Latest } from '../stores/latest.ts'
@@ -37,7 +37,6 @@ export interface RunInputRequest {
   readonly flow: Flow
   readonly editor?: FlowRunInputEditorStore
   readonly publicationId?: string
-  readonly revisionId: string
   readonly source: RunSource
   readonly valid: ReadonlyVal<boolean>
 }
@@ -53,11 +52,16 @@ function inputSpec(draft: Draft, triggerId: string) {
   const trigger = revisionView(draft).graph()?.nodes[triggerId]
   if (trigger == null || 'inputs' in trigger || trigger.kind == 'manual' || trigger.kind == 'cron') return undefined
   const definitions = triggerOutputDefinitions(trigger)
-  return definitions.length === 0 ? undefined : { definitions, samples: trigger.kind == 'error' ? sampleErrorOutputs : undefined }
+  return definitions.length === 0
+    ? undefined
+    : { definitions, allowOmittedNullable: trigger.kind == 'start', samples: trigger.kind == 'error' ? sampleErrorOutputs : undefined }
 }
 
 function inputSignature(spec: ReturnType<typeof inputSpec>): string {
-  return JSON.stringify(spec?.definitions.map((definition) => [definition.handle, definition.jsonSchema, definition.nullable]) ?? [])
+  return JSON.stringify({
+    allowOmittedNullable: spec?.allowOmittedNullable ?? false,
+    definitions: spec?.definitions.map((definition) => [definition.handle, definition.jsonSchema, definition.nullable]) ?? [],
+  })
 }
 
 async function inputEditor(
@@ -67,9 +71,10 @@ async function inputEditor(
 ): Promise<FlowRunInputEditorStore | undefined> {
   if (spec == null) return undefined
   const { FlowRunInputEditorStore } = await import('../../flowRunInputEditorStore.ts')
-  const editor = new FlowRunInputEditorStore(spec.definitions, language)
+  const editor = new FlowRunInputEditorStore(spec.definitions, language, { allowOmittedNullable: spec.allowOmittedNullable })
   const initial = values ?? spec.samples
-  if (initial != null) editor.replaceValues(initial)
+  if (initial != null)
+    editor.replaceValues(Object.fromEntries(spec.definitions.flatMap(({ handle }) => (Object.hasOwn(initial, handle) ? [[handle, initial[handle]]] : []))))
   return editor
 }
 
@@ -80,13 +85,13 @@ function testOutputs(revision: Draft, triggerId: string): Readonly<Record<string
 }
 
 export class RunRequestStore {
-  readonly #prepareDraft: (flowId: string) => Promise<string | undefined>
+  readonly #prepareDraft: (flowId: string) => Promise<Draft | undefined>
   readonly #client: Client
   readonly #identity: () => string
   readonly #i18n: I18n
   readonly #lifetime = new Latest()
   readonly #requests = new Latest()
-  readonly #runs: Pick<RunStore, 'follow' | 'prepareStart'>
+  readonly #runs: Pick<RunStore, 'captureSelection' | 'follow' | 'prepareStart'>
   readonly #savedInputs = new Map<
     string,
     {
@@ -103,9 +108,9 @@ export class RunRequestStore {
 
   public constructor(
     client: Client,
-    runs: Pick<RunStore, 'follow' | 'prepareStart'>,
+    runs: Pick<RunStore, 'captureSelection' | 'follow' | 'prepareStart'>,
     setNotice: SetNotice,
-    prepareDraft: (flowId: string) => Promise<string | undefined>,
+    prepareDraft: (flowId: string) => Promise<Draft | undefined>,
     i18n: I18n = createI18n(),
     identity: () => string = randomId,
   ) {
@@ -143,7 +148,7 @@ export class RunRequestStore {
   public async requestDraft(flow: Flow, draft: Draft, triggerId?: string): Promise<RunRequestOutcome> {
     const current = this.#requests.begin()
     try {
-      return await this.#request('draft', flow, draft, draft.revisionId, current, undefined, triggerId)
+      return await this.#request('draft', flow, draft, current, undefined, triggerId)
     } catch (error) {
       if (current()) this.#setNotice(errorNotice(error, this.#i18n.t))
       return 'unavailable'
@@ -155,7 +160,7 @@ export class RunRequestStore {
   public async editDraft(flow: Flow, draft: Draft, triggerId: string): Promise<RunRequestOutcome> {
     const current = this.#requests.begin()
     try {
-      return await this.#request('draft', flow, draft, draft.revisionId, current, undefined, triggerId, true)
+      return await this.#request('draft', flow, draft, current, undefined, triggerId, true)
     } catch (error) {
       if (current()) this.#setNotice(errorNotice(error, this.#i18n.t))
       return 'unavailable'
@@ -166,7 +171,10 @@ export class RunRequestStore {
 
   public inputStatus(flowId: string, draft: Draft, triggerId: string): 'missing' | 'none' | 'ready' {
     const spec = inputSpec(draft, triggerId)
-    if (spec == null) return 'none'
+    if (spec == null) {
+      const request = this.#state.value.inputRequest
+      return request?.flow.flowId == flowId && request.triggerId == triggerId ? 'ready' : 'none'
+    }
     const saved = this.#savedInputs.get(this.#inputKey(flowId, triggerId))
     return saved?.valid == true && saved.signature == inputSignature(spec) ? 'ready' : 'missing'
   }
@@ -180,7 +188,7 @@ export class RunRequestStore {
       if (publication == null) return 'unavailable'
       const revision = await this.#client.getRevision(flow.flowId, publication.revisionId)
       if (!current()) return 'unavailable'
-      return await this.#request('live', flow, revision, publication.revisionId, current, publication.publicationId)
+      return await this.#request('live', flow, revision, current, publication.publicationId)
     } catch (error) {
       if (current()) this.#setNotice(errorNotice(error, this.#i18n.t))
       return 'unavailable'
@@ -199,13 +207,13 @@ export class RunRequestStore {
   public async confirmInputs(): Promise<boolean> {
     const request = this.#state.value.inputRequest
     if (request == null || request.triggerId == null) return false
-    if (!request.valid.value) {
+    if (request.source == 'live' && !request.valid.value) {
       this.#set({ inputRequest: { ...request, attempted: true } })
       return false
     }
     this.#rememberInputs(request)
     const outputs = (request.editor?.values() ?? testOutputs(request.revision, request.triggerId)) as Readonly<Record<string, JsonValue>>
-    const started = await this.#start(request.source, request.flow, request.revisionId, { nodeId: request.triggerId, outputs }, request.publicationId)
+    const started = await this.#start(request.source, request.flow, request.revision, { nodeId: request.triggerId, outputs }, request.publicationId, request)
     if (started && this.#state.value.inputRequest === request) this.dismissInputs()
     return started
   }
@@ -238,7 +246,6 @@ export class RunRequestStore {
     source: RunSource,
     flow: Flow,
     revision: Draft,
-    revisionId: string,
     current: Current,
     publicationId?: string,
     triggerId?: string,
@@ -255,7 +262,10 @@ export class RunRequestStore {
       this.#setNotice({ kind: 'error', message: this.#i18n.t('runInput.noTrigger') })
       return 'unavailable'
     }
-    const only = triggerId == null ? triggers[0] : triggers.find((trigger) => trigger.nodeId == triggerId)
+    const only =
+      triggerId == null
+        ? (triggers.find((trigger) => graph?.nodes[trigger.nodeId]?.kind == 'start') ?? triggers[0])
+        : triggers.find((trigger) => trigger.nodeId == triggerId)
     if (triggerId != null && only == null) {
       this.#set({ starting: false })
       this.#setNotice({ kind: 'error', message: this.#i18n.t('runInput.selectTrigger') })
@@ -270,14 +280,14 @@ export class RunRequestStore {
       return 'unavailable'
     }
     if (!edit && only != null && editor == null) {
-      return (await this.#start(source, flow, revisionId, { nodeId: only.nodeId, outputs: testOutputs(revision, only.nodeId) }, publicationId))
+      return (await this.#start(source, flow, revision, { nodeId: only.nodeId, outputs: testOutputs(revision, only.nodeId) }, publicationId))
         ? 'started'
         : 'unavailable'
     }
     if (!edit && only != null && saved?.valid == true && saved.signature == signature && editor != null && editor.valid$.value) {
       const outputs = editor.values() as Readonly<Record<string, JsonValue>>
       editor?.dispose()
-      return (await this.#start(source, flow, revisionId, { nodeId: only.nodeId, outputs }, publicationId)) ? 'started' : 'unavailable'
+      return (await this.#start(source, flow, revision, { nodeId: only.nodeId, outputs }, publicationId)) ? 'started' : 'unavailable'
     }
     const valid = compute((get) => only != null && (editor == null || get(editor.valid$)))
     this.#set({
@@ -289,7 +299,6 @@ export class RunRequestStore {
         triggers,
         triggerId: only?.nodeId,
         ...(publicationId == null ? {} : { publicationId }),
-        revisionId,
         source,
         valid,
       },
@@ -302,36 +311,55 @@ export class RunRequestStore {
   async #start(
     source: RunSource,
     flow: Flow,
-    revisionId: string,
+    revision: Draft,
     trigger: { readonly nodeId: string; readonly outputs: Readonly<Record<string, JsonValue>> },
     publicationId?: string,
+    request?: RunInputRequest,
   ): Promise<boolean> {
     if (source == 'live' && publicationId == null) return false
     const alive = this.#lifetime.capture()
-    const current = this.#runs.prepareStart()
+    const requestCurrent = this.#requests.begin()
+    let current = this.#runs.captureSelection()
     this.#set({ starting: true, submitting: source })
     try {
-      if (source == 'draft') {
-        const savedRevision = await this.#prepareDraft(flow.flowId)
-        if (savedRevision == null || !alive() || !current()) return false
-        revisionId = savedRevision
+      const prepared = source == 'draft' ? await this.#prepareDraft(flow.flowId) : revision
+      if (prepared == null || !alive() || !current() || !requestCurrent()) return false
+      const node = revisionView(prepared).trigger(trigger.nodeId)
+      if (
+        node == null ||
+        node.kind !== revisionView(revision).trigger(trigger.nodeId)?.kind ||
+        inputSignature(inputSpec(prepared, trigger.nodeId)) !== inputSignature(inputSpec(revision, trigger.nodeId))
+      ) {
+        await this.#request(source, flow, prepared, requestCurrent, publicationId, trigger.nodeId, true)
+        return false
       }
-      const target = source == 'draft' ? { flowId: flow.flowId, revisionId } : { publicationId: publicationId! }
+      if (request != null && !request.valid.value) {
+        if (this.#state.value.inputRequest === request) this.#set({ inputRequest: { ...request, attempted: true } })
+        return false
+      }
+      const outputs = normalizeTriggerOutputs(node, request?.editor?.values() ?? trigger.outputs)
+      if (outputs == null) {
+        this.#setNotice({ kind: 'error', message: this.#i18n.t('runInput.invalid') })
+        return false
+      }
+      current = this.#runs.prepareStart()
+      trigger = { nodeId: trigger.nodeId, outputs }
+      const target = source == 'draft' ? { flowId: flow.flowId, revisionId: prepared.revisionId } : { publicationId: publicationId! }
       const signature = JSON.stringify({ trigger, source, ...target })
       const attempt = this.#attempt?.signature == signature ? this.#attempt : { key: this.#identity(), signature }
       this.#attempt = attempt
       const run =
         source == 'draft'
-          ? await this.#client.createDraftRun(flow.flowId, revisionId, { idempotencyKey: attempt.key, inputs: {}, trigger })
+          ? await this.#client.createDraftRun(flow.flowId, prepared.revisionId, { idempotencyKey: attempt.key, inputs: {}, trigger })
           : await this.#client.createLiveRun(publicationId!, { idempotencyKey: attempt.key, inputs: {}, trigger })
-      if (!alive() || !current()) return false
+      if (!alive() || !current() || !requestCurrent()) return false
       this.#attempt = undefined
       return this.#runs.follow(run, current)
     } catch (error) {
-      if (alive() && current()) this.#setNotice(errorNotice(error, this.#i18n.t))
+      if (alive() && current() && requestCurrent()) this.#setNotice(errorNotice(error, this.#i18n.t))
       return false
     } finally {
-      if (alive()) this.#set({ starting: false, submitting: undefined })
+      if (alive() && requestCurrent()) this.#set({ starting: false, submitting: undefined })
     }
   }
 

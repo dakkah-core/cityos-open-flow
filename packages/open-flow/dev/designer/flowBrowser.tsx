@@ -16,7 +16,11 @@ const sampleWorkflow: WorkflowFile = {
   kind: 'open-flow-workflow',
   version: 1,
   name: 'Sample workflow',
-  content: { modelVersion: 6, modules: {}, document: { bindings: {}, graph: { nodes: { start: { kind: 'manual', name: 'Start' } }, edges: [] } } },
+  content: {
+    modelVersion: 6,
+    modules: {},
+    document: { bindings: {}, graph: { nodes: { start: { kind: 'start', parameters: [], name: 'Start' } }, edges: [] } },
+  },
   presentation: {},
 }
 const sampleText = JSON.stringify({ ...sampleWorkflow, name: 'GitHub sample' })
