@@ -18,7 +18,7 @@ import { decodeConnectorAccessSnapshot } from '@oomol-lab/open-flow/control-api'
 import { decodeRevision } from '@oomol-lab/open-flow/flow-encoding'
 import { flowDependencies, variableBindings } from '@oomol-lab/open-flow/flow-semantics'
 import { currentEngineContract } from '@oomol-lab/open-flow/runtime-contract'
-import { decodeFlowRunCheckpoint, normalizeWaitComment } from '@oomol-lab/open-flow/scheduler'
+import { decodeFlowRunCheckpoint, normalizeWaitComment, withWaitNotificationMessage } from '@oomol-lab/open-flow/scheduler'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { AcceptanceError } from '../error.ts'
 import { isolatedVmEngineDigest } from '../runtime/isolated-vm.ts'
@@ -424,7 +424,7 @@ export class RunStore {
           previous.actions != JSON.stringify(wait.actions)
         )
           throw new Error('Wait identity changed.')
-        return previous.output == null ? undefined : (JSON.parse(previous.output) as JsonValue)
+        return previous.output == null ? undefined : withWaitNotificationMessage(JSON.parse(previous.output) as JsonValue)
       }
       const waitingSince = this.#clock()
       const expiresAt = waitingSince + waitDurationMs
@@ -434,12 +434,12 @@ export class RunStore {
       const links =
         capability == null ? [] : wait.actions.map((action) => ({ action, url: new URL(`/v1/wait-actions/${capability}/${action}`, publicOrigin!).href }))
       const output: JsonValue | undefined = wait.notify
-        ? {
+        ? withWaitNotificationMessage({
             inputs: wait.value,
             prompt: wait.prompt,
             ...Object.fromEntries(links.map(({ action, url }) => [`${action}Url`, url])),
             expiresAt: new Date(expiresAt).toISOString(),
-          }
+          })
         : undefined
       this.#database
         .prepare(
@@ -548,12 +548,9 @@ export class RunStore {
         const row = this.#database
           .prepare('SELECT node_id AS nodeId, job_id AS jobId, value, notification_output AS output FROM wait_receipts WHERE run_id = ? AND wait_id = ?')
           .get(runId, wait.waitId) as { nodeId: string; jobId: string; value: string; output: string | null }
-        if (
-          row.nodeId != wait.nodeId ||
-          row.jobId != wait.jobId ||
-          row.value != JSON.stringify(wait.value) ||
-          row.output != (wait.pending == null ? null : JSON.stringify(wait.pending))
-        )
+        const output = row.output == null ? null : JSON.stringify(withWaitNotificationMessage(JSON.parse(row.output) as JsonValue))
+        const pending = wait.pending == null ? null : JSON.stringify(withWaitNotificationMessage(wait.pending))
+        if (row.nodeId != wait.nodeId || row.jobId != wait.jobId || row.value != JSON.stringify(wait.value) || output != pending)
           throw new Error('Wait checkpoint changed registered values.')
       }
       const unresolved = this.#database.prepare('SELECT wait_id AS waitId FROM wait_receipts WHERE run_id = ? AND action IS NULL').all(runId) as {

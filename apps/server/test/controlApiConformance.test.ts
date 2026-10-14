@@ -1,7 +1,7 @@
 import type { ConnectorAccess, ConnectorAction, ConnectorConnection, ConnectorProvider } from '@oomol-lab/open-flow/control-api'
 import type { ControlApiConformanceHarness } from '@oomol-lab/open-flow/control-api-conformance'
 import type { PollDefinition } from '@oomol-lab/open-flow/poll-trigger'
-import type { TaskNode } from '../../../packages/open-flow/src/flow/common/change.ts'
+import type { JsonValue, TaskNode } from '../../../packages/open-flow/src/flow/common/change.ts'
 import type { ManagedTaskDefinition } from '../../../packages/open-flow/src/flow/common/change.ts'
 import type { ConnectorAccessHost } from '../node/deployment/connector-access.ts'
 import type { ConnectorHost } from '../node/deployment/connector.ts'
@@ -127,6 +127,7 @@ async function createHarness(
         connector: connector == null ? undefined : () => connector,
         connectorAccess,
         connectorConsoleOrigin: () => new URL('https://connector.example'),
+        waitPublicOrigin: () => new URL('https://server.local'),
       },
       clock: () => {
         now += 1_000
@@ -170,6 +171,183 @@ async function createHarness(
     },
   }
 }
+
+it('creates, edits and runs a Leina notification with a team-scoped robot selection', async () => {
+  const bot = { leinaId: 'default', name: 'Team assistant', status: 'ready', platforms: ['feishu'] }
+  const execute = vi.fn<ConnectorHost['execute']>(
+    async (action, _connection, input): Promise<JsonValue> =>
+      action == 'leina.list_bots' ? { bots: [bot] } : { leinaId: input.leinaId!, status: 'delivered', requestId: 'delivery-1' },
+  )
+  const field = { jsonSchema: { type: 'string' } as const, nullable: false }
+  const action: ConnectorAction = {
+    actionId: 'leina.send_notification',
+    authenticated: false,
+    description: 'Send a notification.',
+    name: 'Send notification',
+    serviceId: 'leina',
+    serviceName: 'Leina',
+    inputs: { leinaId: field, message: { jsonSchema: { type: 'string', minLength: 1, pattern: '\\S' }, nullable: false } },
+    outputs: { leinaId: field, status: field, requestId: field },
+  }
+  const harness = await createHarness(true, undefined, {
+    execute,
+    getAction: async () => action,
+    listActions: async () => [action],
+    listProviders: async () => [{ serviceId: 'leina', serviceName: 'Leina', noSetup: true }],
+    listAllConnections: async () => [],
+    listConnections: async () => [],
+  })
+  try {
+    const api = new ControlClient((route, init) => harness.request(new Request(new URL(route, harness.origin), init)))
+    const flow = await api.createFlow('Leina notification', 'leina')
+    const database = Database.open(harness.file)
+    try {
+      new Store(database).connectorTeams.bind(flow.flowId, teamId)
+    } finally {
+      database.close()
+    }
+    expect(await api.listLeinaBots(flow.flowId)).toEqual([bot])
+    expect(execute.mock.calls[0]).toEqual([
+      'leina.list_bots',
+      undefined,
+      {},
+      expect.any(String),
+      expect.any(AbortSignal),
+      expect.objectContaining({
+        actorId: 'operator',
+        flowId: flow.flowId,
+        teamId,
+        scope: 'action',
+        action: 'leina.list_bots',
+        purpose: 'execute',
+        providerAccess: expect.objectContaining({ sharedBindings: [], selectedBindings: [] }),
+      }),
+    ])
+    await expect(api.listLeinaBots('missing-flow')).rejects.toMatchObject({ status: 404 })
+    expect(execute).toHaveBeenCalledTimes(1)
+    const created = await api.editAuthoring(flow.flowId, {
+      baseRevision: flow.draftRevisionId,
+      requestId: 'create-notification',
+      edits: [
+        { op: 'node.add', type: 'manual', as: 'start', name: 'Start' },
+        {
+          op: 'node.add',
+          type: 'value',
+          as: 'report',
+          name: 'Report',
+          config: {
+            outputs: { message: { schema: { type: 'string', minLength: 1, pattern: '\\S' }, nullable: false } },
+            values: { message: 'Upstream report' },
+          },
+        },
+        { op: 'node.add', type: 'connector', as: 'notify', name: 'Leina notification', config: { action: action.actionId } },
+        { op: 'input.set', node: '$notify', input: 'leinaId', source: { kind: 'value', value: bot.leinaId } },
+        { op: 'input.set', node: '$notify', input: 'message', source: { kind: 'value', value: 'Report ready' } },
+        { op: 'edge.connect', source: '$start', target: '$report' },
+        { op: 'edge.connect', source: '$report', target: '$notify' },
+      ],
+    })
+    expect(created.validation.status).toBe('valid')
+    const changed = await api.editAuthoring(flow.flowId, {
+      baseRevision: created.revision,
+      requestId: 'edit-message',
+      edits: [{ op: 'input.set', node: created.nodes.notify!, input: 'message', source: { kind: 'value', value: '  Report updated\n' } }],
+    })
+    expect(await api.checkAuthoring(flow.flowId, changed.revision)).toMatchObject({ valid: true })
+    expect((await api.readAuthoring(flow.flowId, { nodes: [created.nodes.notify!] })).data.nodes).toEqual([
+      expect.objectContaining({
+        config: expect.objectContaining({ action: action.actionId }),
+        inputs: expect.objectContaining({ leinaId: { kind: 'value', value: 'default' }, message: { kind: 'value', value: '  Report updated\n' } }),
+      }),
+    ])
+    const run = await api.createDraftRun(flow.flowId, changed.revision, {
+      trigger: { nodeId: created.nodes.start!, outputs: {} },
+      idempotencyKey: 'notify-once',
+    })
+    await expect.poll(async () => (await api.getRun(run.runId)).status).toBe('completed')
+    expect(execute.mock.calls[1]).toEqual([
+      action.actionId,
+      undefined,
+      { leinaId: 'default', message: '  Report updated\n' },
+      expect.any(String),
+      expect.any(AbortSignal),
+      expect.objectContaining({ teamId, scope: 'action', action: action.actionId }),
+    ])
+    const replay = await api.createDraftRun(flow.flowId, changed.revision, {
+      trigger: { nodeId: created.nodes.start!, outputs: {} },
+      idempotencyKey: 'notify-once',
+    })
+    expect(replay.runId).toBe(run.runId)
+    expect(execute).toHaveBeenCalledTimes(2)
+    const bound = await api.editAuthoring(flow.flowId, {
+      baseRevision: changed.revision,
+      requestId: 'bind-report',
+      edits: [{ op: 'input.set', node: created.nodes.notify!, input: 'message', source: { kind: 'output', node: created.nodes.report!, port: 'message' } }],
+    })
+    expect(bound.validation).toMatchObject({ status: 'valid' })
+    const next = await api.createDraftRun(flow.flowId, bound.revision, {
+      trigger: { nodeId: created.nodes.start!, outputs: {} },
+      idempotencyKey: 'notify-again',
+    })
+    await expect.poll(async () => (await api.getRun(next.runId)).status).toBe('completed')
+    expect(execute.mock.calls[2]?.[2]).toEqual({ leinaId: 'default', message: 'Upstream report' })
+    expect(execute.mock.calls[2]?.[3]).not.toBe(execute.mock.calls[1]?.[3])
+    const approvalFlow = await api.createFlow('Approval notification', 'leina-approval')
+    const approval = await api.editAuthoring(approvalFlow.flowId, {
+      baseRevision: approvalFlow.draftRevisionId,
+      requestId: 'approval-message',
+      edits: [
+        { op: 'node.add', type: 'manual', as: 'start', name: 'Start' },
+        { op: 'node.add', type: 'approval', as: 'approval', name: 'Review', prompt: 'Publish the report?' },
+        { op: 'node.add', type: 'connector', as: 'notify', name: 'Leina notification', config: { action: action.actionId } },
+        { op: 'input.set', node: '$notify', input: 'leinaId', source: { kind: 'value', value: 'default' } },
+        { op: 'edge.connect', source: '$start', target: '$approval' },
+        { op: 'edge.connect', source: '$approval', branch: 'pending', target: '$notify' },
+      ],
+    })
+    expect(approval.validation, JSON.stringify(approval.validation)).toMatchObject({ status: 'valid' })
+    expect(await api.checkAuthoring(approvalFlow.flowId, approval.revision)).toMatchObject({ valid: true })
+    const waiting = await api.createDraftRun(approvalFlow.flowId, approval.revision, {
+      trigger: { nodeId: approval.nodes.start!, outputs: {} },
+      idempotencyKey: 'approval-notification',
+    })
+    await expect.poll(() => execute.mock.calls.length).toBe(4)
+    const message = execute.mock.calls[3]![2].message
+    expect(message).toEqual(expect.stringContaining('Publish the report?'))
+    const url = String(message).match(/https:\/\/server.local\/v1\/wait-actions\/[A-Za-z0-9_-]{43}\/approve/)?.[0]
+    expect(url).toBeDefined()
+    const page = await harness.request(new Request(url!, { headers: { accept: 'text/html' } }))
+    expect(await page.text()).toContain('Publish the report?')
+    expect((await api.getRun(waiting.runId)).status).not.toBe('completed')
+    const decision = await harness.request(
+      new Request(url!, { method: 'POST', headers: { 'accept': 'text/html', 'content-type': 'application/x-www-form-urlencoded' }, body: 'comment=Reviewed' }),
+    )
+    expect(decision.status).toBe(200)
+    await expect.poll(async () => (await api.getRun(waiting.runId)).status).toBe('completed')
+    expect(execute).toHaveBeenCalledTimes(4)
+  } finally {
+    await harness.dispose()
+  }
+})
+
+it('propagates a failed Leina lookup without allowing caller-supplied team or action overrides', async () => {
+  const execute = vi.fn<ConnectorHost['execute']>(async () => {
+    throw new ConnectorTaskError('connector.unavailable', 'Leina unavailable')
+  })
+  const harness = await createHarness(false, undefined, { execute })
+  try {
+    const api = new ControlClient((route, init) => harness.request(new Request(new URL(route, harness.origin), init)))
+    const flow = await api.createFlow('Leina', 'leina-error')
+    await expect(api.listLeinaBots(flow.flowId)).rejects.toMatchObject({ code: 'connector.unavailable' })
+    for (const query of ['', `flowId=${flow.flowId}&teamId=other`, `flowId=${flow.flowId}&action=leina.send_notification`]) {
+      const response = await harness.request(new Request(`${harness.origin}/v1/connector/leina/bots?${query}`))
+      expect(response.status).toBe(400)
+    }
+    expect(execute).toHaveBeenCalledTimes(1)
+  } finally {
+    await harness.dispose()
+  }
+})
 
 function selectableConnectorAccess(): ConnectorAccessHost {
   const accesses = new Map<string, ConnectorAccess>()
