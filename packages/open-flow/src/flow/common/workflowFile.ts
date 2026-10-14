@@ -61,10 +61,27 @@ export function cleanWorkflowFile(value: unknown): { readonly file: WorkflowFile
       return [id, node]
     }),
   )
+  const outputMappings =
+    file.content.document.outputMappings == null
+      ? undefined
+      : Object.fromEntries(Object.entries(file.content.document.outputMappings).map(([key, input]) => [key, cleanInput(input)]))
   return {
-    file: { ...file, content: { ...file.content, document: { ...file.content.document, bindings: {}, graph: { ...graph, nodes } } } },
+    file: {
+      ...file,
+      content: {
+        ...file.content,
+        document: {
+          ...file.content.document,
+          bindings: {},
+          ...(outputMappings == null ? {} : { outputMappings }),
+          graph: { ...graph, nodes },
+        },
+      },
+    },
     summary: {
-      changedNodeIds: Object.keys(nodes).filter((id) => !dequal(nodes[id], original.nodes[id])),
+      changedNodeIds: Object.keys(nodes).filter(
+        (id) => !dequal(nodes[id], original.nodes[id]) || (nodes[id]?.kind == 'outputs' && !dequal(outputMappings, file.content.document.outputMappings)),
+      ),
       removedBindings: Object.keys(file.content.document.bindings).length,
     },
   }

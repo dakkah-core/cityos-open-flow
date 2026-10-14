@@ -2,6 +2,7 @@ import type { Graph, JsonValue } from '../../flow/common/change.ts'
 import type { DependenciesCheckpoint } from './scheduler.ts'
 
 import { z } from 'zod'
+import { isTriggerNode } from '../../flow/common/change.ts'
 
 const outputsSchema = z.record(z.string(), z.json() as z.ZodType<JsonValue>)
 const inputSchema = z.record(z.string(), z.strictObject({ execution: z.number().int().nonnegative(), outputs: outputsSchema }))
@@ -76,7 +77,7 @@ export class Dependencies {
       stack.delete(id)
     }
     const ids = Object.keys(graph.nodes).toSorted()
-    for (const triggerId of ids.filter((id) => !('inputs' in graph.nodes[id]!))) visit(triggerId)
+    for (const triggerId of ids.filter((id) => isTriggerNode(graph.nodes[id]!))) visit(triggerId)
     for (const id of ids) visit(id)
     for (const edge of this.forward) {
       const edges = this.incoming.get(edge.target) ?? []
@@ -145,7 +146,7 @@ export class Dependencies {
 
   start(nodeId: string, outputs: Readonly<Record<string, JsonValue>>) {
     for (const [id, node] of Object.entries(this.graph.nodes)) {
-      if ('inputs' in node) continue
+      if (!isTriggerNode(node)) continue
       const state = this.state.nodes[id]!
       state.status = id == nodeId ? 'completed' : 'skipped'
       if (id == nodeId) {

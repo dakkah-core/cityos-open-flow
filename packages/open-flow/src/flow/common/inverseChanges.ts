@@ -69,7 +69,9 @@ export function inverseFlowChanges(content: RevisionContent, operations: readonl
         const afterGraph = after.document.graph
         const beforeNode = beforeGraph.nodes[operation.nodeId]!
         const afterNode = afterGraph.nodes[operation.nodeId]!
-        if (beforeNode.kind === 'condition' && afterNode.kind === 'condition') {
+        if (beforeNode.kind === 'outputs') {
+          restore.push({ kind: 'flow.output-mappings.set', before: after.document.outputMappings, value: current.document.outputMappings })
+        } else if (beforeNode.kind === 'condition' && afterNode.kind === 'condition') {
           restore.push({
             kind: 'graph.node.condition.set',
             nodeId: operation.nodeId,
@@ -80,6 +82,12 @@ export function inverseFlowChanges(content: RevisionContent, operations: readonl
         break
       }
       case 'graph.trigger.sources.set':
+        restore.push({ ...operation, before: operation.value, value: operation.before })
+        break
+      case 'flow.output-defs.set':
+        restore.push({ ...operation, before: operation.value, value: operation.before })
+        break
+      case 'flow.output-mappings.set':
         restore.push({ ...operation, before: operation.value, value: operation.before })
         break
       case 'flow.input-defs.set':

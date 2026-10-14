@@ -44,7 +44,9 @@
     "manualDescription": "Démarrer manuellement à partir de ce nœud.",
     "integrationTriggers": "Déclencheurs d’applications",
     "start": "Démarrage",
-    "startDescription": "Démarrer le workflow manuellement ou par un appel API avec des paramètres de démarrage."
+    "startDescription": "Démarrer le workflow manuellement ou par un appel API avec des paramètres de démarrage.",
+    "outputs": "Sorties",
+    "outputsDescription": "Définir les sorties du workflow et leurs valeurs. Calculées après les dépendances en amont."
   },
   "connectorAccess": {
     "searchServices": "Rechercher un service",

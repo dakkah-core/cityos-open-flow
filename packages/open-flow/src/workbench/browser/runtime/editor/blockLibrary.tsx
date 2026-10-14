@@ -122,6 +122,8 @@ function fallbackIcon(item: LibraryNodeItem): IconName {
       return 'trigger'
     case 'value':
       return 'value'
+    case 'outputs':
+      return 'outputs'
     case 'wait':
       return 'wait'
     case 'new-task':

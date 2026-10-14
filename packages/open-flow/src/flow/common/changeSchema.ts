@@ -7,7 +7,7 @@ import { checkJsonDepth } from './json.ts'
 import { triggerScheduleSchema } from './triggerScheduleSchema.ts'
 import { webhookMethods } from './webhookMethod.ts'
 
-export const currentFlowModelVersion = 7
+export const currentFlowModelVersion = 8
 const text = z.string()
 const json = z.json()
 const strings = z.array(text)
@@ -184,6 +184,7 @@ const base = {
   timeoutMs: z.number().optional(),
 }
 const node = z.union([
+  z.strictObject({ ...base, kind: z.literal('outputs') }).omit({ inputs: true }),
   z.object({ ...base, inputs: z.record(text, z.never()), kind: z.literal('condition'), ...condition }),
   z.object({
     ...base,
@@ -243,12 +244,14 @@ const document = z.preprocess(
   rejectRetiredDefinitions,
   z.object({
     inputDefs: z.array(port.strict()).optional(),
+    outputDefs: z.array(port.strict()).optional(),
+    outputMappings: inputs.optional(),
     bindings: z.record(text, binding),
     graph,
   }),
 )
 const revision = z.object({
-  modelVersion: z.union([z.literal(2), z.literal(4), z.literal(5), z.literal(6), z.literal(currentFlowModelVersion)]),
+  modelVersion: z.union([z.literal(2), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(currentFlowModelVersion)]),
   document,
   modules: z.record(text, module),
 })
@@ -454,6 +457,8 @@ export function repairRevisionEnvelope(value: unknown): RevisionContent {
   return decodeRevisionContent({
     modelVersion: currentFlowModelVersion,
     document: {
+      ...(Object.hasOwn(sourceDocument, 'outputDefs') ? { outputDefs: sourceDocument.outputDefs } : {}),
+      ...(Object.hasOwn(sourceDocument, 'outputMappings') ? { outputMappings: sourceDocument.outputMappings } : {}),
       ...(Object.hasOwn(sourceDocument, 'inputDefs') ? { inputDefs: sourceDocument.inputDefs } : {}),
       bindings: repairedEntries(sourceDocument.bindings, binding),
       graph: sourceGraph,
@@ -486,6 +491,8 @@ export function decodeRevisionEnvelope(value: unknown): RevisionContent {
 }
 
 const shapes = {
+  'flow.output-defs.set': { before: z.array(port.strict()).optional(), value: z.array(port.strict()).optional() },
+  'flow.output-mappings.set': { before: inputs.optional(), value: inputs.optional() },
   'flow.input-defs.set': { before: z.array(port.strict()), value: z.array(port.strict()) },
   'graph.trigger.sources.set': { nodeId: text, before: sourceFlowIds.optional(), value: sourceFlowIds.optional() },
   'binding.create': { bindingId: text, binding },
@@ -581,6 +588,13 @@ export function changeOperationsSchema(kind?: string): JsonValue {
 }
 
 function checkModelVersion(content: RevisionContent): void {
+  if (
+    content.modelVersion < 8 &&
+    (content.document.outputDefs !== undefined ||
+      content.document.outputMappings !== undefined ||
+      Object.values(content.document.graph.nodes).some((candidateNode) => candidateNode.kind == 'outputs'))
+  )
+    throw new TypeError('Workflow outputs require Flow model version 8.')
   if (content.modelVersion < 7 && Object.values(content.document.graph.nodes).some((candidateNode) => candidateNode.kind == 'start'))
     throw new TypeError('Start Triggers require Flow model version 7.')
   if (

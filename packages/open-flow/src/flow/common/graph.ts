@@ -17,7 +17,7 @@ import type { Diagnostic } from './semantics.ts'
 
 import { missingTriggerConfig, resolveTriggerConfig } from '../../trigger/common/config.ts'
 import { triggerOutputDefinitions, triggerOutputPorts, webhookSupportsBody } from '../../trigger/common/contract.ts'
-import { portsByHandle, validVariableName } from './change.ts'
+import { isTriggerNode, portsByHandle, validVariableName } from './change.ts'
 import { conditionInputPorts, nodeInputMappings, otherwiseOutput, unaryOperator, comparisonIssue, valueType } from './condition.ts'
 import { schemaObject, matchesSchema, comparePorts, portsAssignable, variableInputCompatible, hasRetiredRef } from './schema.ts'
 import { sourceFields, sourcePort, sourceOutputLabel } from './sourceField.ts'
@@ -85,8 +85,10 @@ function validateTrigger(triggerId: string, trigger: TriggerNode, path: string, 
   }
 }
 
-export function nodeInputPorts(node: GraphNode): Readonly<Record<string, InputPortDefinition>> {
+export function nodeInputPorts(node: GraphNode, document?: Pick<FlowDocument, 'outputDefs'>): Readonly<Record<string, InputPortDefinition>> {
   switch (node.kind) {
+    case 'outputs':
+      return portsByHandle(document?.outputDefs ?? [])
     case 'condition':
       return conditionInputPorts(node)
     case 'value':
@@ -150,6 +152,7 @@ export function resolutionOutputPorts(node: Extract<GraphNode, { readonly kind: 
 
 export function nodeOutputPorts(node: GraphNode, inputDefs: readonly Port[]): Readonly<Record<string, PortDefinition>> {
   switch (node.kind) {
+    case 'outputs':
     case 'condition':
       return {}
     case 'value':
@@ -348,7 +351,7 @@ function graphPaths(graph: Graph) {
           routes.push(next)
         }
       }
-      const nextRoutes = edges.length == 0 ? ('inputs' in node ? [{}] : [{ $trigger: id }]) : routes
+      const nextRoutes = edges.length == 0 ? (isTriggerNode(node) ? [{ $trigger: id }] : [{}]) : routes
       const previous = paths.get(id) ?? []
       if (
         parents.size != (ancestors.get(id)?.size ?? 0) ||
@@ -451,13 +454,14 @@ export function checkInputSource(
   handle: string,
   source: Pick<NodeSource, 'nodeId' | 'output' | 'field'>,
   inputDefs: readonly Port[],
+  document?: Pick<FlowDocument, 'outputDefs'>,
 ): InputSourceCheck {
   const node = graph.nodes[source.nodeId]
   const targetNode = graph.nodes[target]
   if (node == null) return { kind: 'source-missing' }
   if (targetNode == null) return { kind: 'not-ready' }
   const output = nodeOutputPorts(node, inputDefs)[source.output]
-  const input = nodeInputPorts(targetNode)[handle]
+  const input = nodeInputPorts(targetNode, document)[handle]
   if (output == null) return { kind: 'output-missing' }
   if (input == null) return { kind: 'not-ready' }
   const analysis = graphPaths(graph)
@@ -474,8 +478,9 @@ export function checkInputSources(
   handle: string,
   sources: readonly Pick<NodeSource, 'nodeId' | 'output' | 'field'>[],
   inputDefs: readonly Port[],
+  document?: Pick<FlowDocument, 'outputDefs'>,
 ): InputSourcesCheck {
-  const checks = sources.map((source) => checkInputSource(graph, target, handle, source, inputDefs))
+  const checks = sources.map((source) => checkInputSource(graph, target, handle, source, inputDefs, document))
   const conflict =
     checks.length > 1 &&
     checks.every((check) => check.kind == 'available') &&
@@ -489,9 +494,10 @@ export function inputSourceCandidates(
   target: string,
   handle: string,
   inputDefs: readonly Port[],
+  document?: Pick<FlowDocument, 'outputDefs'>,
 ): Readonly<Record<string, readonly InputSourceCandidate[]>> {
   const targetNode = graph.nodes[target]
-  const input = targetNode == null ? undefined : nodeInputPorts(targetNode)[handle]
+  const input = targetNode == null ? undefined : nodeInputPorts(targetNode, document)[handle]
   if (input == null) return {}
   const analysis = graphPaths(graph)
   return Object.fromEntries(
@@ -516,6 +522,7 @@ export function availableOutputs(
   target: string,
   handle: string | undefined,
   inputDefs: readonly Port[],
+  document?: Pick<FlowDocument, 'outputDefs'>,
 ): Readonly<Record<string, readonly string[]>> {
   const analysis = graphPaths(graph)
   return Object.fromEntries(
@@ -525,7 +532,7 @@ export function availableOutputs(
       const outputs = Object.keys(nodeOutputPorts(node, inputDefs)).filter(
         (output) =>
           mappingAvailable(graph, target, { kind: 'sources', sources: [{ kind: 'node', nodeId: id, output }] }, analysis) &&
-          (handle == null || portsAssignable(nodeOutputPorts(node, inputDefs)[output]!, nodeInputPorts(graph.nodes[target]!)[handle]!)),
+          (handle == null || portsAssignable(nodeOutputPorts(node, inputDefs)[output]!, nodeInputPorts(graph.nodes[target]!, document)[handle]!)),
       )
       return outputs.length == 0 ? [] : [[id, outputs]]
     }),
@@ -559,6 +566,10 @@ function validateGraph(graph: Graph, document: FlowDocument, path: string, diagn
   if (errorTriggers.length > 1)
     for (const [nodeId] of errorTriggers)
       diagnostics.push(graphDiagnostic('graph.error-trigger-duplicate', 'A graph can contain only one Flow Error node.', `${path}/nodes/${nodeId}`))
+  const outputNodes = Object.entries(graph.nodes).filter(([, node]) => node.kind == 'outputs')
+  if (outputNodes.length > 1)
+    for (const [nodeId] of outputNodes)
+      diagnostics.push(graphDiagnostic('graph.outputs-duplicate', 'A graph can contain only one Outputs node.', `${path}/nodes/${nodeId}`))
   const startTriggers = Object.entries(graph.nodes).filter(([, node]) => node.kind == 'manual' || node.kind == 'start')
   if (startTriggers.length > 1) {
     for (const [nodeId] of startTriggers) {
@@ -570,7 +581,7 @@ function validateGraph(graph: Graph, document: FlowDocument, path: string, diagn
     const edgePath = `${path}/edges/${index}`
     const source = graph.nodes[edge.source]
     const target = graph.nodes[edge.target]
-    if (source == null || target == null || !('inputs' in target)) {
+    if (source == null || source.kind == 'outputs' || target == null || isTriggerNode(target)) {
       diagnostics.push(graphDiagnostic('graph.edge-invalid', 'Execution edges require an existing source and an executable target.', edgePath))
     } else if (source.kind == 'condition' || isResolutionNode(source)) {
       const exits = isResolutionNode(source) ? Object.keys(resolutionOutputPorts(source)) : [...source.cases.map((item) => item.output), otherwiseOutput]
@@ -586,24 +597,24 @@ function validateGraph(graph: Graph, document: FlowDocument, path: string, diagn
   }
   for (const [nodeId, node] of Object.entries(graph.nodes)) {
     const nodePath = `${path}/nodes/${nodeId}`
-    if ('inputs' in node && node.maxExecutions != null && (!Number.isSafeInteger(node.maxExecutions) || node.maxExecutions < 1)) {
+    if (!isTriggerNode(node) && node.maxExecutions != null && (!Number.isSafeInteger(node.maxExecutions) || node.maxExecutions < 1)) {
       diagnostics.push(graphDiagnostic('node.max-executions-invalid', 'Maximum executions must be a positive safe integer.', `${nodePath}/maxExecutions`))
     }
-    if (!('inputs' in node)) {
+    if (isTriggerNode(node)) {
       validateTrigger(nodeId, node, nodePath, diagnostics)
       continue
     }
-    for (const [handle, mapping] of Object.entries(nodeInputMappings(node))) {
+    for (const [handle, mapping] of Object.entries(nodeInputMappings(node, document))) {
       if (!mappingAvailable(graph, nodeId, mapping, analysis))
         diagnostics.push(
           graphDiagnostic(
             'graph.source-unavailable',
             'Input sources must reference execution ancestors, respect pending Wait decisions, and never provide multiple values on the same path.',
-            `${nodePath}/inputs/${handle}`,
+            node.kind == 'outputs' ? `/document/outputMappings/${handle.replaceAll('~', '~0').replaceAll('/', '~1')}` : `${nodePath}/inputs/${handle}`,
           ),
         )
     }
-    const inputPorts = nodeInputPorts(node)
+    const inputPorts = nodeInputPorts(node, document)
     if (node.kind == 'task') {
       const ports = [...node.task.inputs, ...(node.additionalInputs ?? [])]
       const handles = new Set<string>()
@@ -625,8 +636,9 @@ function validateGraph(graph: Graph, document: FlowDocument, path: string, diagn
       diagnostics.push(graphDiagnostic('graph.schema-unsupported', 'Runtime Ref schemas are not supported.', nodePath))
     }
     const inputs = new Set(Object.keys(inputPorts))
-    for (const [handle, mapping] of Object.entries(nodeInputMappings(node))) {
-      const mappingPath = `${nodePath}/inputs/${handle}`
+    for (const [handle, mapping] of Object.entries(nodeInputMappings(node, document))) {
+      const mappingPath =
+        node.kind == 'outputs' ? `/document/outputMappings/${handle.replaceAll('~', '~0').replaceAll('/', '~1')}` : `${nodePath}/inputs/${handle}`
       if (!inputs.has(handle)) {
         diagnostics.push(graphDiagnostic('graph.input-missing', `Node "${nodeId}" does not expose input "${handle}".`, mappingPath, { handle, nodeId }))
       }
@@ -687,6 +699,11 @@ function validateGraph(graph: Graph, document: FlowDocument, path: string, diagn
 
 export function validateFlowGraph(revision: RevisionContent): readonly Diagnostic[] {
   const diagnostics: Diagnostic[] = []
+  const outputDefs = revision.document.outputDefs ?? []
+  if (new Set(outputDefs.map((port) => port.handle)).size != outputDefs.length)
+    diagnostics.push(graphDiagnostic('graph.port-duplicate', 'Workflow output names must be unique.', '/document/outputDefs'))
+  if (outputDefs.some((port) => hasRetiredRef(port.jsonSchema)))
+    diagnostics.push(graphDiagnostic('graph.schema-unsupported', 'Runtime Ref schemas are not supported.', '/document/outputDefs'))
   const inputDefs = revision.document.inputDefs ?? []
   if (new Set(inputDefs.map((port) => port.handle)).size != inputDefs.length)
     diagnostics.push(graphDiagnostic('graph.port-duplicate', 'Workflow input names must be unique.', '/document/inputDefs'))

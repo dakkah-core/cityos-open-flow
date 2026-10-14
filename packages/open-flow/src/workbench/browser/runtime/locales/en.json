@@ -44,7 +44,9 @@
     "manualDescription": "Start execution manually from here.",
     "integrationTriggers": "App triggers",
     "start": "Start",
-    "startDescription": "Start the workflow manually or through an API call with startup parameters."
+    "startDescription": "Start the workflow manually or through an API call with startup parameters.",
+    "outputs": "Outputs",
+    "outputsDescription": "Define the workflow outputs and their values. Runs after its upstream dependencies settle."
   },
   "connectorAccess": {
     "searchServices": "Search services",

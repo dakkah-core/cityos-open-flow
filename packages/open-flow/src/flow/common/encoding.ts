@@ -18,7 +18,7 @@ import type {
   WebhookOptions,
 } from '@oomol-lab/open-flow/flow-change'
 
-import { currentFlowModelVersion } from '@oomol-lab/open-flow/flow-change'
+import { isTriggerNode, currentFlowModelVersion } from '@oomol-lab/open-flow/flow-change'
 import { decodeRevisionEnvelope, repairRevisionEnvelope } from './changeSchema.ts'
 export * from './workflowFile.ts'
 export { maxJsonDepth } from './json.ts'
@@ -83,7 +83,7 @@ function canonicalInputMapping(value: InputMapping): JsonValue {
   }
 }
 
-function canonicalInputs(value: Readonly<Record<string, InputMapping>>): JsonValue {
+export function canonicalInputs(value: Readonly<Record<string, InputMapping>>): JsonValue {
   return Object.fromEntries(entries(value).map(([handle, mapping]) => [handle, canonicalInputMapping(mapping)]))
 }
 
@@ -98,16 +98,18 @@ function canonicalOperand(operand: ConditionOperand): JsonValue {
 }
 
 function canonicalNode(value: GraphNode): JsonValue {
-  if (!('inputs' in value)) return canonicalTriggerNode(value)
+  if (isTriggerNode(value)) return canonicalTriggerNode(value)
   const common = {
     ...(value.description == null ? {} : { description: value.description }),
     ...(value.icon == null ? {} : { icon: value.icon }),
-    inputs: canonicalInputs(value.inputs),
+    ...(value.kind == 'outputs' ? {} : { inputs: canonicalInputs(value.inputs) }),
     ...(value.name == null ? {} : { name: value.name }),
     ...(value.maxExecutions == null ? {} : { maxExecutions: value.maxExecutions }),
     ...(value.timeoutMs == null ? {} : { timeoutMs: value.timeoutMs }),
   }
   switch (value.kind) {
+    case 'outputs':
+      return { ...common, kind: value.kind }
     case 'condition':
       return {
         ...common,
@@ -335,6 +337,8 @@ export function triggerRuntimeJson(trigger: TriggerNode): string {
 
 export function canonicalDocument(document: FlowDocument): JsonValue {
   return {
+    ...(document.outputDefs == null ? {} : { outputDefs: canonicalPorts(document.outputDefs) }),
+    ...(document.outputMappings == null ? {} : { outputMappings: canonicalInputs(document.outputMappings) }),
     ...(document.inputDefs == null ? {} : { inputDefs: canonicalPorts(document.inputDefs) }),
     bindings: Object.fromEntries(entries(document.bindings)),
     graph: canonicalGraph(document.graph),
@@ -346,6 +350,8 @@ function canonicalRevisionDocument(content: RevisionContent): JsonValue {
   if (content.modelVersion != 2) return { ...(canonicalDocument(content.document) as Record<string, JsonValue>), subflows: {}, tasks: {} }
   const { document } = content
   return {
+    ...(document.outputDefs == null ? {} : { outputDefs: canonicalPorts(document.outputDefs) }),
+    ...(document.outputMappings == null ? {} : { outputMappings: canonicalInputs(document.outputMappings) }),
     ...(document.inputDefs == null ? {} : { inputDefs: canonicalPorts(document.inputDefs) }),
     bindings: Object.fromEntries(entries(document.bindings)),
     graph: canonicalLegacyGraph(document.graph),

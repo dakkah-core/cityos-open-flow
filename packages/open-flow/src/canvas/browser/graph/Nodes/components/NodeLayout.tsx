@@ -217,7 +217,7 @@ export const NodeLayout: React.FC<NodeLayoutProps> = /* @__PURE__ */ memo(({ can
                 {executionInput && (
                   <ExecutionHandle id={toRFHandleName('$in' as HandleName)} type="input" isConnectable={editable} hintRequested={hintRequested} />
                 )}
-                {nodeStore.nodeType != NODE_TYPE.CommentNode && branches == null && (
+                {nodeStore.nodeType != NODE_TYPE.CommentNode && modelNode?.kind != 'outputs' && branches == null && (
                   <ExecutionHandle id={toRFHandleName('$out' as HandleName)} type="output" isConnectable={editable} hintRequested={hintRequested} />
                 )}
               </div>

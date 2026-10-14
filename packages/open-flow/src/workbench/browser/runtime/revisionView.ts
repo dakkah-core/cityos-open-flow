@@ -14,6 +14,7 @@ import type {
   WaitNode,
 } from './api.ts'
 
+import { isTriggerNode } from '../../../flow/common/change.ts'
 import { nodeInputMappings } from '../../../flow/common/condition.ts'
 import { connectionUsage } from '../../../flow/common/connectionUsage.ts'
 import { checkInputSources, inputSourceCandidates, nodeOutputDescription, nodeOutputPorts } from '../../../flow/common/graph.ts'
@@ -26,6 +27,7 @@ export interface InputSourceQuery {
 }
 
 export type ResolvedNode =
+  | { readonly id: string; readonly kind: 'outputs'; readonly node: import('../../../flow/common/change.ts').OutputsNode }
   | { readonly id: string; readonly kind: 'condition'; readonly node: ConditionNode }
   | {
       readonly definition?: TaskDefinition
@@ -91,6 +93,14 @@ export class RevisionView {
     return this.#document.inputDefs ?? []
   }
 
+  public outputDefs() {
+    return this.#document.outputDefs ?? []
+  }
+
+  public inputMappings(node: GraphNode) {
+    return nodeInputMappings(node, this.#document)
+  }
+
   public graph(): Graph {
     return this.#document.graph
   }
@@ -101,13 +111,13 @@ export class RevisionView {
     const cached = this.#inputSources.get(key)
     if (cached != null) return cached
     const node = graph.nodes[nodeId]!
-    const mapping = 'inputs' in node ? nodeInputMappings(node)[handle] : undefined
+    const mapping = nodeInputMappings(node, this.#document)[handle]
     const sources = mapping?.kind === 'sources' ? mapping.sources.filter((source) => source.kind === 'node') : []
     let checks: InputSourcesCheck | undefined = sources.length == 0 ? { conflict: false, sources: [] } : undefined
     let candidates: ReturnType<typeof inputSourceCandidates> | undefined
     const query: InputSourceQuery = {
-      check: () => (checks ??= checkInputSources(graph, nodeId, handle, sources, this.inputDefs())),
-      candidates: () => (candidates ??= inputSourceCandidates(graph, nodeId, handle, this.inputDefs())),
+      check: () => (checks ??= checkInputSources(graph, nodeId, handle, sources, this.inputDefs(), this.#document)),
+      candidates: () => (candidates ??= inputSourceCandidates(graph, nodeId, handle, this.inputDefs(), this.#document)),
     }
     this.#inputSources.set(key, query)
     return query
@@ -162,6 +172,9 @@ export class RevisionView {
         resolved = { definition, id: nodeId, kind: node.kind, module, node }
         break
       }
+      case 'outputs':
+        resolved = { id: nodeId, kind: node.kind, node }
+        break
       case 'value':
         resolved = { id: nodeId, kind: node.kind, node }
         break
@@ -203,7 +216,7 @@ export class RevisionView {
 
   public trigger(triggerId: string): TriggerNode | undefined {
     const node = this.#document.graph.nodes[triggerId]
-    return node != null && !('inputs' in node) ? node : undefined
+    return node != null && isTriggerNode(node) ? node : undefined
   }
 }
 

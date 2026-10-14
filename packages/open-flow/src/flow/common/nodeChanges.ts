@@ -4,6 +4,7 @@ import type {
   CodeModule,
   ConnectorCapability,
   Graph,
+  Group,
   GraphNode,
   InputMapping,
   InputValues,
@@ -21,11 +22,11 @@ import type {
 
 import { dequal } from 'dequal/lite'
 import { decisionTask } from '../../decision/common/decision.ts'
-import { applyFlowChanges, nextNodeName, normalizeNodeName } from './change.ts'
+import { isTriggerNode, applyFlowChanges, nextNodeName, normalizeNodeName } from './change.ts'
 import { codeSharedPermissionsEnabled } from './codePermissions.ts'
 import { nodeInputMappings } from './condition.ts'
 import { fixedInputValue, inputValues } from './inputValue.ts'
-import { renamedPort, renameOutputMapping } from './portChanges.ts'
+import { remapInputMappings, renamedPort, renameOutputMapping } from './portChanges.ts'
 
 const codeTaskTemplate = `export default async function (inputs, context) {
   return { result: inputs.value }
@@ -51,6 +52,8 @@ export type LlmInputHandle = 'input' | 'messages' | 'model' | 'template'
 
 export function defaultNodeName(_content: RevisionContent, node: GraphNode): string {
   switch (node.kind) {
+    case 'outputs':
+      return 'Outputs'
     case 'condition':
       return 'Condition'
     case 'value':
@@ -367,7 +370,7 @@ export function deleteNodes(content: RevisionContent, nodeIds: readonly string[]
 
 export function updateSettings(content: RevisionContent, nodeId: string, settings: Settings): readonly ChangeOperation[] | undefined {
   const node = content.document.graph?.nodes[nodeId]
-  if (node == null || !('inputs' in node)) return
+  if (node == null || isTriggerNode(node)) return
   const operations: ChangeOperation[] = []
 
   if (node.name != settings.name) operations.push({ before: node.name, field: 'name', kind: 'graph.node.field.set', nodeId, value: settings.name })
@@ -390,10 +393,10 @@ export function setInputValues(
   values: Readonly<Record<string, JsonValue | undefined>>,
 ): readonly ChangeOperation[] | undefined {
   const node = content.document.graph?.nodes[nodeId]
-  if (node == null || !('inputs' in node)) return
+  if (node == null || isTriggerNode(node)) return
   const operations: ChangeOperation[] = []
   for (const [handle, value] of Object.entries(values)) {
-    const before = nodeInputMappings(node)[handle]
+    const before = nodeInputMappings(node, content.document)[handle]
     const next = fixedInputValue(value)
     if (dequal(before, next)) continue
     operations.push({ before, handle, kind: 'graph.node.input.set', nodeId, value: next })
@@ -404,8 +407,8 @@ export function setInputValues(
 /** Restore inheritance for this form in one undoable change. */
 export function resetInputValues(content: RevisionContent, nodeId: string, handles: readonly string[]): readonly ChangeOperation[] {
   const node = content.document.graph?.nodes[nodeId]
-  if (node == null || !('inputs' in node)) return []
-  const mappings = nodeInputMappings(node)
+  if (node == null || isTriggerNode(node)) return []
+  const mappings = nodeInputMappings(node, content.document)
   return cleanVariableBindings(
     content,
     [...new Set(handles)].flatMap((handle): ChangeOperation[] =>
@@ -421,9 +424,9 @@ export function setInputSources(
   sources: Extract<InputMapping, { readonly kind: 'sources' }>['sources'],
 ): readonly ChangeOperation[] {
   const node = content.document.graph?.nodes[nodeId]
-  if (node == null || !('inputs' in node)) return []
+  if (node == null || isTriggerNode(node)) return []
   return cleanVariableBindings(content, [
-    { kind: 'graph.node.input.set', nodeId, handle, before: nodeInputMappings(node)[handle], value: { kind: 'sources', sources } },
+    { kind: 'graph.node.input.set', nodeId, handle, before: nodeInputMappings(node, content.document)[handle], value: { kind: 'sources', sources } },
   ])
 }
 
@@ -435,8 +438,8 @@ export function setInputVariable(
   bindingId: string,
 ): readonly ChangeOperation[] | undefined {
   const node = content.document.graph?.nodes[nodeId]
-  if (node == null || !('inputs' in node)) return
-  const mapping = nodeInputMappings(node)[handle]
+  if (node == null || isTriggerNode(node)) return
+  const mapping = nodeInputMappings(node, content.document)[handle]
   const currentId =
     mapping?.kind == 'sources' && mapping.sources.length == 1 && mapping.sources[0]?.kind == 'binding' ? mapping.sources[0].bindingId : undefined
   const current = currentId == null ? undefined : content.document.bindings[currentId]
@@ -470,12 +473,15 @@ function bindingReferences(document: RevisionContent['document']): Map<string, n
     references.set(bindingId, (references.get(bindingId) ?? 0) + 1)
   }
   for (const node of Object.values(document.graph.nodes)) {
-    if (!('inputs' in node)) continue
-    const inputs = Object.values(nodeInputMappings(node))
+    if (isTriggerNode(node) || node.kind == 'outputs') continue
+    const inputs = Object.values(nodeInputMappings(node, document))
     for (const mapping of inputs) {
       if (mapping.kind != 'sources') continue
       for (const source of mapping.sources) if (source.kind == 'binding') add(source.bindingId)
     }
+  }
+  for (const mapping of Object.values(document.outputMappings ?? {})) {
+    if (mapping.kind == 'sources') for (const source of mapping.sources) if (source.kind == 'binding') add(source.bindingId)
   }
   return references
 }
@@ -510,12 +516,13 @@ export function updateFlowInputDefs(content: RevisionContent, value: readonly Po
         .map(([id]) => id),
     )
     for (const [id, node] of Object.entries(content.document.graph.nodes)) {
-      if (!('inputs' in node)) continue
-      for (const [handle, before] of Object.entries(nodeInputMappings(node))) {
+      if (isTriggerNode(node) || node.kind == 'outputs') continue
+      for (const [handle, before] of Object.entries(nodeInputMappings(node, content.document))) {
         const mapping = renameOutputMapping(before, instances, rename)
         if (before !== mapping) operations.push({ before, kind: 'graph.node.input.set', nodeId: id, handle, value: mapping })
       }
     }
+    operations.push(...renameFlowOutputSources(content, instances, previous, value))
   }
   return operations
 }
@@ -638,4 +645,34 @@ export function createDecisionTask(
   questions?: readonly DecisionQuestion[],
 ): readonly ChangeOperation[] {
   return createManagedTask(identity, decisionTask(questions, name))
+}
+
+/** Persist the output contract and its mappings in one undoable change, including editor-converted values. */
+export function updateFlowOutputDefs(
+  content: RevisionContent,
+  value: readonly Port[],
+  outputMappings?: Readonly<Record<string, InputMapping>>,
+): readonly ChangeOperation[] {
+  const previous = content.document.outputDefs
+  const definitionsChanged = !dequal(previous ?? [], value)
+  if (!definitionsChanged && outputMappings == null) return []
+  const before = content.document.outputMappings
+  const next = outputMappings ?? remapInputMappings(before ?? {}, value, renamedPort(previous ?? [], value))
+  const operations: ChangeOperation[] = []
+  if (definitionsChanged) operations.push({ kind: 'flow.output-defs.set', before: previous, value })
+  if (!dequal(before ?? {}, next)) operations.push({ kind: 'flow.output-mappings.set', before, value: next })
+  return operations.length == 0 ? [] : cleanVariableBindings(content, operations)
+}
+
+export function renameFlowOutputSources(
+  content: RevisionContent,
+  nodeIds: ReadonlySet<string>,
+  previous: readonly (Port | Group)[],
+  next: readonly (Port | Group)[],
+): readonly ChangeOperation[] {
+  const rename = renamedPort(previous, next)
+  const before = content.document.outputMappings
+  if (rename == null || before == null) return []
+  const value = Object.fromEntries(Object.entries(before).map(([name, mapping]) => [name, renameOutputMapping(mapping, nodeIds, rename)]))
+  return dequal(before, value) ? [] : [{ kind: 'flow.output-mappings.set', before, value }]
 }

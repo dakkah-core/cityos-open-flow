@@ -607,7 +607,8 @@
       "wait": "等待继续",
       "value": "固定值",
       "input": "流程输入",
-      "output": "流程输出"
+      "output": "流程输出",
+      "outputs": "输出"
     },
     "units": {
       "minute": "分钟",

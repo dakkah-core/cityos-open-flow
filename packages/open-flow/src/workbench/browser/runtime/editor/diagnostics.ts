@@ -105,6 +105,10 @@ function nodeSection(node: GraphNode, suffix: string): InspectorSection {
 
 function location(revision: RevisionView | undefined, diagnostic: Diagnostic): DiagnosticLocation | undefined {
   if (revision == null) return
+  if (within('/document/outputDefs', diagnostic.path) || within('/document/outputMappings', diagnostic.path)) {
+    const output = Object.entries(revision.graph().nodes).find(([, node]) => node.kind == 'outputs')
+    return output == null ? undefined : { nodeId: output[0], section: 'inputs' }
+  }
   const graphPrefix = '/document/graph/nodes/'
   if (diagnostic.path.startsWith(graphPrefix)) {
     const path = diagnostic.path.slice(graphPrefix.length)
@@ -139,6 +143,7 @@ export function diagnosticItems(revision: RevisionView | undefined, check: FlowC
 function diagnosticsForNode(node: ResolvedSelection, diagnostics: readonly Diagnostic[]): readonly Diagnostic[] {
   const nodePath = `/document/graph/nodes/${node.id}`
   const paths = [nodePath]
+  if (node.kind == 'outputs') paths.push('/document/outputDefs', '/document/outputMappings')
   if (node.kind == 'task') {
     if ('moduleId' in node.node.task) paths.push(`${nodePath}/task`)
     const moduleId = node.definition != null && 'moduleId' in node.definition ? node.definition.moduleId : undefined

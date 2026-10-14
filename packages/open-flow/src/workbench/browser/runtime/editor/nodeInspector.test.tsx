@@ -3,6 +3,7 @@ import type { ReactElement, ReactNode } from 'react'
 import { Children, isValidElement } from 'react'
 import { val } from 'value-enhancer'
 import { describe, expect, it, vi } from 'vitest'
+import { nodeInputMappings } from '../../../../flow/common/condition.ts'
 import { CodeTaskSection } from './codeTaskSection.tsx'
 import { ConnectorAccount, TriggerConnection } from './connectionSettings.tsx'
 import { NodeInspector } from './nodeInspector.tsx'
@@ -47,7 +48,7 @@ function resolutionDefinition(
   revision: unknown,
   saveResolution: ReturnType<typeof vi.fn>,
 ): ReactElement {
-  const view = { graph: () => ({ nodes: { wait: node } }), ...(revision as object) }
+  const view = { inputMappings: nodeInputMappings, graph: () => ({ nodes: { wait: node } }), ...(revision as object) }
   const element = NodeInspector({
     variables: { enabled: true, names: [], loaded: false, loading: false, onOpen: vi.fn() },
     activeConnectorConnections: [],
@@ -134,7 +135,7 @@ describe('Provider account section', () => {
       connectors: { connect, setConnection } as never,
       onConfigureConnectorAccess: configureAccess,
       disabled: false,
-      revision: { graph: () => ({ nodes: { provider: node } }) } as never,
+      revision: { inputMappings: nodeInputMappings, graph: () => ({ nodes: { provider: node } }) } as never,
       selection: { definition, id: 'provider', kind: 'task', node } as never,
       store: { $: { flowId: { value: 'flow' }, moduleEditor: { value: undefined } } } as never,
       theme: 'light',
@@ -192,7 +193,7 @@ describe('Provider Trigger sections', () => {
       connectorLoading: false,
       connectors: {} as never,
       disabled: false,
-      revision: { inputDefs: () => [] } as never,
+      revision: { inputMappings: nodeInputMappings, inputDefs: () => [] } as never,
       selection: { id: 'feishu-trigger', kind: 'trigger', node: trigger, trigger } as never,
       store: { $: { flowId: { value: 'flow' } } } as never,
       theme: 'light',
@@ -231,7 +232,7 @@ describe('Provider Trigger sections', () => {
       connectorLoading: false,
       connectors: {} as never,
       disabled: false,
-      revision: { inputDefs: () => [] } as never,
+      revision: { inputMappings: nodeInputMappings, inputDefs: () => [] } as never,
       selection: { id: 'provider-trigger', kind: 'trigger', node: trigger, trigger } as never,
       store: { $: { flowId: { value: 'flow' } }, saveTriggerConfig: vi.fn(), saveTriggerSchedule: vi.fn() } as never,
       theme: 'light',
@@ -260,7 +261,7 @@ describe('Webhook Trigger sections', () => {
       connectorLoading: false,
       connectors: {} as never,
       disabled: false,
-      revision: { inputDefs: () => [] } as never,
+      revision: { inputMappings: nodeInputMappings, inputDefs: () => [] } as never,
       selection: { id: 'webhook-trigger', kind: 'trigger', node: trigger, trigger } as never,
       store: { $: { flowId: { value: 'flow' } }, saveWebhook: vi.fn() } as never,
       theme: 'light',
@@ -310,6 +311,7 @@ describe('Node execution settings', () => {
       maxExecutions: 25,
     }
     const revision = {
+      inputMappings: nodeInputMappings,
       graph: () => ({ nodes: { current: node, other: { inputs: {}, kind: 'value', name: 'Review', values: [] } } }),
     }
     const element = NodeInspector({
@@ -458,7 +460,7 @@ describe('Code task sections', () => {
       disabled: false,
       diagnostics,
       onConfigureConnectorAccess: configureAccess,
-      revision: { graph: () => ({ nodes: { task: node } }) } as never,
+      revision: { inputMappings: nodeInputMappings, graph: () => ({ nodes: { task: node } }) } as never,
       selection: {
         id: 'task',
         kind: 'task',
@@ -535,7 +537,7 @@ describe('Code task sections', () => {
       connectorLoading: false,
       connectors: { $: { actions: { value: {} }, connections: { value: [] } } } as never,
       disabled: false,
-      revision: { graph: () => ({ nodes: { llm: node } }) } as never,
+      revision: { inputMappings: nodeInputMappings, graph: () => ({ nodes: { llm: node } }) } as never,
       selection: { id: 'llm', kind: 'task', node, definition } as never,
       store: { $: { flowId: { value: 'flow' }, moduleEditor: { value: undefined } } } as never,
       theme: 'light',
@@ -578,6 +580,7 @@ describe('Node input ownership', () => {
       connectors: {} as never,
       disabled: false,
       revision: {
+        inputMappings: nodeInputMappings,
         graph: () => graph,
         inputSource: () => ({ check: vi.fn(), candidates: vi.fn() }),
         outputDescription: () => 'The complete upstream title.',
@@ -620,6 +623,7 @@ describe('Node input ownership', () => {
       connectors: {} as never,
       disabled: false,
       revision: {
+        inputMappings: nodeInputMappings,
         graph: () => ({ nodes: { condition: node } }),
         inputSource: () => ({ check: vi.fn(), candidates: vi.fn() }),
         outputDescription: () => undefined,
@@ -656,6 +660,7 @@ describe('Node input ownership', () => {
       connectors: {} as never,
       disabled: false,
       revision: {
+        inputMappings: nodeInputMappings,
         binding: () => ({ kind: 'variable', target: 'API_TOKEN' }),
         graph: () => ({ nodes: { upstream: { name: 'Source' } } }),
         inputSource: () => ({ check: vi.fn(), candidates: vi.fn() }),

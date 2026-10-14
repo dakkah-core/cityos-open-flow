@@ -12,9 +12,9 @@ import * as Queue from 'effect/Queue'
 import { nanoid } from 'nanoid'
 import { z } from 'zod'
 import { agentInput } from '../../flow/common/agent.ts'
-import { portsByHandle } from '../../flow/common/change.ts'
-import { conditionInputPorts, nodeInputMappings, selectConditionBranches } from '../../flow/common/condition.ts'
-import { isResolutionNode, nodeOutputPorts, resolutionActions, resolutionOutputPorts } from '../../flow/common/graph.ts'
+import { isTriggerNode, portsByHandle } from '../../flow/common/change.ts'
+import { nodeInputMappings, selectConditionBranches } from '../../flow/common/condition.ts'
+import { nodeInputPorts as nodePorts, isResolutionNode, nodeOutputPorts, resolutionActions, resolutionOutputPorts } from '../../flow/common/graph.ts'
 import { inputValue } from '../../flow/common/inputValue.ts'
 import { matchesSchema } from '../../flow/common/schema.ts'
 import { matchesTriggerOutputs, normalizeTriggerOutputs } from '../../trigger/common/contract.ts'
@@ -54,7 +54,7 @@ export type SchedulerEvent =
       readonly inputs: Readonly<Record<string, JsonValue>>
       readonly jobId: string
       readonly nodeId: string
-      readonly nodeKind: 'agent' | 'approval' | 'condition' | 'connector' | 'decision' | 'javascript' | 'openapi' | 'llm' | 'value' | 'wait'
+      readonly nodeKind: 'agent' | 'approval' | 'condition' | 'connector' | 'decision' | 'javascript' | 'openapi' | 'llm' | 'value' | 'wait' | 'outputs'
       readonly nodeTitle?: string
       readonly runId: string
       readonly type: 'node.started'
@@ -96,6 +96,7 @@ export type SchedulerEvent =
 
 export interface FlowRunResult {
   readonly kind: 'node-results'
+  readonly outputs?: Readonly<Record<string, JsonValue>>
   readonly nodes: readonly {
     readonly nodeId: string
     readonly status: 'completed'
@@ -104,13 +105,13 @@ export interface FlowRunResult {
   }[]
 }
 
-function usesPending(graph: Graph, nodeId: string): boolean {
+function usesPending(graph: Graph, nodeId: string, document?: Pick<PreparedFlow, 'outputMappings'>): boolean {
   return (
     graph.edges.some((edge) => edge.source == nodeId && edge.sourceHandle == 'pending') ||
     Object.values(graph.nodes).some(
       (node) =>
-        'inputs' in node &&
-        Object.values(node.inputs).some(
+        !isTriggerNode(node) &&
+        Object.values(nodeInputMappings(node, document)).some(
           (mapping) =>
             mapping.kind == 'sources' && mapping.sources.some((source) => source.kind == 'node' && source.nodeId == nodeId && source.output == 'pending'),
         ),
@@ -252,6 +253,8 @@ export type RunLaunch =
 
 interface RunGraph {
   readonly inputDefs: PreparedFlow['inputDefs']
+  readonly outputDefs: PreparedFlow['outputDefs']
+  readonly outputMappings: PreparedFlow['outputMappings']
   readonly flowId: string
   readonly graph: Graph
 }
@@ -273,25 +276,13 @@ interface RunContext {
   readonly remainingMs: number | undefined
 }
 
-function nodePorts(node: ExecutableNode): Readonly<Record<string, InputPortDefinition>> {
-  switch (node.kind) {
-    case 'condition':
-      return conditionInputPorts(node)
-    case 'value':
-      return {}
-    case 'task':
-      return portsByHandle([...node.task.inputs, ...(node.additionalInputs ?? [])])
-    case 'approval':
-    case 'wait':
-      return portsByHandle(node.inputDefinitions)
-  }
-}
-
 function nodeTitle(node: ExecutableNode): string | undefined {
   if (node.name != null) return node.name
   switch (node.kind) {
     case 'condition':
       return
+    case 'outputs':
+      return 'Outputs'
     case 'value':
       return 'Fixed Values'
     case 'task':
@@ -303,7 +294,9 @@ function nodeTitle(node: ExecutableNode): string | undefined {
   }
 }
 
-function nodeKind(node: ExecutableNode): 'agent' | 'approval' | 'condition' | 'connector' | 'decision' | 'javascript' | 'openapi' | 'llm' | 'value' | 'wait' {
+function nodeKind(
+  node: ExecutableNode,
+): 'agent' | 'approval' | 'condition' | 'connector' | 'decision' | 'javascript' | 'openapi' | 'llm' | 'value' | 'wait' | 'outputs' {
   if (node.kind != 'task') return node.kind
   return 'moduleId' in node.task ? 'javascript' : node.task.executor.kind
 }
@@ -479,16 +472,24 @@ function agentApproval(config: AgentConfig, checkpoint: AgentCheckpoint, inputs:
   }
 }
 
-function validateOutputs(nodeId: string, node: ExecutableNode, value: unknown): Readonly<Record<string, JsonValue>> {
+function validateOutputs(
+  nodeId: string,
+  node: ExecutableNode,
+  value: unknown,
+  document: Pick<PreparedFlow, 'outputDefs'>,
+): Readonly<Record<string, JsonValue>> {
   const raw = outputRecord(value, nodeId)
   const discardUndeclared = node.kind == 'task' && 'executor' in node.task && node.task.executor.kind == 'connector'
-  const ports = isResolutionNode(node)
-    ? resolutionOutputPorts(node)
-    : node.kind == 'task'
-      ? portsByHandle(node.task.outputs)
-      : node.kind == 'value'
-        ? portsByHandle(node.values)
-        : {}
+  const ports =
+    node.kind == 'outputs'
+      ? nodePorts(node, document)
+      : isResolutionNode(node)
+        ? resolutionOutputPorts(node)
+        : node.kind == 'task'
+          ? portsByHandle(node.task.outputs)
+          : node.kind == 'value'
+            ? portsByHandle(node.values)
+            : {}
   const outputs = outputRecord(
     checkpointJson(
       Object.fromEntries(Object.entries(raw).map(([handle, item]) => [handle, Object.hasOwn(ports, handle) && item === undefined ? null : item])),
@@ -498,7 +499,7 @@ function validateOutputs(nodeId: string, node: ExecutableNode, value: unknown): 
   )
   const complete =
     node.kind == 'condition' || isResolutionNode(node) ? outputs : { ...Object.fromEntries(Object.keys(ports).map((handle) => [handle, null])), ...outputs }
-  const validated: Record<string, JsonValue> = {}
+  const validated: [string, JsonValue][] = []
   for (const [handle, output] of Object.entries(complete)) {
     const port = ports[handle]
     if (port == null) {
@@ -507,9 +508,9 @@ function validateOutputs(nodeId: string, node: ExecutableNode, value: unknown): 
     }
     if (!(output === null && port.nullable) && !matchesSchema(output, port.jsonSchema))
       throw new PortValidationError(`Node "${nodeId}" output "${handle}" does not match its declaration.`)
-    validated[handle] = output
+    validated.push([handle, output])
   }
-  return validated
+  return Object.fromEntries(validated)
 }
 
 function validateCheckpoint(
@@ -526,18 +527,18 @@ function validateCheckpoint(
     if (graph == null) throw new Error('Checkpoint execution counts reference an unknown graph.')
     for (const [id, count] of Object.entries(counts)) {
       const node = graph.nodes[id]
-      if (node == null || !('inputs' in node) || count > (node.maxExecutions ?? 1000)) throw new Error('Checkpoint execution count is invalid.')
+      if (node == null || isTriggerNode(node) || count > (node.maxExecutions ?? 1000)) throw new Error('Checkpoint execution count is invalid.')
     }
   }
   const validateResults = (results: Readonly<Record<string, Readonly<Record<string, JsonValue>>>>, frame = false) => {
     for (const [id, outputs] of Object.entries(results)) {
       const node = target.graph.nodes[id]
       if (node == null) throw new Error('Checkpoint result node is missing.')
-      if (!('inputs' in node)) {
+      if (isTriggerNode(node)) {
         if (!matchesTriggerOutputs(node, outputs, target.inputDefs)) throw new Error('Checkpoint Trigger output is invalid.')
       } else {
         if (checkpoint.counts['']?.[id] == null) throw new Error('Checkpoint execution count is missing.')
-        if (!jsonEqual(validateOutputs(id, node, outputs), outputs)) throw new Error('Checkpoint node outputs are incomplete.')
+        if (!jsonEqual(validateOutputs(id, node, outputs, target), outputs)) throw new Error('Checkpoint node outputs are incomplete.')
         const count = Object.keys(outputs).length
         if (
           (node.kind == 'condition' && count != 0) ||
@@ -550,7 +551,7 @@ function validateCheckpoint(
     }
   }
   validateResults(Object.fromEntries(Object.entries(checkpoint.results).map(([id, result]) => [id, result.outputs])))
-  const triggerIds = Object.keys(checkpoint.results).filter((id) => !('inputs' in target.graph.nodes[id]!))
+  const triggerIds = Object.keys(checkpoint.results).filter((id) => isTriggerNode(target.graph.nodes[id]!))
   if (triggerIds.length != 1) throw new Error('Checkpoint must contain exactly one selected Trigger.')
   const pendingCounts = new Map<string, number>()
   for (const waiting of checkpoint.waits) pendingCounts.set(waiting.nodeId, (pendingCounts.get(waiting.nodeId) ?? 0) + 1)
@@ -560,15 +561,15 @@ function validateCheckpoint(
   }
   for (const [id, values] of Object.entries(launch)) {
     const node = target.graph.nodes[id]!
-    if (!('inputs' in node) || Object.keys(values).some((handle) => nodePorts(node)[handle] == null))
+    if (isTriggerNode(node) || Object.keys(values).some((handle) => nodePorts(node, target)[handle] == null))
       throw new Error('Checkpoint launch inputs do not match the prepared graph.')
   }
 
   for (const [nodeId, state] of Object.entries(checkpoint.dependencies.nodes)) {
     const frame = dependencyValues(state.input)
     validateResults(frame, true)
-    if ('inputs' in target.graph.nodes[nodeId]! && (state.status == 'running' || state.status == 'completed')) {
-      const triggers = Object.keys(frame).filter((id) => !('inputs' in target.graph.nodes[id]!))
+    if (!isTriggerNode(target.graph.nodes[nodeId]!) && (state.status == 'running' || state.status == 'completed')) {
+      const triggers = Object.keys(frame).filter((id) => isTriggerNode(target.graph.nodes[id]!))
       if (triggers.length != 1 || triggers[0] != triggerIds[0] || !jsonEqual(frame[triggers[0]!]!, checkpoint.results[triggers[0]!]!.outputs))
         throw new Error('Checkpoint input Trigger does not match the Run.')
     }
@@ -581,7 +582,7 @@ function validateCheckpoint(
   }
   for (const waiting of checkpoint.waits) {
     const node = target.graph.nodes[waiting.nodeId]
-    if (node == null || !('inputs' in node)) throw new Error('Checkpoint waiting node is missing.')
+    if (node == null || isTriggerNode(node)) throw new Error('Checkpoint waiting node is missing.')
     const state = checkpoint.dependencies.nodes[waiting.nodeId]!
     const expectedOutput = waiting.pending == null ? undefined : { pending: waiting.pending }
     if ((state.output == null) != (expectedOutput == null) || (state.output != null && !jsonEqual(state.output, expectedOutput!)))
@@ -600,9 +601,9 @@ function validateCheckpoint(
     } else {
       if (saved != null) throw new Error('Checkpoint Wait contains Agent state.')
       if (!isResolutionNode(node) || !jsonEqual(resolveInputs(waiting.nodeId, node), waiting.value)) throw new Error('Checkpoint resolution input changed.')
-      const notify = usesPending(target.graph, waiting.nodeId)
+      const notify = usesPending(target.graph, waiting.nodeId, target)
       if (notify != (waiting.pending != null)) throw new Error('Checkpoint Wait pending output is missing or unexpected.')
-      if (waiting.pending != null) validateOutputs(waiting.nodeId, node, { pending: waiting.pending })
+      if (waiting.pending != null) validateOutputs(waiting.nodeId, node, { pending: waiting.pending }, target)
     }
     if (checkpoint.counts['']?.[waiting.nodeId] == null) throw new Error('Checkpoint waiting execution count is missing.')
   }
@@ -629,7 +630,7 @@ function runGraph(
           type: 'run.started',
         })
       }
-      const order = Object.keys(target.graph.nodes).filter((id) => 'inputs' in target.graph.nodes[id]!)
+      const order = Object.keys(target.graph.nodes).filter((id) => !isTriggerNode(target.graph.nodes[id]!))
       const outgoing = new Map<string, Graph['edges'][number][]>()
       for (const edge of target.graph.edges) {
         const targets = outgoing.get(edge.source) ?? []
@@ -644,11 +645,11 @@ function runGraph(
       if (resume == null) {
         if (trigger != null) {
           const node = target.graph.nodes[trigger.nodeId]
-          if (node == null || 'inputs' in node || !matchesTriggerOutputs(node, trigger.outputs, target.inputDefs))
+          if (node == null || !isTriggerNode(node) || !matchesTriggerOutputs(node, trigger.outputs, target.inputDefs))
             throw new Error('Trigger outputs are invalid.')
         }
         for (const [id, node] of Object.entries(target.graph.nodes)) {
-          if ('inputs' in node) continue
+          if (!isTriggerNode(node)) continue
           if (trigger?.nodeId == id) completed.set(id, { jobId: id, outputs: trigger.outputs })
         }
       }
@@ -693,10 +694,10 @@ function runGraph(
         return value
       }
       const resolveInputs = (nodeId: string, node: ExecutableNode): Readonly<Record<string, JsonValue>> => {
-        const mappings = nodeInputMappings(node)
+        const mappings = nodeInputMappings(node, target)
         const frame = dependencies.inputValues(nodeId)
         return Object.fromEntries(
-          Object.entries(nodePorts(node)).map(([handle, port]) => [
+          Object.entries(nodePorts(node, target)).map(([handle, port]) => [
             handle,
             resolveInput(mappings[handle], port, launch[nodeId]?.[handle], `Node "${nodeId}" input "${handle}"`, frame, node.kind == 'condition'),
           ]),
@@ -727,7 +728,7 @@ function runGraph(
           const projectedInputs = Object.fromEntries(
             Object.entries(nodeInputs).filter(([handle]) => {
               if (node.kind == 'task' && 'executor' in node.task && node.task?.executor.kind == 'openapi' && handle.startsWith('auth.')) return false
-              const mapping = nodeInputMappings(node)[handle]
+              const mapping = nodeInputMappings(node, target)[handle]
               return mapping?.kind != 'sources' || mapping.sources.every((source) => source.kind != 'binding')
             }),
           )
@@ -743,6 +744,10 @@ function runGraph(
             })
           let outputs: Readonly<Record<string, JsonValue>>
           switch (node.kind) {
+            case 'outputs': {
+              outputs = nodeInputs
+              break
+            }
             case 'condition': {
               return { kind: 'completed' as const, outputs: {}, releasedHandles: selectConditionBranches(node, nodeInputs) }
             }
@@ -784,7 +789,7 @@ function runGraph(
                           const previous = target.graph.nodes[previousId]!
                           return {
                             id: previousId,
-                            name: previous.name ?? ('inputs' in previous ? nodeTitle(previous) : undefined) ?? previousId,
+                            name: previous.name ?? (!isTriggerNode(previous) ? nodeTitle(previous) : undefined) ?? previousId,
                             outputs: frame[previousId]!,
                             outputDefs: Object.entries(nodeOutputPorts(previous, target.inputDefs)).map(([handle, definition]) =>
                               Object.assign(
@@ -831,7 +836,7 @@ function runGraph(
               return yield* Effect.fail(new Error('Resolution jobs are handled by the Scheduler suspension boundary.'))
           }
           return yield* Effect.try({
-            try: () => ({ kind: 'completed' as const, outputs: validateOutputs(nodeId, node, outputs) }),
+            try: () => ({ kind: 'completed' as const, outputs: validateOutputs(nodeId, node, outputs, target) }),
             catch: (error) => (error instanceof Error ? error : new Error(String(error))),
           })
         })
@@ -850,7 +855,7 @@ function runGraph(
           if (context.waits == null) return yield* Effect.fail(new Error('Wait host is unavailable.'))
           const node = target.graph.nodes[nodeId] as ExecutableNode
           const waitId = nanoid()
-          const notify = isResolutionNode(node) && usesPending(target.graph, nodeId)
+          const notify = isResolutionNode(node) && usesPending(target.graph, nodeId, target)
           const notification = yield* context.waits.create({
             jobId,
             nodeId,
@@ -863,7 +868,7 @@ function runGraph(
           })
           const pending = notification == null ? notification : withWaitNotificationMessage(notification)
           if (notify) {
-            validateOutputs(nodeId, node, { pending: pending! })
+            validateOutputs(nodeId, node, { pending: pending! }, target)
             dependencies.release(nodeId, { pending: pending! }, ['pending'], false)
           }
           pendingWaits.set(jobId, { jobId, nodeId, value, waitId, ...(notify ? { pending: pending! } : {}) })
@@ -901,7 +906,7 @@ function runGraph(
       const executeReady = (nodeId: string) => {
         if (firstCause != null) return
         const node = target.graph.nodes[nodeId]!
-        if (!('inputs' in node)) return
+        if (isTriggerNode(node)) return
         const jobId = context.createId()
         const count = counts[nodeId] ?? 0
         const limit = node.maxExecutions ?? 1000
@@ -928,7 +933,7 @@ function runGraph(
                 yield* context.emit({
                   inputs: Object.fromEntries(
                     Object.entries(nodeInputs).filter(([handle]) => {
-                      const mapping = nodeInputMappings(node)[handle]
+                      const mapping = nodeInputMappings(node, target)[handle]
                       return mapping?.kind != 'sources' || mapping.sources.every((source) => source.kind != 'binding')
                     }),
                   ),
@@ -980,10 +985,15 @@ function runGraph(
                   yield* commit(
                     saved.nodeId,
                     saved.jobId,
-                    validateOutputs(saved.nodeId, node, {
-                      ...(saved.pending == null ? {} : { pending: saved.pending }),
-                      [action]: { inputs: saved.value, action, resolvedAt, comment },
-                    }),
+                    validateOutputs(
+                      saved.nodeId,
+                      node,
+                      {
+                        ...(saved.pending == null ? {} : { pending: saved.pending }),
+                        [action]: { inputs: saved.value, action, resolvedAt, comment },
+                      },
+                      target,
+                    ),
                     [action],
                   )
                 } else {
@@ -1060,8 +1070,11 @@ function runGraph(
         applyResolutions(resolutions, yield* Clock.currentTimeMillis)
       }
       yield* context.emit({ progress: 100, runId, type: 'run.progress' })
+      const outputNodeId = order.find((nodeId) => target.graph.nodes[nodeId]?.kind == 'outputs')
+      const businessOutputs = outputNodeId == null ? undefined : completed.get(outputNodeId)?.outputs
       const result: FlowRunResult = {
         kind: 'node-results',
+        ...(businessOutputs == null ? {} : { outputs: businessOutputs }),
         nodes: resultNodes.flatMap((nodeId) => {
           const saved = completed.get(nodeId)
           return saved == null ? [] : [{ nodeId, status: 'completed' as const, jobId: saved.jobId, outputs: saved.outputs }]
@@ -1112,11 +1125,11 @@ export function runFlow(prepared: PreparedFlow, options: FlowRunOptions): Effect
       return yield* Effect.fail(new Error('A Flow Run requires a Trigger seed.'))
     }
     const triggerNode = options.trigger == null ? undefined : prepared.graph.nodes[options.trigger.nodeId]
-    if (options.trigger != null && (triggerNode == null || 'inputs' in triggerNode)) {
+    if (options.trigger != null && (triggerNode == null || !isTriggerNode(triggerNode))) {
       return yield* Effect.fail(new Error(`Node "${options.trigger.nodeId}" is not a TriggerNode in Flow "${options.flowId}".`))
     }
     const triggerOutputs =
-      triggerNode == null || 'inputs' in triggerNode ? undefined : normalizeTriggerOutputs(triggerNode, options.trigger!.outputs, prepared.inputDefs)
+      triggerNode == null || !isTriggerNode(triggerNode) ? undefined : normalizeTriggerOutputs(triggerNode, options.trigger!.outputs, prepared.inputDefs)
     if (options.trigger != null && triggerOutputs == null) return yield* Effect.fail(new Error('Trigger outputs are invalid.'))
     const trigger = options.trigger == null ? undefined : { nodeId: options.trigger.nodeId, outputs: triggerOutputs! }
     return yield* runGraph(
@@ -1132,7 +1145,13 @@ export function runFlow(prepared: PreparedFlow, options: FlowRunOptions): Effect
         waits: options.waits,
         remainingMs: options.remainingMs,
       },
-      { flowId: options.flowId, graph: prepared.graph, inputDefs: prepared.inputDefs },
+      {
+        flowId: options.flowId,
+        graph: prepared.graph,
+        inputDefs: prepared.inputDefs,
+        outputDefs: prepared.outputDefs,
+        outputMappings: prepared.outputMappings,
+      },
       options.runId,
       options.inputs,
       trigger,

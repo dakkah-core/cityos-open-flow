@@ -27,6 +27,8 @@ export function flowInspection(inspected: Awaited<ReturnType<typeof inspectFlowD
     flow: { flowId: flow.flowId, name: flow.name, status: flow.status },
     draft: {
       inputDefs: document.inputDefs ?? [],
+      ...(document.outputDefs == null ? {} : { outputDefs: document.outputDefs }),
+      ...(document.outputMappings == null ? {} : { outputMappings: document.outputMappings }),
       revisionId: draft.revisionId,
       graph: inspectGraph(document, document.graph),
       bindings: document.bindings,
@@ -63,7 +65,7 @@ function inspectGraph(document: FlowDocument, graph: Graph) {
 }
 
 function inspectNode(_document: FlowDocument, node: GraphNode): Record<string, unknown> {
-  const inputs = nodeInputPorts(node)
+  const inputs = nodeInputPorts(node, _document)
   const defaults = Object.fromEntries(
     Object.entries(inputs).flatMap(([handle, port]) =>
       Object.hasOwn(port, 'value') && !('inputs' in node && Object.hasOwn(node.inputs, handle)) ? [[handle, port.value]] : [],
@@ -75,6 +77,8 @@ function inspectNode(_document: FlowDocument, node: GraphNode): Record<string, u
     ...(Object.keys(defaults).length == 0 ? {} : { inputDefaults: defaults }),
   }
   switch (node.kind) {
+    case 'outputs':
+      return { ...node, ...ports, inputs: _document.outputMappings ?? {} }
     case 'task': {
       const { task, additionalInputs: _additional, ...instance } = node
       return {

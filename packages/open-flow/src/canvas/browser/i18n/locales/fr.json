@@ -607,7 +607,8 @@
       "wait": "Attendre la reprise",
       "value": "Valeurs fixes",
       "input": "Entrée",
-      "output": "Sortie"
+      "output": "Sortie",
+      "outputs": "Sorties"
     },
     "units": {
       "minute": "minutes",

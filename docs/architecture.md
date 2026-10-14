@@ -61,6 +61,7 @@ consume the source definition rather than interpreting provider-specific configu
 Flow is a deployment-generated top-level resource with a stable identity and independent lifecycle. It does not belong to a Project.
 Each Flow has one mutable Draft head. Revisions are immutable execution definitions that store the graph, node configuration, variable references, and code.
 Workflow call inputs belong to `FlowDocument.inputDefs`; Start exposes these definitions as graph outputs and stores only node metadata.
+Workflow business outputs belong to `FlowDocument.outputDefs` and `outputMappings`. A single Outputs node consumes these mappings under ordinary execution dependency rules and stores only node metadata. It has no downstream execution or data ports. Its computed values are retained separately from the Run's existing node results and logs; this does not add workflow invocation support.
 Node identities do not change when names change. Each node owns its execution configuration. A local edit must not change other nodes' behavior.
 
 Semantic changes commit atomically with an expected Revision and a stable request identity. They must not silently overwrite concurrent changes.

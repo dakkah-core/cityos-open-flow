@@ -635,6 +635,7 @@ export function decodeRunEvent(value: unknown) {
             nodeKind !== 'llm' &&
             nodeKind !== 'agent' &&
             nodeKind !== 'value' &&
+            nodeKind !== 'outputs' &&
             nodeKind !== 'wait'
           )
             return invalidResponse()

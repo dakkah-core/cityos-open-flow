@@ -21,6 +21,7 @@ import {
   setInputValue,
   setInputVariable,
   updateTaskPorts,
+  updateOutputPorts,
   updateCondition,
   updateTaskAdditionalInputs,
   updateResolution,
@@ -967,4 +968,75 @@ it.each([undefined, { kind: 'unset' } as const])('creates a nullable collection 
   })
   expect(JSON.parse(JSON.stringify(saved)).content.document.graph.nodes.task.inputs.value.value).toEqual({ field: '' })
   expect(applyFlowChanges(saved, inverseFlowChanges(current.content, changes)).content).toEqual(current.content)
+})
+
+describe('Workflow output editing', () => {
+  it('updates only a value without rewriting definitions, and restores its variable binding on undo', () => {
+    const base = draft('export default () => ({result: 1})')
+    const original: Draft = {
+      ...base,
+      content: {
+        ...base.content,
+        document: {
+          ...base.content.document,
+          bindings: { token: { kind: 'variable', target: 'TOKEN' } },
+          outputDefs: [{ handle: 'answer', jsonSchema: { type: 'string' }, nullable: false }],
+          outputMappings: { answer: { kind: 'sources', sources: [{ kind: 'binding', bindingId: 'token' }] } },
+        },
+      },
+    }
+    const view = revisionView(original)
+    expect(updateOutputPorts(view, view.outputDefs())).toEqual([])
+    const operations = updateOutputPorts(view, view.outputDefs(), { answer: 'literal' })
+    const changed = applyFlowChanges(original, operations)
+    expect(changed.content.document.outputDefs).toEqual(original.content.document.outputDefs)
+    expect(changed.content.document.outputMappings).toEqual({ answer: { kind: 'value', value: 'literal' } })
+    expect(changed.content.document.bindings).toEqual({})
+    expect(applyFlowChanges(changed, inverseFlowChanges(original.content, operations)).content).toEqual(original.content)
+  })
+
+  it('renames mappings, converts incompatible literals, and reverses both changes together', () => {
+    const base = draft('export default () => ({result: 1})')
+    const original: Draft = {
+      ...base,
+      content: {
+        ...base.content,
+        document: {
+          ...base.content.document,
+          outputDefs: [{ handle: 'answer', jsonSchema: { type: 'number' }, nullable: false }],
+          outputMappings: { answer: { kind: 'value', value: 42 } },
+          graph: { ...base.content.document.graph, nodes: { ...base.content.document.graph.nodes, outputs: { kind: 'outputs', name: 'Outputs' } } },
+        },
+      },
+    }
+    const operations = updateOutputPorts(revisionView(original), [{ handle: 'result', jsonSchema: { type: 'object' }, nullable: false }])
+    const changed = applyFlowChanges(original, operations)
+    expect(changed.content.document.outputMappings).toEqual({ result: { kind: 'value', value: {} } })
+    expect(changed.content.document.graph.nodes.outputs).toEqual({ kind: 'outputs', name: 'Outputs' })
+    const inverse = inverseFlowChanges(original.content, operations)
+    expect(applyFlowChanges(changed, inverse).content).toEqual(original.content)
+    expect(applyFlowChanges(applyFlowChanges(changed, inverse), operations).content).toEqual(changed.content)
+  })
+
+  it('renames upstream output references even without an Outputs canvas node', () => {
+    const base = draft('export default () => ({result: 1})')
+    const original: Draft = {
+      ...base,
+      content: {
+        ...base.content,
+        document: {
+          ...base.content.document,
+          outputDefs: [{ handle: 'answer', jsonSchema: {}, nullable: true }],
+          outputMappings: { answer: { kind: 'sources', sources: [{ kind: 'node', nodeId: 'task', output: 'result' }] } },
+        },
+      },
+    }
+    const operations = updateTaskPorts(revisionView(original), 'task', {
+      inputs: [{ handle: 'value', jsonSchema: {}, nullable: true }],
+      outputs: [{ handle: 'renamed', jsonSchema: {}, nullable: true }],
+    })!
+    expect(applyFlowChanges(original, operations).content.document.outputMappings).toEqual({
+      answer: { kind: 'sources', sources: [{ kind: 'node', nodeId: 'task', output: 'renamed' }] },
+    })
+  })
 })

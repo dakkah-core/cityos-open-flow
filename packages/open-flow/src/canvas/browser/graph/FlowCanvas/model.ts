@@ -163,6 +163,7 @@ export interface FlowCanvasViewCommentNode {
 }
 
 export type FlowCanvasViewNode =
+  | (FlowCanvasViewNodeBase & { readonly kind: 'outputs' })
   | FlowCanvasViewCommentNode
   | FlowCanvasViewConditionNode
   | FlowCanvasViewTaskNode

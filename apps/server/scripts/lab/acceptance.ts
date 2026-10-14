@@ -16,6 +16,17 @@ export function runtimeAssertions(id: string, sample: Sample, status: string, ca
     return errors
   }
   if (status != 'completed') return [`Run ${sample.name} ended ${status}.`]
+  if (id == 'workflow-outputs') {
+    const terminal = events.findLast((event) => event.kind == 'run.completed')
+    const result = terminal?.kind == 'run.completed' ? terminal.payload.result : undefined
+    const expected = { total: Number(sample.outputs?.amount) * 2, message: sample.outputs?.message, note: sample.outputs?.note ?? null }
+    if (result == null || typeof result != 'object' || Array.isArray(result) || !('outputs' in result) || !isDeepStrictEqual(result.outputs, expected))
+      errors.push('Return the computed workflow business outputs.')
+    if (!events.some((event) => event.kind == 'node.completed' && isDeepStrictEqual(event.payload.outputs, { logged: true })))
+      errors.push('Preserve the independent branch result.')
+    if (!events.some((event) => event.kind == 'node.started' && event.payload.nodeKind == 'outputs')) errors.push('Execute Outputs as an ordinary node.')
+    if (calls.length || modelCalls.length) errors.push('No external calls are needed.')
+  }
   if (id == 'start-parameters') {
     const archived = calls.find((call) => call.action == 'lab-archive.save')
     if (

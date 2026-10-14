@@ -8,6 +8,7 @@ import type { RunStore } from './runStore.ts'
 
 import { compute, derive, val } from 'value-enhancer'
 import { randomId } from '../../../../control/common/random.ts'
+import { isTriggerNode } from '../../../../flow/common/change.ts'
 import { sampleErrorOutputs } from '../../../../trigger/common/contract.ts'
 import { normalizeTriggerOutputs, triggerOutputDefinitions } from '../../../../trigger/common/contract.ts'
 import { createI18n } from '../i18n.ts'
@@ -50,7 +51,7 @@ const initialState: RequestState = {
 
 function inputSpec(draft: Draft, triggerId: string) {
   const trigger = revisionView(draft).graph()?.nodes[triggerId]
-  if (trigger == null || 'inputs' in trigger || trigger.kind == 'manual' || trigger.kind == 'cron') return undefined
+  if (trigger == null || !isTriggerNode(trigger) || trigger.kind == 'manual' || trigger.kind == 'cron') return undefined
   const definitions = triggerOutputDefinitions(trigger, revisionView(draft).inputDefs())
   return definitions.length === 0
     ? undefined
@@ -256,7 +257,7 @@ export class RunRequestStore {
     this.#set({ inputRequest: undefined, starting: !edit, submitting: undefined })
     this.#disposeInputRequest(previous)
     const graph = revisionView(revision).graph()
-    const triggers = Object.entries(graph?.nodes ?? {}).flatMap(([nodeId, node]) => ('inputs' in node ? [] : [{ nodeId, title: node.name }]))
+    const triggers = Object.entries(graph?.nodes ?? {}).flatMap(([nodeId, node]) => (!isTriggerNode(node) ? [] : [{ nodeId, title: node.name }]))
     if (triggers.length == 0) {
       this.#set({ starting: false })
       this.#setNotice({ kind: 'error', message: this.#i18n.t('runInput.noTrigger') })

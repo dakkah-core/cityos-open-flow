@@ -607,7 +607,8 @@
       "wait": "계속 대기",
       "value": "고정 값",
       "input": "입력",
-      "output": "출력"
+      "output": "출력",
+      "outputs": "출력"
     },
     "units": {
       "minute": "분",

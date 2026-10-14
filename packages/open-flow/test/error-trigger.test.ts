@@ -3,6 +3,7 @@ import type { RevisionContent } from '../src/flow/common/change.ts'
 import * as Effect from 'effect/Effect'
 import { describe, expect, it } from 'vitest'
 import { runFlow } from '../src/execution/common/scheduler.ts'
+import { isTriggerNode } from '../src/flow/common/change.ts'
 import { applyFlowChanges, currentFlowModelVersion, decodeChangeOperations } from '../src/flow/common/change.ts'
 import { decodeRevisionContent } from '../src/flow/common/changeSchema.ts'
 import { decodeRevision, encodeRevision, digestBytes } from '../src/flow/common/encoding.ts'
@@ -49,7 +50,7 @@ describe('Flow Error contract', () => {
 
   it('validates the complete error context', () => {
     const trigger = content.document.graph.nodes.error!
-    if ('inputs' in trigger) throw new Error('Expected a Trigger')
+    if (!isTriggerNode(trigger)) throw new Error('Expected a Trigger')
     expect(matchesTriggerOutputs(trigger, sampleErrorOutputs, [])).toBe(true)
     expect(matchesTriggerOutputs(trigger, { ...sampleErrorOutputs, error: { message: 'Missing code' } }, [])).toBe(false)
     expect(matchesTriggerOutputs(trigger, { ...sampleErrorOutputs, execution: { ...(sampleErrorOutputs.execution as object), status: 'completed' } }, [])).toBe(

@@ -29,6 +29,66 @@ export async function reference(call: ToolCall, id: string, flowId: string, stag
   }
   const dataPort = { schema: {}, nullable: true },
     stringPort = { schema: { type: 'string' }, nullable: false }
+  if (id == 'workflow-outputs') {
+    await call('flow_schema', { type: 'outputs' })
+    const before = await read()
+    await submit(before.revision, [
+      {
+        op: 'flow.update',
+        set: {
+          inputDefs: { amount: { schema: { type: 'number' }, nullable: false }, message: stringPort, note: { schema: { type: 'string' }, nullable: true } },
+          outputDefs: { total: { schema: { type: 'number' }, nullable: false }, message: stringPort, note: { schema: { type: 'string' }, nullable: true } },
+        },
+      },
+      { op: 'node.add', as: 'start', type: 'start', name: 'Start' },
+      {
+        op: 'node.add',
+        as: 'double',
+        type: 'code',
+        name: 'Double amount',
+        config: { outputs: { value: { schema: { type: 'number' }, nullable: false } } },
+        code: 'export default ({amount}) => ({value: amount * 2})',
+        inputs: { amount: { kind: 'output', node: '$start', port: 'amount' } },
+      },
+      {
+        op: 'node.add',
+        as: 'message',
+        type: 'code',
+        name: 'Forward message',
+        config: { outputs: { value: stringPort } },
+        code: 'export default ({message}) => ({value: message})',
+        inputs: { message: { kind: 'output', node: '$start', port: 'message' } },
+      },
+      {
+        op: 'node.add',
+        as: 'log',
+        type: 'code',
+        name: 'Independent result',
+        config: { outputs: { logged: { schema: { type: 'boolean' }, nullable: false } } },
+        code: 'export default () => ({logged: true})',
+      },
+      {
+        op: 'node.add',
+        as: 'outputs',
+        type: 'outputs',
+        name: 'Outputs',
+        inputs: {
+          total: { kind: 'output', node: '$double' },
+          message: { kind: 'output', node: '$message' },
+          note: { kind: 'output', node: '$start', port: 'note' },
+        },
+      },
+      { op: 'edge.connect', source: '$start', target: '$double' },
+      { op: 'edge.connect', source: '$start', target: '$message' },
+      { op: 'edge.connect', source: '$start', target: '$log' },
+      { op: 'edge.connect', source: '$double', target: '$outputs' },
+      { op: 'edge.connect', source: '$message', target: '$outputs' },
+    ])
+    const saved = await read()
+    await submit(saved.revision, [{ op: 'flow.update', set: { outputDefs: { total: { description: 'Invoice total' } } } }])
+    await call('flow_check', { flowId, revisionId: savedRevision })
+    return
+  }
   if (id == 'start-parameters') {
     await call('flow_schema', { type: 'start' })
     const catalog = await call('connector_search', { flowId, query: 'Archive order' })

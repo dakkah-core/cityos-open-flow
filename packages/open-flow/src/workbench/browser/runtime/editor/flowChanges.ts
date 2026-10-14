@@ -18,10 +18,12 @@ import type { RevisionView } from '../revisionView.ts'
 import { dequal } from 'dequal/lite'
 import { connectorOutputMode } from '../../../../connector/common/actionSchema.ts'
 import { nextNodeName, normalizeNodeName, applyFlowChanges as reduceFlowChanges } from '../../../../flow/common/change.ts'
-import { nodeInputMappings, otherwiseOutput } from '../../../../flow/common/condition.ts'
+import { otherwiseOutput } from '../../../../flow/common/condition.ts'
 import { fixedInputValue } from '../../../../flow/common/inputValue.ts'
 import {
   cleanVariableBindings,
+  updateFlowOutputDefs,
+  renameFlowOutputSources,
   createApproval,
   createAgentTask,
   createCodeTask,
@@ -39,7 +41,7 @@ import {
   setInputValue as setGraphInputValue,
   setInputVariable as setGraphInputVariable,
 } from '../../../../flow/common/nodeChanges.ts'
-import { renamedPort, renameOutputMapping } from '../../../../flow/common/portChanges.ts'
+import { remapInputMappings, renamedPort, renameOutputMapping } from '../../../../flow/common/portChanges.ts'
 import { renamePromptInput } from '../../../../flow/common/promptTemplate.ts'
 import { valueForEditor } from '../../../../form/common/editorComponent.ts'
 
@@ -80,6 +82,7 @@ export type TaskSettings =
 export type TaskPorts = Pick<TaskDefinition, 'inputs' | 'outputs'>
 
 export type AddNodeIntent =
+  | { readonly kind: 'outputs'; readonly name: string }
   | { readonly kind: 'decision'; readonly name: string }
   | { readonly kind: 'openapi'; readonly name: string }
   | { readonly kind: 'agent'; readonly name: string; readonly prompt?: string; readonly outputDescription?: string }
@@ -175,6 +178,9 @@ export function addNode(revision: RevisionView, nodeId: string, intent: AddNodeI
       break
     case 'value':
       changes = createValue(nodeId, intent.name)
+      break
+    case 'outputs':
+      changes = [{ kind: 'graph.node.create', nodeId, node: { kind: 'outputs', name: intent.name } }]
       break
     case 'wait':
       changes = createWait(nodeId, intent.name)
@@ -277,7 +283,10 @@ export function updateValue(revision: RevisionView, nodeId: string, settings: re
     ...(Object.hasOwn(item, 'value') ? { value: item.value as JsonValue } : {}),
   }))
   if (dequal(node.values, values)) return []
-  return [{ before: node.values, kind: 'graph.node.values.set', nodeId, value: values }]
+  return [
+    { before: node.values, kind: 'graph.node.values.set', nodeId, value: values },
+    ...renameFlowOutputSources(revision.revision.content, new Set([nodeId]), node.values, values),
+  ]
 }
 
 export function updateResolution(
@@ -403,13 +412,7 @@ function updatedInputMappings(
   rename = renamedPort(previous, next),
   values?: Readonly<Record<string, JsonValue | undefined>>,
 ): Record<string, InputMapping> {
-  const inputs = { ...mappings }
-  if (rename != null && Object.hasOwn(inputs, rename[0])) {
-    inputs[rename[1]] = inputs[rename[0]]!
-    delete inputs[rename[0]]
-  }
-  const names = new Set(next.flatMap((port) => ('handle' in port ? [port.handle] : [])))
-  for (const name of Object.keys(inputs)) if (!names.has(name)) delete inputs[name]
+  const inputs = remapInputMappings(mappings, next, rename)
   convertInputValues(inputs, previous, next, rename, values)
   return inputs
 }
@@ -466,7 +469,7 @@ function replaceTaskPorts(
   const outputRename = renamedPort(previous.outputs, task.outputs)
   const inputNames = new Set(task.inputs.flatMap((port) => ('handle' in port ? [port.handle] : [])))
   const outputNames = new Set(task.outputs.flatMap((port) => ('handle' in port ? [port.handle] : [])))
-  const changes: ChangeOperation[] = []
+  const changes: ChangeOperation[] = [...renameFlowOutputSources(revision.revision.content, instances, previous.outputs, task.outputs)]
   for (const edge of graph.edges) {
     if (!instances.has(edge.source) || edge.sourceHandle == null) continue
     const renamed = outputRename != null && edge.sourceHandle == outputRename[0] ? outputRename[1] : edge.sourceHandle
@@ -478,7 +481,9 @@ function replaceTaskPorts(
   for (const [currentNodeId, node] of Object.entries(graph.nodes)) {
     if (!('inputs' in node)) continue
     const inputs =
-      currentNodeId == nodeId ? updatedInputMappings(node.inputs, previous.inputs, task.inputs, inputRename, values) : { ...nodeInputMappings(node) }
+      currentNodeId == nodeId
+        ? updatedInputMappings(revision.inputMappings(node), previous.inputs, task.inputs, inputRename, values)
+        : { ...revision.inputMappings(node) }
 
     for (const [name, mapping] of Object.entries(inputs)) {
       inputs[name] = renameOutputMapping(mapping, instances, outputRename)
@@ -492,7 +497,7 @@ function replaceTaskPorts(
       const value = { inputs: task.inputs, outputs: task.outputs }
       if (!dequal(before, value)) changes.push({ before, kind: 'graph.node.task.ports.set', nodeId, value })
     }
-    changes.push(...changedInputs(nodeInputMappings(node), inputs, currentNodeId))
+    changes.push(...changedInputs(revision.inputMappings(node), inputs, currentNodeId))
   }
 
   if (!('moduleId' in current.task) && 'executor' in task && task.executor.kind == 'agent' && 'executor' in previous) {
@@ -526,3 +531,26 @@ function replaceTaskPorts(
   return changes
 }
 import type { Settings as NodeSettings } from '../../../../flow/common/nodeChanges.ts'
+
+/** Share the input editor's type conversion while persisting only workflow-owned output configuration. */
+export function updateOutputPorts(
+  revision: RevisionView,
+  definitions: readonly InputPort[],
+  values?: Readonly<Record<string, JsonValue | undefined>>,
+): FlowChanges {
+  const content = revision.revision.content
+  const ports = definitions.map(({ handle, jsonSchema, nullable, description }) => ({
+    handle,
+    jsonSchema,
+    nullable,
+    ...(description == null ? {} : { description }),
+  }))
+  const next = updatedInputMappings(
+    content.document.outputMappings ?? {},
+    content.document.outputDefs ?? [],
+    ports,
+    renamedPort(content.document.outputDefs ?? [], ports),
+    values,
+  )
+  return updateFlowOutputDefs(content, ports, next)
+}

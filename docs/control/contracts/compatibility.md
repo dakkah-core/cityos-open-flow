@@ -1,5 +1,11 @@
 # Public contracts and version evolution
 
+## Flow model v8: workflow Outputs
+
+Model v8 adds the singleton `outputs` execution sink and optional `FlowDocument.outputDefs` and `outputMappings`. The definitions and mappings remain workflow-owned when the node is deleted. Strict decoding rejects this capability in older model versions. New edits produce model v8; v2/v4/v5/v6/v7 revisions retain their historical encoding, digests and execution behavior. Existing Manual-to-Start upgrades remain lossless. Neither the Revision envelope nor the engine contract changes.
+
+Run completion retains `kind: 'node-results'` and its `nodes` array. The optional sibling `outputs` object contains the last successful Outputs invocation's business result. It is absent when Outputs never executed and `{}` when it executed with no declared fields. Node execution events and terminal node results remain independently available. Outputs uses ordinary dependency snapshots, loops, cancellation and checkpoint recovery.
+
 ## Flow model v7: Start parameters
 
 Flow model v7 replaces new Manual Trigger nodes with `{ kind: 'start', name, description?, icon? }`. Workflow input definitions live in optional `document.inputDefs`, an ordered list of ports with handle, JSON schema, nullable and description fields. The public authoring type is `start` with empty config; `flow.update set.inputDefs` uses named business field maps. Start has no input mappings or parameter defaults. Callers supply values through the existing Run request's `trigger.outputs` object. Required fields must be present, undeclared fields are rejected, and omitted nullable Start parameters become `null` before execution. Other Trigger output contracts remain complete and unchanged. The retired node-owned `Start.parameters` shape is not supported. This refactor changes no model, API, envelope, or engine version number.
@@ -28,7 +34,7 @@ Public entry points, serialization formats, Control API, and execution semantics
 | ----------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | npm package       | Exact version in the package manifest                             | Pins implementation, types, Workbench assets, and the conformance suite. Deployments pin the same version. |
 | Revision envelope | `kind: open-flow-flow-revision`, `version: 1`                     | UTF-8 JSON envelope fields and canonical byte rules.                                                       |
-| Flow model        | `modelVersion: 7`                                                 | Serialization of documents, modules, nodes, and ports.                                                     |
+| Flow model        | `modelVersion: 8`                                                 | Serialization of documents, modules, nodes, and ports.                                                     |
 | Control API       | `/v1`; Run creation request `version: 2`, all others `version: 1` | Request fields, responses, error codes, CAS, and idempotency.                                              |
 | Engine Contract   | `open-flow-engine/v5`                                             | Execution, Trigger, Task return, Wait, and cancellation semantics.                                         |
 | MCP               | `2026-07-28`                                                      | Streamable HTTP negotiation; tool product semantics reuse Control API.                                     |

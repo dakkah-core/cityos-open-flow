@@ -66,6 +66,7 @@ import {
 } from '../canvasPresentation.ts'
 import { connectionCatalog } from '../connectionCatalog.ts'
 import { addNodeIntent } from '../editor/addNodeOptions.ts'
+import { updateOutputPorts } from '../editor/flowChanges.ts'
 import {
   applyFlowChanges,
   deleteSelection,
@@ -730,6 +731,17 @@ export class WorkspaceStore {
     const revision = this.$.revision.value
     if (revision == null) return false
     return (await this.#editDraft(resetInputValues(revision.revision.content, nodeId, handles))) != null
+  }
+
+  public async saveFlowOutputDefs(
+    nodeId: string,
+    definitions: readonly InputPort[],
+    deletion?: PropertyDeletion,
+    values?: Readonly<Record<string, JsonValue | undefined>>,
+  ): Promise<boolean> {
+    const revision = this.$.revision.value
+    if (revision == null || revision.graph().nodes[nodeId]?.kind != 'outputs') return false
+    return (await this.#editDraft(updateOutputPorts(revision, definitions, values), deletion)) != null
   }
 
   public async saveFlowInputDefs(inputDefs: readonly Port[], deletion?: PropertyDeletion): Promise<boolean> {

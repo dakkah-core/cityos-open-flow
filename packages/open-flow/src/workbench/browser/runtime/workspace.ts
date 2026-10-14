@@ -16,6 +16,7 @@ import type { ConnectionCatalog, ConnectorActionView } from './connectionCatalog
 import type { ResolvedNode, ResolvedSelection, RevisionView } from './revisionView.ts'
 
 import { wrapLayout } from '../../../canvas/browser/base/wrapLayout.ts'
+import { isTriggerNode } from '../../../flow/common/change.ts'
 import { resolutionOutputPorts } from '../../../flow/common/graph.ts'
 import { sourceOutputLabel } from '../../../flow/common/sourceField.ts'
 import { triggerOutputPorts } from '../../../trigger/common/contract.ts'
@@ -82,6 +83,8 @@ function sourceNodePresentation(node: ResolvedSelection, context: NodeProjection
 function nodeTitle(node: ResolvedNode, t?: TFunction): string {
   if (node.node.name != null) return node.node.name
   switch (node.kind) {
+    case 'outputs':
+      return t?.('addNode.outputs') ?? 'Outputs'
     case 'condition':
       return t?.('addNode.condition') ?? 'Condition'
     case 'value':
@@ -97,6 +100,8 @@ function nodeTitle(node: ResolvedNode, t?: TFunction): string {
 
 function nodeIcon(node: ResolvedNode): string | undefined {
   switch (node.kind) {
+    case 'outputs':
+      return ':lucide-light:log-out:'
     case 'condition':
       return ':carbon:child-node:'
     case 'value':
@@ -120,13 +125,18 @@ function edgeId(source: string, sourceHandle: string, target: string, targetHand
   return JSON.stringify([source, sourceHandle, target, targetHandle])
 }
 
-function nodePorts(node: ResolvedSelection, inputDefs: readonly Port[]): NodePorts {
+function nodePorts(node: ResolvedSelection, inputDefs: readonly Port[], revision: RevisionView): NodePorts {
   if (node.kind == 'trigger') {
     return { inputs: new Map(), outputs: new Map(Object.entries(triggerOutputPorts(node.trigger, inputDefs))) }
   }
-  const inputs = new Map<string, Omit<FlowCanvasViewInput, 'handle' | 'sources' | 'value'>>(Object.keys(node.node.inputs).map((handle) => [handle, {}]))
+  const inputs = new Map<string, Omit<FlowCanvasViewInput, 'handle' | 'sources' | 'value'>>(
+    Object.keys(revision.inputMappings(node.node)).map((handle) => [handle, {}]),
+  )
   const outputs = new Map<string, Omit<FlowCanvasViewOutput, 'handle'>>()
   switch (node.kind) {
+    case 'outputs':
+      for (const port of revision.outputDefs()) inputs.set(port.handle, { description: port.description, jsonSchema: port.jsonSchema, nullable: port.nullable })
+      break
     case 'condition': {
       for (const item of node.node.cases) outputs.set(item.output, { description: item.description })
       outputs.set('otherwise', {})
@@ -228,6 +238,7 @@ function conditionOperand(operand: ConditionOperand, context: NodeProjectionCont
 function nodeDiagnosticCount(node: ResolvedNode, diagnostics: readonly Diagnostic[]): number {
   const graphPath = `/document/graph/nodes/${node.id}`
   const paths = [graphPath]
+  if (node.kind == 'outputs') paths.push('/document/outputDefs', '/document/outputMappings')
   if (node.kind == 'task') {
     if ('moduleId' in node.node.task) paths.push(`${graphPath}/task`)
     const moduleId = node.definition != null && 'moduleId' in node.definition ? node.definition.moduleId : undefined
@@ -408,11 +419,11 @@ function layoutNodes(
   return { depth, ordered }
 }
 
-function designerInputs(nodeId: string, node: GraphNode, ports: NodePorts): readonly FlowCanvasViewInput[] {
-  if (!('inputs' in node)) return []
+function designerInputs(nodeId: string, node: GraphNode, ports: NodePorts, revision: RevisionView): readonly FlowCanvasViewInput[] {
+  if (isTriggerNode(node)) return []
   const inputs: FlowCanvasViewInput[] = []
   for (const [handle, definition] of ports.inputs) {
-    const mapping = node.inputs[handle]
+    const mapping = revision.inputMappings(node)[handle]
     const sources: { readonly nodeId: string; readonly output: string }[] = []
     const sourceIds = new Set<string>()
     if (mapping?.kind == 'sources') {
@@ -533,7 +544,7 @@ function triggerDesignerNode(
 
 function semanticDesignerNode(nodeId: string, resolved: ResolvedNode, ports: NodePorts, position: Point, context: NodeProjectionContext): DesignerNode {
   const node = resolved.node
-  const inputs = groupedInputs(resolved, designerInputs(nodeId, node, ports))
+  const inputs = groupedInputs(resolved, designerInputs(nodeId, node, ports, context.revision))
   const outputs = groupedOutputs(resolved, designerOutputs(ports))
   const task = resolved.kind == 'task' ? resolved.definition : undefined
   const connector = task != null && 'executor' in task && task.executor.kind == 'connector' ? task.executor : undefined
@@ -604,6 +615,7 @@ function semanticDesignerNode(nodeId: string, resolved: ResolvedNode, ports: Nod
       }
     case 'value':
       return { ...common, kind: node.kind, values: node.values.map((port) => Object.assign({}, port)) }
+    case 'outputs':
     case 'approval':
     case 'wait':
       return { ...common, kind: node.kind }
@@ -629,7 +641,7 @@ export function designerGraph(
   const entries = Object.entries(graph.nodes)
   const definitions = new Map(entries.map(([nodeId, node]) => [nodeId, revision.resolveNode(nodeId, node)]))
   const nodeIds = new Set(entries.map(([nodeId]) => nodeId))
-  const ports = new Map([...definitions].map(([nodeId, node]) => [nodeId, nodePorts(node, revision.inputDefs())]))
+  const ports = new Map([...definitions].map(([nodeId, node]) => [nodeId, nodePorts(node, revision.inputDefs(), revision)]))
   const edgeProjection = projectEdges(graph, nodeIds)
   const layout = layoutNodes(nodeIds, edgeProjection.dependencies, edgeProjection.dependents)
   const positions = savedPositions(presentation)

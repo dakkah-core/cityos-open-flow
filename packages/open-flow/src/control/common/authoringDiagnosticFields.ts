@@ -26,6 +26,8 @@ function portField(ports: Ports, path: readonly string[], parent: string): strin
 export function authoringDiagnosticField(content: RevisionContent, node: GraphNode | undefined, parts: readonly string[]): string {
   const path = parts[0] == '' ? parts.slice(1) : parts
   if (path[0] == 'document' && path[1] == 'inputDefs') return portField(content.document.inputDefs ?? [], path.slice(2), 'inputDefs')
+  if (path[0] == 'document' && path[1] == 'outputDefs') return portField(content.document.outputDefs ?? [], path.slice(2), 'outputDefs')
+  if (path[0] == 'document' && path[1] == 'outputMappings') return path.slice(1).join('.')
   if (node == null) return 'config'
   if (path[0] == 'modules') return 'code'
   let location = path[0] == 'document' && path[1] == 'graph' && path[2] == 'nodes' ? path.slice(4) : path

@@ -6,6 +6,13 @@ import { fulfillmentSamples, fulfillmentStages } from './fulfillment.ts'
 
 export const scenarios = [
   {
+    id: 'workflow-outputs',
+    entry: { kind: 'start' },
+    name: 'Declare and compute workflow outputs',
+    version: 1,
+    task: 'Build a workflow with Start parameters: required number amount, required string message, and nullable string note. Create separate Code nodes to double amount and forward message. Join both execution paths at one Outputs node. Define workflow outputs total (required number), message (required string), and note (nullable string). Map total and message from the corresponding Code results and note from Start. Update only the total description to "Invoice total" in a later edit, preserving definitions and mappings. Keep an independent Code branch that returns {logged: true}; workflow outputs and node results must both remain available.',
+  },
+  {
     id: 'start-parameters',
     entry: { kind: 'start' },
     name: 'Call a Flow with Start parameters',
@@ -135,7 +142,15 @@ function source(nodeId: string, handle: string, from: string, output: string): C
   return { kind: 'graph.node.input.set', nodeId, handle, value: { kind: 'sources', sources: [{ kind: 'node', nodeId: from, output }] } }
 }
 export function initialOperations(id: string): ChangeOperation[] {
-  if (id == 'start-parameters' || id == 'connector-responses' || id == 'order-alert' || id == 'fulfillment-ops' || id == 'webhook-live') return []
+  if (
+    id == 'workflow-outputs' ||
+    id == 'start-parameters' ||
+    id == 'connector-responses' ||
+    id == 'order-alert' ||
+    id == 'fulfillment-ops' ||
+    id == 'webhook-live'
+  )
+    return []
   const start = node('start', { kind: 'start', name: 'Start' })
   if (id.startsWith('specialize-summary')) {
     const task: ManagedTaskDefinition = {
@@ -298,7 +313,7 @@ export interface Sample {
   parameters?: Record<string, JsonValue>
 }
 export function samples(id: string, stage = 0): Sample[] {
-  if (id == 'start-parameters') {
+  if (id == 'workflow-outputs' || id == 'start-parameters') {
     const cases: Pick<Sample, 'name' | 'outputs'>[] = [
       { name: 'zero-and-omitted', outputs: { message: 'Created', amount: 0 } },
       { name: 'explicit-null', outputs: { message: 'Refunded', amount: -2.5, note: null } },
@@ -361,6 +376,25 @@ function effectiveNode(content: RevisionContent, id: string): unknown {
 }
 /** Independent assertions: compare behavior and preserved effective configurations, not generated IDs. */
 export function assertions(id: string, base: RevisionContent, current: RevisionContent): string[] {
+  if (id == 'workflow-outputs') {
+    const outputs = Object.entries(current.document.graph.nodes).filter(([, candidate]) => candidate.kind == 'outputs')
+    const definitions = Object.fromEntries((current.document.outputDefs ?? []).map((port) => [port.handle, port]))
+    const fields = [
+      ['total', 'number', false],
+      ['message', 'string', false],
+      ['note', 'string', true],
+    ] as const
+    if (outputs.length != 1 || current.document.graph.edges.some((candidate) => candidate.source == outputs[0]![0])) return ['Create one Outputs sink.']
+    if (
+      Object.keys(definitions).length != 3 ||
+      fields.some(([name, type, nullable]) => !isDeepStrictEqual(definitions[name]?.jsonSchema, { type }) || definitions[name]?.nullable != nullable) ||
+      definitions.total?.description != 'Invoice total'
+    )
+      return ['Preserve the output contract when editing its description.']
+    if (current.document.graph.edges.filter((candidate) => candidate.target == outputs[0]![0]).length != 2) return ['Join both Code paths at Outputs.']
+    return []
+  }
+
   if (id == 'start-parameters') {
     const starts = Object.values(current.document.graph.nodes).filter((candidate) => candidate.kind == 'start')
     if (starts.length != 1 || starts[0]?.kind != 'start') return ['Create one Start node.']

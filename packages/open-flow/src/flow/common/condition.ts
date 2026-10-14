@@ -4,6 +4,7 @@ import type {
   ConditionOperand,
   ConditionOperator,
   GraphNode,
+  FlowDocument,
   InputMapping,
   InputPortDefinition,
   JsonValue,
@@ -55,7 +56,8 @@ export function conditionOperands(
   )
 }
 
-export function nodeInputMappings(node: GraphNode): Readonly<Record<string, InputMapping>> {
+export function nodeInputMappings(node: GraphNode, document?: Pick<FlowDocument, 'outputMappings'>): Readonly<Record<string, InputMapping>> {
+  if (node.kind == 'outputs') return document?.outputMappings ?? {}
   if (node.kind != 'condition') return 'inputs' in node ? node.inputs : {}
   return Object.fromEntries(
     conditionOperands(node).flatMap<[string, InputMapping]>(({ handle, operand }) =>

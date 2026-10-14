@@ -151,6 +151,8 @@ Common sources are `{"kind":"value","value":...}`,
 `{"kind":"variable","name":"VARIABLE"}`. An output source may omit `port`
 when there is one output, or select a nested `field`. Each node schema advertises
 supported sources. A Trigger cannot read downstream results before the Run starts.
+
+For workflow business outputs, declare fields through `flow.update.set.outputDefs` using the same named schema/nullable/description map as `inputDefs`. Add one `outputs` node with empty config, set its declared fields with `node.add.inputs` or `input.set`, and connect its execution predecessors. It runs after those dependencies settle and accepts no outgoing connections. `flow_read` exposes `outputDefs` and `outputMappings`; completed Run results expose business `outputs` separately from node results and logs. This does not invoke another workflow.
 Schema `{}` accepts dynamic JSON; it does not convert objects or arrays into text.
 
 ### Change one prompt rule

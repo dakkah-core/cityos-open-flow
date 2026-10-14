@@ -18,7 +18,6 @@ import type { WebhookDeploymentProps } from './webhookDeployment.tsx'
 import { useEffect, useRef } from 'react'
 import { useTranslate } from 'val-i18n-react'
 import { decisionModel } from '../../../../decision/common/decision.ts'
-import { nodeInputMappings } from '../../../../flow/common/condition.ts'
 import { inputValue } from '../../../../flow/common/inputValue.ts'
 import { Field, FieldLabel } from '../../../../ui/browser/field.tsx'
 import { Input } from '../../../../ui/browser/input.tsx'
@@ -59,6 +58,7 @@ export function inspectorIcon(node: ResolvedSelection | undefined): IconName {
   if (node?.kind == 'value') return 'value'
   if (node?.kind == 'approval') return 'check'
   if (node?.kind == 'wait') return 'wait'
+  if (node?.kind == 'outputs') return 'outputs'
   if (node?.kind == 'task' && node.definition != null && 'executor' in node.definition) {
     if (node.definition.executor.kind == 'decision') return 'decision'
     if (node.definition.executor.kind == 'openapi') return 'task'
@@ -76,6 +76,8 @@ function nodePurposePlaceholder(
   switch (selection.kind) {
     case 'condition':
       return t('addNode.conditionDescription')
+    case 'outputs':
+      return t('addNode.outputsDescription')
     case 'value':
       return t('addNode.valueDescription')
     case 'approval':
@@ -134,7 +136,7 @@ function inputUpstreamSources({
   readonly t: TFunction
 }): NodeInputUpstreamSources | undefined {
   const graph = revision.graph()!
-  const mapping = nodeInputMappings(selection.node)[handleName]
+  const mapping = revision.inputMappings(selection.node)[handleName]
   const sources = mapping?.kind == 'sources' ? mapping.sources.filter((source) => source.kind == 'node') : []
   const providerDisplay = (node: GraphNode | undefined) =>
     node?.kind == 'integration' || node?.kind == 'poll' ? triggerDisplays?.[node.definition.key] : undefined
@@ -490,7 +492,7 @@ export function NodeInspector({
               task.inputs
                 .filter((port): port is InputPort => 'handle' in port && port.handle.startsWith('auth.'))
                 .map((definition) => {
-                  const mapping = selection.node.inputs[definition.handle]
+                  const mapping = revision.inputMappings(selection.node)[definition.handle]
                   const source = mapping?.kind === 'sources' ? mapping.sources.find((item) => item.kind === 'binding') : undefined
                   const binding = source?.kind === 'binding' ? revision.binding(source.bindingId) : undefined
                   return (
@@ -546,12 +548,16 @@ export function NodeInspector({
           />
         )}
         {!unconfiguredOpenApi &&
-          (selection?.kind === 'approval' || selection?.kind === 'wait' || selection?.kind === 'task') &&
+          (selection?.kind === 'outputs' || selection?.kind === 'approval' || selection?.kind === 'wait' || selection?.kind === 'task') &&
           (() => {
             const definitions: (InputPort | Group)[] =
-              selection.kind === 'task' ? [...(selection.definition?.inputs ?? [])] : [...selection.node.inputDefinitions]
+              selection.kind === 'outputs'
+                ? [...revision.outputDefs()]
+                : selection.kind === 'task'
+                  ? [...(selection.definition?.inputs ?? [])]
+                  : [...selection.node.inputDefinitions]
             const handles = new Set(definitions.flatMap((definition) => ('handle' in definition ? [definition.handle] : [])))
-            for (const handle of Object.keys(selection.node.inputs)) {
+            for (const handle of Object.keys(revision.inputMappings(selection.node))) {
               if (!handles.has(handle) && !(selection.kind === 'task' && selection.node.additionalInputs?.some((port) => port.handle === handle)))
                 definitions.push({ handle, jsonSchema: {}, nullable: true })
             }
@@ -568,7 +574,7 @@ export function NodeInspector({
                 ) {
                   definition = { ...definition, description: t('decision.targetDescription') }
                 }
-                const mapping = selection.node.inputs[definition.handle]
+                const mapping = revision.inputMappings(selection.node)[definition.handle]
                 const source = mapping?.kind === 'sources' ? mapping.sources.find((item) => item.kind === 'binding') : undefined
                 const binding = source?.kind === 'binding' ? revision.binding(source.bindingId) : undefined
                 return {
@@ -600,8 +606,9 @@ export function NodeInspector({
               <NodeInputs
                 readOnly={readOnly}
                 key={`inputs:${selection.id}`}
-                allowAddGroup={selection.kind !== 'wait' && selection.kind !== 'approval'}
-                title={t('inspector.ports.inputsTitle')}
+                allowAddGroup={selection.kind === 'task'}
+                title={t(selection.kind === 'outputs' ? 'inspector.ports.outputsTitle' : 'inspector.ports.inputsTitle')}
+                titleIcon={selection.kind === 'outputs' ? 'output' : 'input'}
                 entries={entries}
                 fieldLabels={connector?.action == 'leina.send_notification' ? { leinaId: t('leina.robot'), message: t('leina.message') } : undefined}
                 onReset={() => {
@@ -611,24 +618,33 @@ export function NodeInspector({
                   )
                 }}
                 onDefinitions={
-                  selection.kind === 'task' && selection.definition != null && ('moduleId' in selection.node.task || isAgent)
-                    ? (inputs, deletion, values) => {
-                        void store?.saveTaskPorts(selection.id, { inputs, outputs: selection.definition!.outputs }, deletion, values)
+                  selection.kind === 'outputs'
+                    ? (outputDefinitions, deletion, values) => {
+                        void store?.saveFlowOutputDefs(
+                          selection.id,
+                          outputDefinitions.filter((port): port is InputPort => 'handle' in port),
+                          deletion,
+                          values,
+                        )
                       }
-                    : selection.kind === 'wait' || selection.kind === 'approval'
+                    : selection.kind === 'task' && selection.definition != null && ('moduleId' in selection.node.task || isAgent)
                       ? (inputs, deletion, values) => {
-                          void store?.saveResolution(
-                            selection.id,
-                            {
-                              name: selection.node.name,
-                              prompt: selection.node.prompt,
-                              inputDefinitions: inputs.filter((port): port is InputPort => 'handle' in port),
-                            },
-                            deletion,
-                            values,
-                          )
+                          void store?.saveTaskPorts(selection.id, { inputs, outputs: selection.definition!.outputs }, deletion, values)
                         }
-                      : undefined
+                      : selection.kind === 'wait' || selection.kind === 'approval'
+                        ? (inputs, deletion, values) => {
+                            void store?.saveResolution(
+                              selection.id,
+                              {
+                                name: selection.node.name,
+                                prompt: selection.node.prompt,
+                                inputDefinitions: inputs.filter((port): port is InputPort => 'handle' in port),
+                              },
+                              deletion,
+                              values,
+                            )
+                          }
+                        : undefined
                 }
                 renderSource={(handle) => inputUpstreamSources({ revision, sourceNodeIcons, selection, store, handleName: handle, t, triggerDisplays })}
                 variables={variables}
@@ -652,7 +668,7 @@ export function NodeInspector({
                       title={t('inspector.task.additionalInputs')}
                       allowAddGroup={false}
                       entries={(selection.node.additionalInputs ?? []).map((definition) => {
-                        const mapping = selection.node.inputs[definition.handle]
+                        const mapping = revision.inputMappings(selection.node)[definition.handle]
                         const source = mapping?.kind === 'sources' ? mapping.sources.find((item) => item.kind === 'binding') : undefined
                         const binding = source?.kind === 'binding' ? revision.binding(source.bindingId) : undefined
                         return {

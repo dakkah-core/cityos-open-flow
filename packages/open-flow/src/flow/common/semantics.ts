@@ -1,5 +1,6 @@
 import { decisionTaskIssues } from '../../decision/common/decision.ts'
 import { openApiIssues, authHandles } from '../../openapi/common/openapi.ts'
+import { isTriggerNode } from './change.ts'
 export { renderPrompt } from './promptTemplate.ts'
 export { connectionUsage, removeConnectionUsage } from './connectionUsage.ts'
 import { matchesTriggerOutputs, normalizeTriggerOutputs } from '../../trigger/common/contract.ts'
@@ -13,7 +14,7 @@ import type { ConnectorActionCapability, ConnectorCapability, Graph, InputMappin
 import { findEngineContract } from '../../execution/common/engineContract.ts'
 import { agentConfigIssues } from './agent.ts'
 import { decodeConnectorCapabilities } from './change.ts'
-import { canonicalJsonBytes, canonicalPorts, canonicalModule, canonicalRevisionGraph, digestBytes } from './encoding.ts'
+import { canonicalInputs, canonicalJsonBytes, canonicalPorts, canonicalModule, canonicalRevisionGraph, digestBytes } from './encoding.ts'
 import { nodeInputPorts, validateFlowGraph } from './graph.ts'
 import { inputValue } from './inputValue.ts'
 import { compareDiagnostics, validateModuleGraph } from './modules.ts'
@@ -63,13 +64,14 @@ export function flowDependencies(content: RevisionContent, triggerId?: string): 
 
   function visitGraph(value: Graph): void {
     for (const [, node] of entries(value.nodes)) {
-      if ('inputs' in node) visitInputMappings(nodeInputMappings(node))
+      if (!isTriggerNode(node)) visitInputMappings(nodeInputMappings(node, content.document))
       switch (node.kind) {
         case 'condition':
           break
         case 'task':
           if ('moduleId' in node.task) visitModule(node.task.moduleId)
           break
+        case 'outputs':
         case 'value':
           break
         case 'approval':
@@ -99,6 +101,9 @@ export async function flowClosure(content: RevisionContent): Promise<SemanticClo
   const bytes = canonicalJsonBytes({
     ...(Object.values(content.document.graph.nodes).some((node) => node.kind == 'start')
       ? { inputDefs: canonicalPorts(content.document.inputDefs ?? []) }
+      : {}),
+    ...(Object.values(content.document.graph.nodes).some((node) => node.kind == 'outputs')
+      ? { outputDefs: canonicalPorts(content.document.outputDefs ?? []), outputMappings: canonicalInputs(content.document.outputMappings ?? {}) }
       : {}),
     bindings: Object.fromEntries([...bindings].toSorted().map((id) => [id, content.document.bindings[id] ?? null])),
     graph: canonicalRevisionGraph(content, content.document.graph),
@@ -167,7 +172,7 @@ export function validRunTrigger(revision: RevisionContent, value: unknown): bool
   if (Object.keys(trigger).some((key) => key != 'nodeId' && key != 'outputs') || typeof trigger.nodeId != 'string' || !Object.hasOwn(trigger, 'outputs'))
     return false
   const node = revision.document.graph.nodes[trigger.nodeId]
-  return node != null && !('inputs' in node) && matchesTriggerOutputs(node, trigger.outputs, revision.document.inputDefs ?? [])
+  return node != null && isTriggerNode(node) && matchesTriggerOutputs(node, trigger.outputs, revision.document.inputDefs ?? [])
 }
 
 export function normalizeRunTrigger(
@@ -178,7 +183,7 @@ export function normalizeRunTrigger(
   const trigger = value as Readonly<Record<string, unknown>>
   if (Object.keys(trigger).some((key) => key != 'nodeId' && key != 'outputs') || typeof trigger.nodeId != 'string' || !Object.hasOwn(trigger, 'outputs')) return
   const node = revision.document.graph.nodes[trigger.nodeId]
-  if (node == null || 'inputs' in node) return
+  if (node == null || !isTriggerNode(node)) return
   const outputs = normalizeTriggerOutputs(node, trigger.outputs, revision.document.inputDefs ?? [])
   return outputs == null ? undefined : { nodeId: trigger.nodeId, outputs }
 }
@@ -188,13 +193,14 @@ export function validateFlowInputs(revision: RevisionContent, value: unknown): F
   const graph = revision.document.graph
   for (const [nodeId, candidate] of Object.entries(value)) {
     const node = graph.nodes[nodeId]
-    if (node == null || !('inputs' in node) || node.kind == 'condition' || candidate == null || typeof candidate != 'object' || Array.isArray(candidate)) {
+    if (node == null || isTriggerNode(node) || node.kind == 'condition' || candidate == null || typeof candidate != 'object' || Array.isArray(candidate)) {
       return 'invalid'
     }
-    const inputs = nodeInputPorts(node)
+    const inputs = nodeInputPorts(node, revision.document)
     for (const handle of Object.keys(candidate)) {
       const port = inputs[handle]
-      if (port == null || hasRetiredRef(port.jsonSchema) || node.inputs[handle] != null || Object.hasOwn(port, 'value')) return 'invalid'
+      if (port == null || hasRetiredRef(port.jsonSchema) || nodeInputMappings(node, revision.document)[handle] != null || Object.hasOwn(port, 'value'))
+        return 'invalid'
     }
   }
   return 'valid'
@@ -300,6 +306,8 @@ export async function validateFlow(revision: RevisionContent, engine: EngineCont
 
 export interface PreparedFlow {
   readonly inputDefs: readonly Port[]
+  readonly outputDefs: readonly Port[]
+  readonly outputMappings: Readonly<Record<string, InputMapping>>
   readonly closureDigest: string
   readonly engineContract: string
   readonly graph: Graph
@@ -341,18 +349,21 @@ function runRevision(revision: RevisionContent, triggerId: string): RevisionCont
   for (const nodeId of reachable) {
     const node = graph.nodes[nodeId]
     if (node == null) continue
-    nodes[nodeId] = !('inputs' in node)
-      ? node
-      : {
-          ...node,
-          inputs: inputs(nodeId, node.inputs),
-        }
+    nodes[nodeId] =
+      isTriggerNode(node) || node.kind == 'outputs'
+        ? node
+        : {
+            ...node,
+            inputs: inputs(nodeId, node.inputs),
+          }
   }
+  const outputNodeId = Object.keys(nodes).find((id) => nodes[id]?.kind == 'outputs')
   const content = {
     ...revision,
     document: {
       ...revision.document,
       inputDefs: Object.values(nodes).some((node) => node.kind == 'start') ? (revision.document.inputDefs ?? []) : [],
+      ...(outputNodeId == null ? {} : { outputMappings: inputs(outputNodeId, revision.document.outputMappings ?? {}) }),
       graph: { nodes, edges: graph.edges.filter((edge) => reachable.has(edge.source)) },
     },
   }
@@ -368,7 +379,7 @@ export async function prepareFlow(revision: RevisionContent, engineContract: str
   if (engine == null) return { kind: 'engine-unsupported' }
   if (triggerId != null) {
     const trigger = revision.document.graph.nodes[triggerId]
-    if (trigger == null || 'inputs' in trigger)
+    if (trigger == null || !isTriggerNode(trigger))
       return {
         kind: 'flow-invalid',
         validation: {
@@ -396,6 +407,8 @@ export async function prepareFlow(revision: RevisionContent, engineContract: str
       closureDigest: closure.digest,
       engineContract,
       inputDefs: revision.document.inputDefs ?? [],
+      outputDefs: revision.document.outputDefs ?? [],
+      outputMappings: revision.document.outputMappings ?? {},
       graph: revision.document.graph,
       modules: Object.fromEntries([...closure.dependencies.modules].toSorted().map((id) => [id, revision.modules[id]!])),
     },

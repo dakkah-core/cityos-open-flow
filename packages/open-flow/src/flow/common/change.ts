@@ -480,10 +480,20 @@ export type TriggerNode =
       readonly kind: 'integration'
     })
 
-export type GraphNode = ApprovalNode | ConditionNode | TaskNode | TriggerNode | ValueNode | WaitNode
+export interface OutputsNode extends Omit<GraphNodeBase, 'inputs'> {
+  readonly kind: 'outputs'
+}
+
+export function isTriggerNode(node: GraphNode): node is TriggerNode {
+  return ['manual', 'start', 'error', 'webhook', 'cron', 'poll', 'integration'].includes(node.kind)
+}
+
+export type GraphNode = OutputsNode | ApprovalNode | ConditionNode | TaskNode | TriggerNode | ValueNode | WaitNode
 
 export interface FlowDocument {
   readonly inputDefs?: readonly Port[]
+  readonly outputDefs?: readonly Port[]
+  readonly outputMappings?: Readonly<Record<string, InputMapping>>
   readonly bindings: Readonly<Record<string, { readonly kind: 'variable'; readonly target: string }>>
   readonly graph: Graph
 }
@@ -496,7 +506,7 @@ export interface CodeModule {
 
 export interface RevisionContent {
   readonly document: FlowDocument
-  readonly modelVersion: 2 | 4 | 5 | 6 | typeof currentFlowModelVersion
+  readonly modelVersion: 2 | 4 | 5 | 6 | 7 | typeof currentFlowModelVersion
   readonly modules: Readonly<Record<string, CodeModule>>
 }
 
@@ -556,6 +566,12 @@ export function nodeNameIssue(graph: Graph, nodeId: string, value: string): 'dup
 }
 
 export type ChangeOperation =
+  | { readonly kind: 'flow.output-defs.set'; readonly before?: readonly Port[]; readonly value?: readonly Port[] }
+  | {
+      readonly kind: 'flow.output-mappings.set'
+      readonly before?: Readonly<Record<string, InputMapping>>
+      readonly value?: Readonly<Record<string, InputMapping>>
+    }
   | { readonly kind: 'flow.input-defs.set'; readonly before: readonly Port[]; readonly value: readonly Port[] }
   | { readonly kind: 'graph.node.replace'; readonly nodeId: string; readonly before: GraphNode; readonly node: GraphNode }
   | {
@@ -690,6 +706,14 @@ export function applyFlowChanges(content: RevisionContent, operations: readonly 
   const modules = { ...source.modules }
   for (const operation of operations) {
     switch (operation.kind) {
+      case 'flow.output-defs.set':
+      case 'flow.output-mappings.set': {
+        const field = operation.kind == 'flow.output-defs.set' ? 'outputDefs' : 'outputMappings'
+        if (!dequal(document[field], operation.before)) invalid('The workflow output configuration changed before this operation was applied.')
+        if (operation.value === undefined) Reflect.deleteProperty(document, field)
+        else Object.assign(document, { [field]: operation.value })
+        break
+      }
       case 'flow.input-defs.set':
         if (!dequal(document.inputDefs ?? [], operation.before)) invalid('The workflow input definitions changed before this operation was applied.')
         document.inputDefs = operation.value
@@ -725,8 +749,9 @@ export function applyFlowChanges(content: RevisionContent, operations: readonly 
       case 'graph.edge.connect': {
         const graph = document.graph
         if (graph.nodes[operation.edge.source] == null) invalid('The source Node does not exist.')
+        if (graph.nodes[operation.edge.source]?.kind == 'outputs') invalid('Outputs cannot have downstream execution edges.')
         const node = graph.nodes[operation.edge.target]
-        if (node == null || !('inputs' in node)) invalid('The target Node does not accept execution dependencies.')
+        if (node == null || isTriggerNode(node)) invalid('The target Node does not accept execution dependencies.')
         if (graph.edges.some((edge) => dequal(edge, operation.edge))) invalid('The Nodes are already connected.')
         Object.assign(document, { graph: { ...graph, edges: [...graph.edges, operation.edge] } })
         break
@@ -786,6 +811,8 @@ export function applyFlowChanges(content: RevisionContent, operations: readonly 
         if (operation.node.kind == 'task' && 'moduleId' in operation.node.task && operation.node.task.capabilities !== undefined)
           decodeConnectorCapabilities(operation.node.task.capabilities)
         if (operation.node.name == null) invalid('A Node name cannot be empty.')
+        if (operation.node.kind == 'outputs' && Object.values(graph.nodes).some((node) => node.kind == 'outputs'))
+          invalid('A graph can contain only one Outputs node.')
         const name = normalizeNodeName(operation.node.name)
         const issue = nodeNameIssue(graph, operation.nodeId, name)
         if (issue == 'empty') invalid('A Node name cannot be empty.')
@@ -830,11 +857,15 @@ export function applyFlowChanges(content: RevisionContent, operations: readonly 
       case 'graph.node.input.set': {
         const graph = document.graph
         const node = graph.nodes[operation.nodeId]
-        if (node == null || !('inputs' in node)) invalid('The Node does not accept inputs.')
-        if (!dequal(nodeInputMappings(node)[operation.handle], operation.before)) invalid('The Node input changed before this operation was applied.')
-        const inputs = { ...node.inputs }
+        if (node == null || isTriggerNode(node)) invalid('The Node does not accept inputs.')
+        if (!dequal(nodeInputMappings(node, document)[operation.handle], operation.before)) invalid('The Node input changed before this operation was applied.')
+        const inputs = { ...nodeInputMappings(node, document) }
         if (operation.value == null) delete inputs[operation.handle]
         else inputs[operation.handle] = operation.value
+        if (node.kind == 'outputs') {
+          document.outputMappings = inputs
+          break
+        }
         Object.assign(document, {
           graph: {
             ...graph,

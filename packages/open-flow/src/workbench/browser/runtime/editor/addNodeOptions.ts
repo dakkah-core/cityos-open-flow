@@ -65,6 +65,7 @@ export type AddNodeOption = AddNodeOptionBase &
     | { readonly kind: 'trigger'; readonly trigger: AddTrigger }
     | { readonly kind: 'value' }
     | { readonly kind: 'wait' }
+    | { readonly kind: 'outputs' }
   )
 
 export function indexAddNodeOptions(options: readonly AddNodeOption[]): ReadonlyMap<string, AddNodeOption> {
@@ -149,7 +150,19 @@ function builtinOptions(t: TFunction): readonly AddNodeOption[] {
 
 export function deriveAddNodeOptions(draft: Draft | undefined, t: TFunction): readonly AddNodeOption[] {
   if (draft == null) return []
-  const options = builtinOptions(t)
+  const options: AddNodeOption[] = [
+    ...builtinOptions(t),
+    {
+      id: 'outputs',
+      kind: 'outputs',
+      label: t('addNode.outputs'),
+      description: t('addNode.outputsDescription'),
+      group: t('addNode.blocks'),
+      icon: ':lucide-light:log-out:',
+      inputs: revisionView(draft).outputDefs(),
+      outputs: [],
+    },
+  ]
   const group = t('addNode.triggers')
   const triggers: readonly AddNodeOption[] = [
     {
@@ -224,6 +237,7 @@ export function deriveAddNodeOptions(draft: Draft | undefined, t: TFunction): re
   const nodes = Object.values(revisionView(draft).graph()?.nodes ?? {})
   return triggers.filter(
     (option) =>
+      !(option.kind == 'outputs' && nodes.some((node) => node.kind == 'outputs')) &&
       !nodes.some((node) =>
         node.kind == 'manual' || node.kind == 'start' ? option.id == 'trigger:start' : node.kind == 'error' && option.id == 'trigger:error',
       ),
@@ -232,6 +246,8 @@ export function deriveAddNodeOptions(draft: Draft | undefined, t: TFunction): re
 
 export function addNodeIntent(option: AddNodeOption, revision: RevisionView, t: TFunction): AddNodeIntent | undefined {
   switch (option.kind) {
+    case 'outputs':
+      return { kind: 'outputs', name: t('addNode.outputs') }
     case 'new-task': {
       const name = t('addNode.codeTaskName', {
         number: Object.keys(revision.graph()!.nodes).length + 1,

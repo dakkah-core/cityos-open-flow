@@ -607,7 +607,8 @@
       "wait": "Wait",
       "value": "Fixed Values",
       "input": "Flow input",
-      "output": "Flow output"
+      "output": "Flow output",
+      "outputs": "Outputs"
     },
     "units": {
       "minute": "minutes",

@@ -10,6 +10,7 @@ const json = z.json()
 const patch = z.record(id, json)
 export const authoringTypes = [
   'start',
+  'outputs',
   'webhook',
   'cron',
   'error',
@@ -74,6 +75,9 @@ export const flowInputFields = z
   .describe(
     'Workflow input definitions by name. Omitted schema accepts any JSON; omitted nullable is true. No defaults. Supply call values as trigger.outputs.',
   )
+export const flowOutputFields = flowInputFields.describe(
+  'Workflow output definitions by name. Omitted schema accepts any JSON; omitted nullable is true. No defaults. Set values on the Outputs node with input.set or node.add.inputs.',
+)
 export const flowInputFieldsView = z.record(id, field.extend({ schema: json as z.ZodType<JsonValue>, nullable: z.boolean() }))
 const outputFields = z.record(id, field).describe('Code return fields by name. Omitted schema accepts any JSON; omitted nullable is true.')
 const expression = z.strictObject({
@@ -85,6 +89,7 @@ const all = z.strictObject({ all: z.array(expression) })
 const when = z.union([expression, all, z.strictObject({ any: z.array(z.union([expression, all])) })])
 export const authoringConfigurations = {
   start: z.strictObject({}),
+  outputs: z.strictObject({}),
   error: z.strictObject({ sourceFlowIds: z.array(id).optional() }),
   webhook: definitions.webhook.omit({ bodyFields: true }).extend({ body: inputFields }).strict(),
   cron: z.strictObject({ schedule: definitions.schedule }),
@@ -127,7 +132,7 @@ const updates = z.strictObject({
 export const authoringEditSchema = z.discriminatedUnion('op', [
   z.strictObject({
     op: z.literal('flow.update'),
-    set: z.strictObject({ inputDefs: flowInputFields.optional() }).optional(),
+    set: z.strictObject({ inputDefs: flowInputFields.optional(), outputDefs: flowOutputFields.optional() }).optional(),
     clear: z.array(z.array(id).min(1)).optional(),
   }),
   z.strictObject({
@@ -185,7 +190,7 @@ const requestContracts = {
   read: {
     schema: authoringReadSchema,
     guidance:
-      'The outline includes workflow inputDefs. Choose one mode: outline (omit nodes and text), node details (nodes), or text excerpt (text). nodes and text are mutually exclusive. Text defaults to 80 lines, at most 200 lines and 24000 characters. For the complete text, repeat at nextStart with the same revision until truncated is false.',
+      'The outline includes workflow inputDefs, outputDefs, and outputMappings. Choose one mode: outline (omit nodes and text), node details (nodes), or text excerpt (text). nodes and text are mutually exclusive. Text defaults to 80 lines, at most 200 lines and 24000 characters. For the complete text, repeat at nextStart with the same revision until truncated is false.',
     examples: [{}, { revision: 'REVISION', nodes: ['NODE'] }, { revision: 'REVISION', text: { node: 'NODE', field: 'prompt', start: 1, lines: 80 } }],
   },
   search: {
@@ -196,7 +201,7 @@ const requestContracts = {
   edit: {
     schema: authoringRequestSchema,
     guidance:
-      'Use flow.update set.inputDefs to edit workflow inputs; clear paths are relative to the workflow, e.g. ["inputDefs","amount"]. Start node config is empty. Use the observed revision as baseRevision and a stable requestId. Edits are ordered and atomic. node.add.as declares a batch-local alias without $. Every later reference to that new node must use $alias, including node, edge source/target and output source node fields; a bare alias is not the node ID. Use returned node references in later batches. Updates recursively merge objects (including schemas); {} preserves existing fields. Arrays replace as a whole. Remove fields with clear paths. Text replacement requires exactly one match. Read the target text first. A saved draft can have validation diagnostics.',
+      'Use flow.update set.inputDefs or set.outputDefs to edit workflow inputs or outputs; clear paths are relative to the workflow, e.g. ["inputDefs","amount"]. Start and Outputs node configs are empty. Set Outputs values with input.set. Use the observed revision as baseRevision and a stable requestId. Edits are ordered and atomic. node.add.as declares a batch-local alias without $. Every later reference to that new node must use $alias, including node, edge source/target and output source node fields; a bare alias is not the node ID. Use returned node references in later batches. Updates recursively merge objects (including schemas); {} preserves existing fields. Arrays replace as a whole. Remove fields with clear paths. Text replacement requires exactly one match. Read the target text first. A saved draft can have validation diagnostics.',
     examples: [
       {
         baseRevision: 'REVISION',
@@ -242,22 +247,24 @@ export function authoringSchema(kind?: AuthoringType) {
         type: kind,
         inputSources: ['poll', 'integration'].includes(kind)
           ? ['value', 'unset', 'default']
-          : ['start', 'error', 'cron', 'webhook', 'value', 'condition'].includes(kind)
+          : ['start', 'outputs', 'error', 'cron', 'webhook', 'value', 'condition'].includes(kind)
             ? []
             : ['value', 'unset', 'default', 'output', 'variable', 'sources'],
         extensibleInputs: ['code', 'agent', 'llm', 'wait', 'approval'].includes(kind),
         guidance:
-          kind == 'start'
-            ? 'Declare workflow inputs through flow.update set.inputDefs; read them in the flow_read outline. REST calls and manual runs supply them as trigger.outputs. Downstream nodes bind these parameters as Start outputs. Start has no input sources or defaults; non-nullable parameters are required, and omitted nullable parameters become null.'
-            : kind == 'condition'
-              ? 'Edit branch operands through config.branches. A branch can test one expression, all expressions, or any alternatives. Unmatched execution uses branch otherwise.'
-              : ['poll', 'integration'].includes(kind)
-                ? 'Configure static parameters with node.add.inputs or input.set. Definitions come from the selected Trigger key; execution output and variable sources are unavailable.'
-                : kind == 'llm'
-                  ? 'Configure model settings, message templates and history as defaults. Input bindings with the same names override these defaults; named business inputs can be bound directly. Template strings interpolate {{name}}.'
-                  : kind == 'openapi'
-                    ? 'Select an operation; the tool resolves its ports and authentication. Read authenticationChoices from node details. authentication is replaced as a complete choice. Bind advertised credentials through inputs.'
-                    : 'Supply business configuration and input data. Fixed definitions are assembled by the tool. Existing constraints and defaults are preserved on partial updates.',
+          kind == 'outputs'
+            ? 'Declare workflow outputDefs through flow.update. Set their values through node.add.inputs or input.set. Outputs is a singleton execution sink; it waits for its predecessors and produces workflow business outputs independently of node logs. No downstream edges or data references to Outputs are allowed.'
+            : kind == 'start'
+              ? 'Declare workflow inputs through flow.update set.inputDefs; read them in the flow_read outline. REST calls and manual runs supply them as trigger.outputs. Downstream nodes bind these parameters as Start outputs. Start has no input sources or defaults; non-nullable parameters are required, and omitted nullable parameters become null.'
+              : kind == 'condition'
+                ? 'Edit branch operands through config.branches. A branch can test one expression, all expressions, or any alternatives. Unmatched execution uses branch otherwise.'
+                : ['poll', 'integration'].includes(kind)
+                  ? 'Configure static parameters with node.add.inputs or input.set. Definitions come from the selected Trigger key; execution output and variable sources are unavailable.'
+                  : kind == 'llm'
+                    ? 'Configure model settings, message templates and history as defaults. Input bindings with the same names override these defaults; named business inputs can be bound directly. Template strings interpolate {{name}}.'
+                    : kind == 'openapi'
+                      ? 'Select an operation; the tool resolves its ports and authentication. Read authenticationChoices from node details. authentication is replaced as a complete choice. Bind advertised credentials through inputs.'
+                      : 'Supply business configuration and input data. Fixed definitions are assembled by the tool. Existing constraints and defaults are preserved on partial updates.',
         example: {
           op: 'node.add',
           as: 'step',
@@ -266,6 +273,7 @@ export function authoringSchema(kind?: AuthoringType) {
           ...((
             {
               start: { config: {} },
+              outputs: { config: {} },
               connector: { config: { action: '<Action ID>', connectionId: '<Connection ID>' } },
               poll: { config: { key: '<Trigger key>', schedule: [{ type: 'every', unit: 'minute', value: 5 }] } },
               integration: { config: { key: '<Trigger key>' } },
@@ -338,6 +346,8 @@ export const authoringReadResponse = z.object({
   revision: id,
   data: z.object({
     inputDefs: flowInputFieldsView.optional(),
+    outputDefs: flowInputFieldsView.optional(),
+    outputMappings: z.record(id, authoringSourceSchema).optional(),
     nodes: z.array(z.record(z.string(), json)).optional(),
     edges: z.array(json).optional(),
     text: z.record(z.string(), json).optional(),

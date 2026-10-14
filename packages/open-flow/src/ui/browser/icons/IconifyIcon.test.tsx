@@ -1,8 +1,14 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchIcon, IconifyIcon } from './IconifyIcon.tsx'
+import { fetchIcon, getInlineIconifyIcon, IconifyIcon } from './IconifyIcon.tsx'
 
 afterEach(() => vi.unstubAllGlobals())
+
+it('resolves the Outputs icon from the local catalog without waiting for a collection or network', () => {
+  const icon = getInlineIconifyIcon('lucide-light', 'log-out')
+  expect(icon).toMatch(/^data:image\/svg\+xml/)
+  expect(renderToStaticMarkup(<IconifyIcon collection="lucide-light" icon="log-out" />)).toContain('data:image/svg+xml')
+})
 
 describe('remote Iconify icons', () => {
   it('shares requests and renders a previously loaded icon immediately on remount', async () => {

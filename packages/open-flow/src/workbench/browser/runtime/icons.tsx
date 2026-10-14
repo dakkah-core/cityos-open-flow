@@ -1,6 +1,6 @@
 import type { ReactElement, ReactNode, SVGProps } from 'react'
 
-import { BrainCircuit, Network, StickyNote } from 'lucide-react'
+import { LogOut, BrainCircuit, Network, StickyNote } from 'lucide-react'
 
 export type IconName =
   | 'alert'
@@ -36,6 +36,7 @@ export type IconName =
   | 'trigger'
   | 'value'
   | 'wait'
+  | 'outputs'
 
 function glyph(name: IconName): ReactNode {
   switch (name) {
@@ -218,6 +219,7 @@ function glyph(name: IconName): ReactNode {
 }
 
 export function Icon({ name, size = 18, ...props }: { readonly name: IconName; readonly size?: number } & SVGProps<SVGSVGElement>): ReactElement {
+  if (name === 'outputs') return <LogOut aria-hidden="true" size={size} strokeWidth={1.5} {...props} />
   if (name === 'decision') {
     return <BrainCircuit aria-hidden="true" size={size} strokeWidth={1.5} {...props} />
   }

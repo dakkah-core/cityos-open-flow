@@ -26,6 +26,8 @@ A complete type does not guarantee a usable interface. Instructions for building
 Tools generate output definitions for fixed single results. Callers can omit the port name when referencing the only data output.
 When a node has multiple business outputs, the caller must select one. The tool returns available names to help correct the request.
 
+Outputs is an execution sink with workflow-owned `outputDefs` and `outputMappings`. Its public type is `outputs` with empty config. Declare the workflow fields through `flow.update.set.outputDefs`, then assign their sources through existing node input operations. Keep its business result separate from node logs and do not expose its fields as downstream data ports.
+
 Model execution branches and data outputs separately. Only data outputs produced at runtime can be bound.
 Condition branches and other control signals cannot act as data ports. Expose Wait data and decisions according to their runtime contract.
 
