@@ -9,7 +9,7 @@ import type {
   FlowCanvasViewOutput,
   FlowCanvasViewTriggerNode,
 } from '../../../canvas/browser/graph/FlowCanvas/model.ts'
-import type { ConditionOperand } from '../../../flow/common/change.ts'
+import type { ConditionOperand, Port } from '../../../flow/common/change.ts'
 import type { ConnectorProvider, Diagnostic, Draft, GraphNode, Group, JsonValue, Run, RunDetails, RunEvent, TaskDefinition, TriggerNode } from './api.ts'
 import type { Point, DesignerViewport } from './canvasPresentation.ts'
 import type { ConnectionCatalog, ConnectorActionView } from './connectionCatalog.ts'
@@ -120,9 +120,9 @@ function edgeId(source: string, sourceHandle: string, target: string, targetHand
   return JSON.stringify([source, sourceHandle, target, targetHandle])
 }
 
-function nodePorts(node: ResolvedSelection): NodePorts {
+function nodePorts(node: ResolvedSelection, inputDefs: readonly Port[]): NodePorts {
   if (node.kind == 'trigger') {
-    return { inputs: new Map(), outputs: new Map(Object.entries(triggerOutputPorts(node.trigger))) }
+    return { inputs: new Map(), outputs: new Map(Object.entries(triggerOutputPorts(node.trigger, inputDefs))) }
   }
   const inputs = new Map<string, Omit<FlowCanvasViewInput, 'handle' | 'sources' | 'value'>>(Object.keys(node.node.inputs).map((handle) => [handle, {}]))
   const outputs = new Map<string, Omit<FlowCanvasViewOutput, 'handle'>>()
@@ -481,6 +481,7 @@ function groupedOutputs(resolved: ResolvedNode, outputs: readonly FlowCanvasView
 function triggerDesignerNode(
   triggerId: string,
   trigger: TriggerNode,
+  inputDefs: readonly Port[],
   position: Point,
   diagnostics: readonly Diagnostic[],
   providers: Readonly<Record<string, ConnectorProvider>>,
@@ -523,7 +524,7 @@ function triggerDesignerNode(
     id: triggerId,
     inputs: [],
     kind: 'trigger',
-    outputs: Object.entries(triggerOutputPorts(trigger)).map(([handle, port]) => Object.assign({ handle }, port)),
+    outputs: Object.entries(triggerOutputPorts(trigger, inputDefs)).map(([handle, port]) => Object.assign({ handle }, port)),
     presentation,
     position,
     title: trigger.name,
@@ -628,7 +629,7 @@ export function designerGraph(
   const entries = Object.entries(graph.nodes)
   const definitions = new Map(entries.map(([nodeId, node]) => [nodeId, revision.resolveNode(nodeId, node)]))
   const nodeIds = new Set(entries.map(([nodeId]) => nodeId))
-  const ports = new Map([...definitions].map(([nodeId, node]) => [nodeId, nodePorts(node)]))
+  const ports = new Map([...definitions].map(([nodeId, node]) => [nodeId, nodePorts(node, revision.inputDefs())]))
   const edgeProjection = projectEdges(graph, nodeIds)
   const layout = layoutNodes(nodeIds, edgeProjection.dependencies, edgeProjection.dependents)
   const positions = savedPositions(presentation)
@@ -658,7 +659,7 @@ export function designerGraph(
     const resolved = definitions.get(nodeId)!
     if (resolved.kind == 'trigger') {
       nodes.push({
-        ...triggerDesignerNode(nodeId, resolved.trigger, position, diagnostics, providers),
+        ...triggerDesignerNode(nodeId, resolved.trigger, revision.inputDefs(), position, diagnostics, providers),
         contentHidden: hiddenNodeContent?.[nodeId] === true,
       })
       continue

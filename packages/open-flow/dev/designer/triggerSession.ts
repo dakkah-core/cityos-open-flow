@@ -28,9 +28,10 @@ export function createTriggerSession(
   },
   eventSources?: readonly EventSource[],
   triggerAccess?: 'alternative' | 'none',
+  inputDefs: RevisionContent['document']['inputDefs'] = [],
 ) {
   const i18n = createI18n(language)
-  const { flow, draft } = triggerDraft(trigger)
+  const { flow, draft } = triggerDraft(trigger, false, inputDefs)
   const { content: initialContent, ...revisionMetadata } = draft
   let content: RevisionContent = {
     ...initialContent,

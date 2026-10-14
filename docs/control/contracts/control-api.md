@@ -481,10 +481,18 @@ The existing `/live` response and Draft change comparison are unchanged.
 
 ```ts
 type LiveDetails = { flowId: string; version: 1 } & (
-  | { publication: null; status: 'not-published'; entries: [] }
-  | { publication: Publication; status: 'runnable' | 'suspended'; enabled: boolean; entries: LiveEntry[] }
+  | { publication: null; inputDefs: null; status: 'not-published'; entries: [] }
+  | {
+      publication: Publication
+      inputDefs: Record<string, { schema: JsonValue; nullable: boolean; description?: string }>
+      status: 'runnable' | 'suspended'
+      enabled: boolean
+      entries: LiveEntry[]
+    }
 )
 ```
+
+The published top-level `inputDefs` reads the fixed Publication Revision using the same business field map as the authoring outline. Draft edits do not change it. Start entry config is empty.
 
 Each entry contains `nodeId`, `name`, optional `description`, `type`, and `config`
 using the existing authoring business configuration. Webhook `config` includes
@@ -585,7 +593,11 @@ Draft Runs validate semantics, capabilities, and Variable admission only for nod
 
 Multiple simultaneous values are forbidden. Missing node references, cycles within the selected branch, and invalid code still return `flow.invalid`. Draft Run `revisionDigest` identifies the complete Revision; `closureDigest` identifies the entry’s execution closure and may differ from the whole-graph check. Reads and recovery do not modify the original Revision. Publish and Live Runs retain complete Flow validation.
 
-Start structure is `{ kind: "start", name: string, parameters: readonly Port[], description?: string, icon?: string }` and requires Flow model 7. One graph may contain at most one Start or legacy Manual entry. Public authoring uses `type: "start"` and `config.parameters: { [name]: { schema?, nullable?, description? } }`; omitted schema accepts any JSON and omitted nullable is true. Parameters have no defaults or input mappings. They are workflow call parameters externally and ordinary Start outputs for downstream data bindings. Workbench tests and REST Draft/Live calls share this declared contract. A future Flow invocation node can reuse it; this change adds no Flow invocation capability.
+Start structure is `{ kind: "start", name: string, description?: string, icon?: string }` in Flow model 7. Its input contract belongs to `FlowDocument.inputDefs?: readonly Port[]`, alongside `graph` and `bindings`. Omitted `inputDefs` means no workflow inputs, equivalent to `[]` for querying and execution. Reading or editing unrelated fields does not insert an empty definition list. One graph may contain at most one Start or legacy Manual entry. Start has no input mappings, parameter defaults, or independent output definitions: its outputs derive from the workflow inputs. Workbench tests and REST Draft/Live calls share this contract. A future Flow invocation node can reuse it; this change adds no Flow invocation capability.
+
+The `flow_read` outline returns `data.inputDefs` as `{ [name]: { schema, nullable, description? } }`, independently of node reads. Use `{ op: "flow.update", set: { inputDefs: { ... } }, clear?: [...] }` in the existing atomic authoring edit batch. Fields merge recursively, omitted fields remain unchanged, and schema arrays replace whole arrays. Omitted schema accepts any JSON; omitted nullable is true. Use `clear: [["inputDefs", "amount", "schema", "minimum"]]` to remove one constraint, `[["inputDefs", "amount"]]` to remove one definition, or `[["inputDefs"]]` to clear all definitions. A single-definition rename preserves downstream references; deletions retain unresolved references for diagnostics. Creating or deleting Start does not change `inputDefs`. Start authoring config is `{}`; the retired `config.parameters` and stored `Start.parameters` are rejected.
+
+The shared low-level operation is `{ kind: "flow.input-defs.set", before: Port[], value: Port[] }`. It replaces the complete definition list with an optimistic before-value check; shared editors compile reference renames into the same batch. Workflow definition search hits omit `node`; diagnostics identify `inputDefs` fields without attributing them to a node.
 
 Run requests retain `trigger: { nodeId, outputs }`. Start rejects unknown parameters and missing non-nullable parameters, validates every supplied value, and normalizes omitted nullable parameters to `null`. This complete normalized map supplies the Start execution result and Run admission snapshot. The idempotency request digest continues to use the original submitted map, so retries must preserve the original request body. Other Trigger output contracts retain their existing validation. Legacy `{ kind: "manual", name, description?, icon? }` Revisions remain readable and executable as Draft tests with `{}` outputs; new writes use Start. An empty-parameter Start preserves the old click behavior. Cron declares a `scheduledAt` string port. Poll and Integration declare outputs through their definitions. Explicit outputs can simulate other Triggers only through Draft Run requests. `POST /v1/runs` accepts only Start nodes in the current Publication's pinned Revision; Flows without Start cannot be invoked through this endpoint. Other Triggers create Live Runs through their event-source admission paths. Existing accepted Runs retain their idempotent replay behavior.
 

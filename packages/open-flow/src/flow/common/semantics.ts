@@ -8,12 +8,12 @@ import { connectionUsage } from './connectionUsage.ts'
 export { matchesTriggerOutputs, normalizeTriggerOutputs, triggerOutputDefinitions, triggerOutputPorts } from '../../trigger/common/contract.ts'
 import type { EngineContract } from '../../execution/common/engineContract.ts'
 import type { RuntimeProgram } from '../../execution/common/runtime.ts'
-import type { ConnectorActionCapability, ConnectorCapability, Graph, InputMapping, JsonValue, RevisionContent, SchemaMismatch } from './change.ts'
+import type { ConnectorActionCapability, ConnectorCapability, Graph, InputMapping, JsonValue, Port, RevisionContent, SchemaMismatch } from './change.ts'
 
 import { findEngineContract } from '../../execution/common/engineContract.ts'
 import { agentConfigIssues } from './agent.ts'
 import { decodeConnectorCapabilities } from './change.ts'
-import { canonicalJsonBytes, canonicalModule, canonicalRevisionGraph, digestBytes } from './encoding.ts'
+import { canonicalJsonBytes, canonicalPorts, canonicalModule, canonicalRevisionGraph, digestBytes } from './encoding.ts'
 import { nodeInputPorts, validateFlowGraph } from './graph.ts'
 import { inputValue } from './inputValue.ts'
 import { compareDiagnostics, validateModuleGraph } from './modules.ts'
@@ -97,6 +97,9 @@ export async function flowClosure(content: RevisionContent): Promise<SemanticClo
   const { bindings, modules } = dependencies
 
   const bytes = canonicalJsonBytes({
+    ...(Object.values(content.document.graph.nodes).some((node) => node.kind == 'start')
+      ? { inputDefs: canonicalPorts(content.document.inputDefs ?? []) }
+      : {}),
     bindings: Object.fromEntries([...bindings].toSorted().map((id) => [id, content.document.bindings[id] ?? null])),
     graph: canonicalRevisionGraph(content, content.document.graph),
     kind: 'open-flow-semantic-closure',
@@ -164,7 +167,7 @@ export function validRunTrigger(revision: RevisionContent, value: unknown): bool
   if (Object.keys(trigger).some((key) => key != 'nodeId' && key != 'outputs') || typeof trigger.nodeId != 'string' || !Object.hasOwn(trigger, 'outputs'))
     return false
   const node = revision.document.graph.nodes[trigger.nodeId]
-  return node != null && !('inputs' in node) && matchesTriggerOutputs(node, trigger.outputs)
+  return node != null && !('inputs' in node) && matchesTriggerOutputs(node, trigger.outputs, revision.document.inputDefs ?? [])
 }
 
 export function normalizeRunTrigger(
@@ -176,7 +179,7 @@ export function normalizeRunTrigger(
   if (Object.keys(trigger).some((key) => key != 'nodeId' && key != 'outputs') || typeof trigger.nodeId != 'string' || !Object.hasOwn(trigger, 'outputs')) return
   const node = revision.document.graph.nodes[trigger.nodeId]
   if (node == null || 'inputs' in node) return
-  const outputs = normalizeTriggerOutputs(node, trigger.outputs)
+  const outputs = normalizeTriggerOutputs(node, trigger.outputs, revision.document.inputDefs ?? [])
   return outputs == null ? undefined : { nodeId: trigger.nodeId, outputs }
 }
 
@@ -296,6 +299,7 @@ export async function validateFlow(revision: RevisionContent, engine: EngineCont
 }
 
 export interface PreparedFlow {
+  readonly inputDefs: readonly Port[]
   readonly closureDigest: string
   readonly engineContract: string
   readonly graph: Graph
@@ -344,7 +348,14 @@ function runRevision(revision: RevisionContent, triggerId: string): RevisionCont
           inputs: inputs(nodeId, node.inputs),
         }
   }
-  const content = { ...revision, document: { ...revision.document, graph: { nodes, edges: graph.edges.filter((edge) => reachable.has(edge.source)) } } }
+  const content = {
+    ...revision,
+    document: {
+      ...revision.document,
+      inputDefs: Object.values(nodes).some((node) => node.kind == 'start') ? (revision.document.inputDefs ?? []) : [],
+      graph: { nodes, edges: graph.edges.filter((edge) => reachable.has(edge.source)) },
+    },
+  }
   const { bindings } = flowDependencies(content)
   return {
     ...content,
@@ -384,6 +395,7 @@ export async function prepareFlow(revision: RevisionContent, engineContract: str
     flow: {
       closureDigest: closure.digest,
       engineContract,
+      inputDefs: revision.document.inputDefs ?? [],
       graph: revision.document.graph,
       modules: Object.fromEntries([...closure.dependencies.modules].toSorted().map((id) => [id, revision.modules[id]!])),
     },

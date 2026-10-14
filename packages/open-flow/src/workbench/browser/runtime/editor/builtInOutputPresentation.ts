@@ -82,8 +82,8 @@ function withDescriptions(ports: readonly Port[], descriptionFor: (handle: strin
 }
 
 /** Adds localized UI copy to built-in Trigger outputs without changing their runtime definitions. */
-export function presentBuiltInTriggerOutputs(trigger: TriggerNode, t: TFunction): readonly Port[] {
-  const ports = triggerOutputDefinitions(trigger)
+export function presentBuiltInTriggerOutputs(trigger: TriggerNode, t: TFunction, inputDefs: readonly Port[]): readonly Port[] {
+  const ports = triggerOutputDefinitions(trigger, inputDefs)
   switch (trigger.kind) {
     case 'error':
       return withDescriptions(ports, (handle) => t(`errorWorkflow.${handle}`))
@@ -123,7 +123,7 @@ function presentedBuiltInOutputs(node: GraphNode, t: TFunction): readonly Port[]
     case 'error':
     case 'cron':
     case 'webhook':
-      return presentBuiltInTriggerOutputs(node, t)
+      return presentBuiltInTriggerOutputs(node, t, [])
     default:
       return
   }

@@ -46,7 +46,7 @@ import {
   repairNodeNames,
   updateTriggerConfig,
   updateTriggerSchedule,
-  updateTrigger,
+  updateFlowInputDefs,
   setConnectorConnection as changeConnectorConnection,
   setCodeActions as changeCodeActions,
   setTriggerConnection as changeTriggerConnection,
@@ -732,17 +732,11 @@ export class WorkspaceStore {
     return (await this.#editDraft(resetInputValues(revision.revision.content, nodeId, handles))) != null
   }
 
-  public async saveStartParameters(triggerId: string, parameters: readonly Port[], deletion?: PropertyDeletion): Promise<boolean> {
+  public async saveFlowInputDefs(inputDefs: readonly Port[], deletion?: PropertyDeletion): Promise<boolean> {
     const revision = this.$.revision.value
-    const trigger = revision?.trigger(triggerId)
-    if (revision == null || trigger?.kind !== 'start') return false
-    const changes = updateTrigger(revision.revision.content, triggerId, {
-      kind: 'start',
-      name: trigger.name,
-      description: trigger.description,
-      parameters,
-    })
-    return changes != null && (await this.#editDraft(changes, deletion)) != null
+    if (revision == null) return false
+    const changes = updateFlowInputDefs(revision.revision.content, inputDefs)
+    return (await this.#editDraft(changes, deletion)) != null
   }
 
   public async resetTriggerConfig(triggerId: string, names?: readonly string[]): Promise<boolean> {

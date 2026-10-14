@@ -121,7 +121,7 @@ When a pending decision is detected, wait commands return the Run detail’s `wa
 ### Online entries
 
 `live FLOW_ID_OR_NAME [--json]` returns the current Publication, Flow enablement,
-and all online entries, including Start parameters and Webhook request fields. JSON is
+and all online entries, including top-level workflow `inputDefs` and Webhook request fields. JSON is
 `{ kind: 'flow.live', live: LiveDetails, version: 1 }`. An unpublished Flow returns
 `status: 'not-published'` with no entries and exit code 0. Flow lists remain summaries.
 The command accepts neither a node selector nor a historical publication.

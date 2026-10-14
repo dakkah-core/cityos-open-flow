@@ -286,7 +286,7 @@ selection rules come from the selected node contract.
 | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | Provider read or write          | `connector`: discovered `action`, optional `connectionId`, named input bindings.                                        |
 | Provider event                  | `poll` or `integration`: discovered `key`, Connection and any static inputs; polling also has a schedule.               |
-| Manual, HTTP or scheduled entry | `start`, `webhook`, `cron`: Start `config.parameters`, HTTP body fields, or schedule.                                   |
+| Manual, HTTP or scheduled entry | `start`, `webhook`, `cron`: workflow `inputDefs`, HTTP body fields, or schedule.                                        |
 | Workflow failure handler        | `error`: published upstream Flows' automatic Run failures; not a node-level catch or a handler for manual Run failures. |
 | Fixed HTTP operation            | `openapi`: an OpenAPI source, path and method; resolved authentication choices and ports appear in node details.        |
 | Reusable constants              | `value`: named JSON values and optional output constraints.                                                             |
@@ -319,7 +319,7 @@ The Start node is selected automatically even when other Triggers exist; use `--
 overrides; command help gives their shape. Live Runs use `--source live` and
 `--expected-publication` instead of `--expected-revision`.
 
-Declare a Start entry with business fields, for example `config: {"parameters":{"message":{"schema":{"type":"string"},"nullable":false},"note":{"schema":{"type":"string"},"nullable":true}}}`. Downstream nodes bind these fields with `{ "kind": "output", "node": "$start", "port": "message" }` and separate execution edges. Call it with `--outputs '{"message":"Hello"}'`; note becomes null. REST and MCP Run calls use the same map in `trigger.outputs`. Opening an editable legacy Flow upgrades its old Manual node to an empty-parameter Start in a new Draft Revision; its published Live contract is unchanged until publishing.
+Declare workflow inputs with `{"op":"flow.update","set":{"inputDefs":{"message":{"schema":{"type":"string"},"nullable":false},"note":{"schema":{"type":"string"},"nullable":true}}}}`, and create a Start node with empty config. The `flow_read` outline returns `data.inputDefs` directly; `flow_live` returns the published contract in top-level `inputDefs`. Use workflow-level `clear` paths such as `["inputDefs","message","description"]` for field removal or `["inputDefs"]` to clear the definitions. Downstream nodes bind these fields with `{ "kind": "output", "node": "$start", "port": "message" }` and separate execution edges. Call it with `--outputs '{"message":"Hello"}'`; note becomes null. REST and MCP Run calls use the same map in `trigger.outputs`. Opening an editable legacy Flow upgrades its old Manual node to a Start while preserving omitted workflow inputs in a new Draft Revision; its published Live contract is unchanged until publishing.
 
 ### Inspect or continue an existing Run
 

@@ -183,7 +183,7 @@ export function addNode(revision: RevisionView, nodeId: string, intent: AddNodeI
       changes = createBuiltinTrigger(nodeId, { kind: 'error', name: intent.name })
       break
     case 'start':
-      changes = createBuiltinTrigger(nodeId, { kind: 'start', name: intent.name, parameters: [] })
+      changes = createBuiltinTrigger(nodeId, { kind: 'start', name: intent.name })
       break
     case 'webhook':
       changes = createBuiltinTrigger(nodeId, { bodyFields: [], kind: 'webhook', method: 'POST', name: intent.name })

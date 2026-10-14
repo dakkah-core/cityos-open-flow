@@ -70,14 +70,14 @@ const cronOutputs: readonly Port[] = [
   },
 ]
 
-export function triggerOutputDefinitions(trigger: TriggerNode): readonly Port[] {
+export function triggerOutputDefinitions(trigger: TriggerNode, inputDefs: readonly Port[]): readonly Port[] {
   switch (trigger.kind) {
     case 'error':
       return errorOutputs
     case 'manual':
       return []
     case 'start':
-      return trigger.parameters
+      return inputDefs
     case 'cron':
       return cronOutputs
     case 'poll':
@@ -101,13 +101,13 @@ export function triggerOutputDefinitions(trigger: TriggerNode): readonly Port[] 
   }
 }
 
-export function triggerOutputPorts(trigger: TriggerNode): Readonly<Record<string, PortDefinition>> {
-  return Object.fromEntries(triggerOutputDefinitions(trigger).map(({ handle, ...port }) => [handle, port]))
+export function triggerOutputPorts(trigger: TriggerNode, inputDefs: readonly Port[]): Readonly<Record<string, PortDefinition>> {
+  return Object.fromEntries(triggerOutputDefinitions(trigger, inputDefs).map(({ handle, ...port }) => [handle, port]))
 }
 
-export function matchesTriggerOutputs(trigger: TriggerNode, outputs: unknown): outputs is Readonly<Record<string, JsonValue>> {
+export function matchesTriggerOutputs(trigger: TriggerNode, outputs: unknown, inputDefs: readonly Port[]): outputs is Readonly<Record<string, JsonValue>> {
   if (!isJsonObject(outputs)) return false
-  const ports = triggerOutputDefinitions(trigger)
+  const ports = triggerOutputDefinitions(trigger, inputDefs)
   return (
     new Set(ports.map((port) => port.handle)).size === ports.length &&
     Object.keys(outputs).length === ports.length &&
@@ -119,14 +119,14 @@ export function matchesTriggerOutputs(trigger: TriggerNode, outputs: unknown): o
 }
 
 /** Resolve caller-supplied Start parameters into the complete output snapshot used by execution. */
-export function normalizeTriggerOutputs(trigger: TriggerNode, outputs: unknown): Readonly<Record<string, JsonValue>> | undefined {
+export function normalizeTriggerOutputs(trigger: TriggerNode, outputs: unknown, inputDefs: readonly Port[]): Readonly<Record<string, JsonValue>> | undefined {
   if (!isJsonObject(outputs)) return
   const normalized =
     trigger.kind == 'start'
       ? {
           ...outputs,
-          ...Object.fromEntries(trigger.parameters.filter((port) => port.nullable && !Object.hasOwn(outputs, port.handle)).map((port) => [port.handle, null])),
+          ...Object.fromEntries(inputDefs.filter((port) => port.nullable && !Object.hasOwn(outputs, port.handle)).map((port) => [port.handle, null])),
         }
       : outputs
-  return matchesTriggerOutputs(trigger, normalized) ? normalized : undefined
+  return matchesTriggerOutputs(trigger, normalized, inputDefs) ? normalized : undefined
 }

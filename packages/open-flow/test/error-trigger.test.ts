@@ -50,9 +50,9 @@ describe('Flow Error contract', () => {
   it('validates the complete error context', () => {
     const trigger = content.document.graph.nodes.error!
     if ('inputs' in trigger) throw new Error('Expected a Trigger')
-    expect(matchesTriggerOutputs(trigger, sampleErrorOutputs)).toBe(true)
-    expect(matchesTriggerOutputs(trigger, { ...sampleErrorOutputs, error: { message: 'Missing code' } })).toBe(false)
-    expect(matchesTriggerOutputs(trigger, { ...sampleErrorOutputs, execution: { ...(sampleErrorOutputs.execution as object), status: 'completed' } })).toBe(
+    expect(matchesTriggerOutputs(trigger, sampleErrorOutputs, [])).toBe(true)
+    expect(matchesTriggerOutputs(trigger, { ...sampleErrorOutputs, error: { message: 'Missing code' } }, [])).toBe(false)
+    expect(matchesTriggerOutputs(trigger, { ...sampleErrorOutputs, execution: { ...(sampleErrorOutputs.execution as object), status: 'completed' } }, [])).toBe(
       false,
     )
   })

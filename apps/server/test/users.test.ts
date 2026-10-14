@@ -200,7 +200,7 @@ it('rejects another owner’s run, publication and error subscription through RE
   const headers = await f.login(account.user.email, account.password)
   const flow = await f.flow(headers)
   const changed = await f.service.control.changeDraft(account.user.userId, flow.flowId, flow.draftRevisionId, [
-    { kind: 'graph.node.create', nodeId: 'start', node: { kind: 'start', name: 'Start', parameters: [] } },
+    { kind: 'graph.node.create', nodeId: 'start', node: { kind: 'start', name: 'Start' } },
   ])
   const revisionId = changed.revision.revisionId
   const operation = await f.service.control.publishFlow(account.user.userId, flow.flowId, revisionId, currentEngineContract, null, 'publish')
@@ -552,7 +552,7 @@ it('publishes and runs with the Flow owner’s variables without falling back to
   const headers = await f.login(account.user.email, account.password)
   const flow = await f.flow(headers)
   const changed = await f.service.control.changeDraft(account.user.userId, flow.flowId, flow.draftRevisionId, [
-    { kind: 'graph.node.create', nodeId: 'start', node: { kind: 'start', name: 'Start', parameters: [] } },
+    { kind: 'graph.node.create', nodeId: 'start', node: { kind: 'start', name: 'Start' } },
     { kind: 'binding.create', bindingId: 'token', binding: { kind: 'variable', target: 'TOKEN' } },
     { kind: 'module.create', moduleId: 'main', module: { imports: [], name: 'Main', source: 'export default ({ token }) => ({ token })' } },
     {

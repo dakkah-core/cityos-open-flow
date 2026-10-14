@@ -335,7 +335,7 @@ export class IntegrationRuntime {
             catch: (error) => error,
           })
           const outputs = received.outputs
-          if (!matchesTriggerOutputs(target.trigger, outputs)) throw new Error('Invalid Integration Trigger outputs.')
+          if (!matchesTriggerOutputs(target.trigger, outputs, [])) throw new Error('Invalid Integration Trigger outputs.')
           const requestDigest = yield* Effect.tryPromise({
             try: () =>
               digestBytes(

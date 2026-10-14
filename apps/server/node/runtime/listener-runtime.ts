@@ -330,7 +330,7 @@ export class ListenerRuntime {
       let event: { occurrenceId: string; outputs: Readonly<Record<string, JsonValue>>; requestDigest: string } | undefined
       if (page.outputs != null) {
         const outputs = page.outputs
-        if (!matchesTriggerOutputs(trigger, outputs)) throw new Error('Invalid Integration Trigger outputs.')
+        if (!matchesTriggerOutputs(trigger, outputs, [])) throw new Error('Invalid Integration Trigger outputs.')
         const occurrenceId = yield* Effect.tryPromise({
           try: () => integrationOccurrenceId(target.bindingId, target.runtimeVersion, definition.snapshot.key, page.dedupeKey),
           catch: (error) => error,
@@ -534,7 +534,7 @@ export class ListenerRuntime {
           return true
         })
         const outputs = fresh.length == 0 ? null : definition.buildOutputs(fresh.map((item) => item.event))
-        if (outputs != null && !matchesTriggerOutputs(trigger, outputs)) throw new Error('Invalid Poll Trigger outputs.')
+        if (outputs != null && !matchesTriggerOutputs(trigger, outputs, [])) throw new Error('Invalid Poll Trigger outputs.')
         const requestDigest =
           outputs == null
             ? null

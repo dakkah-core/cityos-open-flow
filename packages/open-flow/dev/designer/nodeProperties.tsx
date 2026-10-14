@@ -174,7 +174,7 @@ function contentFor(fixture: Fixture): RevisionContent {
   return {
     modelVersion: currentFlowModelVersion,
     modules: { module: { name: 'Prepare report', imports: [], source: 'export default (inputs) => ({ report: inputs.message, count: inputs.count })' } },
-    document: { bindings: {}, ...fixture.content, graph: { nodes: { sample: fixture.node }, edges: [] } },
+    document: { bindings: {}, ...fixture.content, inputDefs: [], graph: { nodes: { sample: fixture.node }, edges: [] } },
   }
 }
 

@@ -139,9 +139,7 @@ function addValueNode(harness: ControlApiConformanceHarness, flowId: string, rev
 async function addStartTrigger(harness: ControlApiConformanceHarness, flowId: string, revisionId: string): Promise<string> {
   return changedRevisionId(
     await json(
-      await changeRequest(harness, flowId, revisionId, [
-        { kind: 'graph.node.create', node: { kind: 'start', name: 'Start', parameters: [] }, nodeId: 'start' },
-      ]),
+      await changeRequest(harness, flowId, revisionId, [{ kind: 'graph.node.create', node: { kind: 'start', name: 'Start' }, nodeId: 'start' }]),
       200,
       'Add Start node',
     ),
@@ -324,16 +322,19 @@ export const controlApiConformanceCases: readonly ControlApiConformanceCase[] = 
         requestId: 'start-parameters-create',
         edits: [
           {
-            op: 'node.add',
-            as: 'start',
-            type: 'start',
-            name: 'Start',
-            config: {
-              parameters: {
+            op: 'flow.update',
+            set: {
+              inputDefs: {
                 message: { schema: { type: 'string' }, nullable: false, description: 'Original' },
                 note: { schema: { type: 'string' }, nullable: true },
               },
             },
+          },
+          {
+            op: 'node.add',
+            as: 'start',
+            type: 'start',
+            name: 'Start',
           },
         ],
       })
@@ -341,17 +342,14 @@ export const controlApiConformanceCases: readonly ControlApiConformanceCase[] = 
       const changed = await api.editAuthoring(flow.flowId, {
         baseRevision: created.revision,
         requestId: 'start-parameters-update',
-        edits: [{ op: 'node.update', node: nodeId, set: { config: { parameters: { message: { description: 'Call message' } } } } }],
+        edits: [{ op: 'flow.update', set: { inputDefs: { message: { description: 'Call message' } } } }],
       })
-      const details = await api.readAuthoring(flow.flowId, { nodes: [nodeId] })
-      const node = record(details.data.nodes?.[0], 'Start details')
+      const details = await api.readAuthoring(flow.flowId)
       equal(
-        node.config,
+        details.data.inputDefs,
         {
-          parameters: {
-            message: { schema: { type: 'string' }, nullable: false, description: 'Call message' },
-            note: { schema: { type: 'string' }, nullable: true },
-          },
+          message: { schema: { type: 'string' }, nullable: false, description: 'Call message' },
+          note: { schema: { type: 'string' }, nullable: true },
         },
         'Local parameter update preserves the contract',
       )
@@ -368,9 +366,9 @@ export const controlApiConformanceCases: readonly ControlApiConformanceCase[] = 
       equal(await json(await run({ message: 'Hello' }, 'start-call'), 200, 'Replay Start call'), admitted, 'Stable Start admission')
       await error(await run({ message: 'Hello', note: null }, 'start-call'), 409, 'run.conflict', 'Preserve original request identity before normalization')
       await json(await run({ message: 'Hello', note: null }, 'start-explicit-null'), 202, 'Admit explicit null')
-      const old = await api.readAuthoring(flow.flowId, { nodes: [nodeId], revision: created.revision })
+      const old = await api.readAuthoring(flow.flowId, { revision: created.revision })
       equal(
-        record(record(old.data.nodes?.[0], 'Old Start').config, 'Old config').parameters,
+        old.data.inputDefs,
         {
           message: { schema: { type: 'string' }, nullable: false, description: 'Original' },
           note: { schema: { type: 'string' }, nullable: true },

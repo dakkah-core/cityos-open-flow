@@ -66,8 +66,8 @@ describe('built-in output presentation', () => {
 
   it.each(uiLanguages)('localizes scheduledAt for %s without adding copy to its runtime definition', (language) => {
     const trigger: TriggerNode = { kind: 'cron', name: 'Schedule', cronTimes: [] }
-    const runtime = triggerOutputDefinitions(trigger)
-    const presented = presentBuiltInTriggerOutputs(trigger, createI18n(language).t)
+    const runtime = triggerOutputDefinitions(trigger, [])
+    const presented = presentBuiltInTriggerOutputs(trigger, createI18n(language).t, [])
 
     expect(runtime[0]?.description).toBeUndefined()
     expect(presented[0]?.description).toBeTruthy()
@@ -76,8 +76,8 @@ describe('built-in output presentation', () => {
 
   it.each(uiLanguages)('localizes Webhook outputs for %s without adding copy to their runtime definitions', (language) => {
     const trigger: TriggerNode = { kind: 'webhook', method: 'POST', name: 'Webhook', bodyFields: [] }
-    const runtime = triggerOutputDefinitions(trigger)
-    const presented = presentBuiltInTriggerOutputs(trigger, createI18n(language).t)
+    const runtime = triggerOutputDefinitions(trigger, [])
+    const presented = presentBuiltInTriggerOutputs(trigger, createI18n(language).t, [])
 
     expect(runtime.every((port) => port.description == null)).toBe(true)
     expect(presented.map((port) => port.handle)).toEqual(['headers', 'query', 'body', 'webhookUrl'])
@@ -86,7 +86,7 @@ describe('built-in output presentation', () => {
 
   it('keeps body and its description out of GET Webhook outputs', () => {
     const trigger: TriggerNode = { kind: 'webhook', method: 'GET', name: 'Webhook', bodyFields: [] }
-    const presented = presentBuiltInTriggerOutputs(trigger, createI18n('zh-CN').t)
+    const presented = presentBuiltInTriggerOutputs(trigger, createI18n('zh-CN').t, [])
 
     expect(presented.map((port) => port.handle)).toEqual(['headers', 'query', 'webhookUrl'])
     expect(presented.every((port) => port.description != null)).toBe(true)

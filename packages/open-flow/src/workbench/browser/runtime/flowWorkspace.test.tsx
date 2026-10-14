@@ -146,7 +146,7 @@ function renderWorkspace(busy?: string, withTrigger = true, invalid = false, sel
         draft: value({
           flowId: 'flow',
           revisionId: 'revision',
-          content: { document: { bindings: {}, graph: { edges: [], nodes: withTrigger ? { start: { kind: 'start', name: 'Start', parameters: [] } } : {} } } },
+          content: { document: { bindings: {}, graph: { edges: [], nodes: withTrigger ? { start: { kind: 'start', name: 'Start' } } : {} } } },
         }),
         moduleEditor: value(undefined),
         flow: value({ flowId: 'flow', name: 'Example flow' }),

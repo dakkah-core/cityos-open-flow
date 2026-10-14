@@ -36,19 +36,22 @@ export async function reference(call: ToolCall, id: string, flowId: string, stag
     const accounts = await call('connector_connections', { flowId, serviceId: archive.serviceId })
     await call('flow_schema', { flowId, action: archive.actionId })
     const before = await read()
-    const created = await submit(before.revision, [
+    await submit(before.revision, [
       {
-        op: 'node.add',
-        as: 'start',
-        type: 'start',
-        name: 'Start',
-        config: {
-          parameters: {
+        op: 'flow.update',
+        set: {
+          inputDefs: {
             message: stringPort,
             amount: { schema: { type: 'number' }, nullable: false, description: 'Amount' },
             note: { schema: { type: 'string' }, nullable: true },
           },
         },
+      },
+      {
+        op: 'node.add',
+        as: 'start',
+        type: 'start',
+        name: 'Start',
       },
       {
         op: 'node.add',
@@ -74,9 +77,8 @@ export async function reference(call: ToolCall, id: string, flowId: string, stag
       { op: 'edge.connect', source: '$start', target: '$combine' },
       { op: 'edge.connect', source: '$combine', target: '$archive' },
     ])
-    const start = (created.nodes as Record<string, string>).start!
-    const details = await read([start])
-    await submit(details.revision, [{ op: 'node.update', node: start, set: { config: { parameters: { amount: { description: 'Invoice total' } } } } }])
+    const details = await read()
+    await submit(details.revision, [{ op: 'flow.update', set: { inputDefs: { amount: { description: 'Invoice total' } } } }])
   } else if (id == 'connector-responses') {
     const catalog = await call('connector_search', { flowId, query: 'Read' })
     const available = catalog.actions as { actionId: string; name: string; serviceId: string }[]

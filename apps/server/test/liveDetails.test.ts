@@ -16,14 +16,15 @@ it('reads authorized published entries independently of edits and unreadable Dra
     const flowId = created.flow.flowId
     const app = createServerApp(service, { resolveControlActor: (request) => request.headers.get('x-actor') ?? undefined })
     const client = new ControlClient(async (route, init) => app.request(route, { ...init, headers: { 'x-actor': 'operator' } }))
-    expect(await client.getLiveDetails(flowId)).toEqual({ flowId, publication: null, status: 'not-published', entries: [], version: 1 })
+    expect(await client.getLiveDetails(flowId)).toEqual({ flowId, inputDefs: null, publication: null, status: 'not-published', entries: [], version: 1 })
     const saved = await service.control.changeDraft('operator', flowId, created.flow.draftRevisionId, [
+      { kind: 'flow.input-defs.set', before: [], value: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: false }] },
       {
         kind: 'graph.node.create',
         nodeId: 'webhook',
         node: { kind: 'webhook', name: 'Online hook', method: 'POST', bodyFields: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: false }] },
       },
-      { kind: 'graph.node.create', nodeId: 'manual', node: { kind: 'start', name: 'Start', parameters: [] } },
+      { kind: 'graph.node.create', nodeId: 'manual', node: { kind: 'start', name: 'Start' } },
       { kind: 'graph.node.create', nodeId: 'cron', node: { kind: 'cron', name: 'Schedule', cronTimes: [{ type: 'every', unit: 'hour', value: 1 }] } },
     ])
     const op = await service.control.publishFlow('operator', flowId, saved.revision.revisionId, 'open-flow-engine/v5', null, 'publish')
@@ -31,6 +32,15 @@ it('reads authorized published entries independently of edits and unreadable Dra
     const done = service.control.getPublishOperation(flowId, op.operationId)
     if (done.status != 'succeeded') throw new Error('Publication did not succeed')
     const current = await client.getLiveDetails(flowId)
+    expect(current.inputDefs).toEqual({ message: { schema: { type: 'string' }, nullable: false } })
+    expect(current.entries.find((entry) => entry.type == 'start')?.config).toEqual({})
+    const changedInputs = await service.control.editAuthoring('operator', flowId, {
+      baseRevision: saved.revision.revisionId,
+      requestId: 'input-defs-update',
+      edits: [{ op: 'flow.update', set: { inputDefs: { message: { description: 'Draft only' } } } }],
+    })
+    expect(service.control.readAuthoring(flowId).data.inputDefs?.message).toHaveProperty('description', 'Draft only')
+    expect((await client.getLiveDetails(flowId)).inputDefs).toEqual(current.inputDefs)
     expect(current.publication?.publicationId).toBe(done.publicationId)
     expect(current.entries.find((entry) => entry.type == 'webhook')).toMatchObject({
       name: 'Online hook',
@@ -43,7 +53,7 @@ it('reads authorized published entries independently of edits and unreadable Dra
       status: 'suspended',
       entries: expect.arrayContaining([expect.objectContaining({ type: 'webhook', binding: expect.objectContaining({ health: 'healthy' }) })]),
     })
-    const changed = await service.control.changeDraft('operator', flowId, saved.revision.revisionId, [{ kind: 'graph.node.delete', nodeId: 'webhook' }])
+    const changed = await service.control.changeDraft('operator', flowId, changedInputs.revision, [{ kind: 'graph.node.delete', nodeId: 'webhook' }])
     expect((await client.getLiveDetails(flowId)).entries.some((entry) => entry.nodeId == 'webhook')).toBe(true)
     const second = await service.control.publishFlow('operator', flowId, changed.revision.revisionId, 'open-flow-engine/v5', done.publicationId, 'republish')
     await service.tickMaintenance()

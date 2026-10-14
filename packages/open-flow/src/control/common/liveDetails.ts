@@ -3,7 +3,7 @@ import type { Publication, TriggerBinding } from './api.ts'
 
 import { z } from 'zod'
 import { webhookSupportsBody } from '../../flow/common/webhookMethod.ts'
-import { authoringConfigurations } from './authoringSchema.ts'
+import { flowInputFieldsView, authoringConfigurations } from './authoringSchema.ts'
 import { triggerConfiguration } from './authoringTriggers.ts'
 import { invalidResponse, record, string } from './decoding.ts'
 import { publication } from './publicationDecoders.ts'
@@ -30,8 +30,14 @@ const entrySchema = z.discriminatedUnion('type', [
 
 export type LiveEntry = z.infer<typeof entrySchema>
 export type LiveDetails = { readonly flowId: string; readonly version: 1 } & (
-  | { readonly publication: null; readonly status: 'not-published'; readonly entries: readonly [] }
-  | { readonly publication: Publication; readonly status: 'runnable' | 'suspended'; readonly enabled: boolean; readonly entries: readonly LiveEntry[] }
+  | { readonly inputDefs: null; readonly publication: null; readonly status: 'not-published'; readonly entries: readonly [] }
+  | {
+      readonly inputDefs: z.infer<typeof flowInputFieldsView>
+      readonly publication: Publication
+      readonly status: 'runnable' | 'suspended'
+      readonly enabled: boolean
+      readonly entries: readonly LiveEntry[]
+    }
 )
 
 /** Project only the selected published definition and its current bindings. */
@@ -74,16 +80,20 @@ export function decodeLiveDetails(value: unknown): LiveDetails {
   const flowId = string(source.flowId)
   if (source.version != 1 || !Array.isArray(source.entries)) return invalidResponse()
   if (source.publication === null) {
-    if (source.status != 'not-published' || source.entries.length != 0 || Object.hasOwn(source, 'enabled')) return invalidResponse()
-    return { flowId, publication: null, status: 'not-published', entries: [], version: 1 }
+    if (source.inputDefs !== null || source.status != 'not-published' || source.entries.length != 0 || Object.hasOwn(source, 'enabled'))
+      return invalidResponse()
+    return { flowId, inputDefs: null, publication: null, status: 'not-published', entries: [], version: 1 }
   }
   const current = publication(source.publication)
   const status = source.status
   if (current.flowId != flowId || typeof source.enabled != 'boolean') return invalidResponse()
   if (status != 'runnable' && status != 'suspended') return invalidResponse()
   if (!source.enabled && source.status == 'runnable') return invalidResponse()
+  const inputDefs = flowInputFieldsView.safeParse(source.inputDefs)
+  if (!inputDefs.success) return invalidResponse()
   return {
     flowId,
+    inputDefs: inputDefs.data,
     publication: current,
     status: status as 'runnable' | 'suspended',
     enabled: source.enabled,

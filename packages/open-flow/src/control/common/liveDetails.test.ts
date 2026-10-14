@@ -4,6 +4,7 @@ import type { Publication, TriggerBinding } from './api.ts'
 import { expect, it } from 'vitest'
 import { currentFlowModelVersion } from '../../flow/common/change.ts'
 import { ControlClient } from './api.ts'
+import { flowInputDefinitions } from './authoringFields.ts'
 import { decodeLiveDetails, liveEntries } from './liveDetails.ts'
 
 const publication: Publication = {
@@ -21,7 +22,7 @@ const publication: Publication = {
   version: 1,
 }
 const nodes: Record<string, TriggerNode> = {
-  start: { kind: 'start', name: 'Start', parameters: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: false }] },
+  start: { kind: 'start', name: 'Start' },
   webhook: {
     kind: 'webhook',
     name: 'Receive',
@@ -71,7 +72,11 @@ const nodes: Record<string, TriggerNode> = {
     },
   },
 }
-const content: RevisionContent = { modelVersion: currentFlowModelVersion, modules: {}, document: { bindings: {}, graph: { nodes, edges: [] } } }
+const content: RevisionContent = {
+  modelVersion: currentFlowModelVersion,
+  modules: {},
+  document: { inputDefs: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: false }], bindings: {}, graph: { nodes, edges: [] } },
+}
 const bindings: TriggerBinding[] = Object.entries(nodes).flatMap(([triggerNodeId, node]) =>
   node.kind == 'start' || node.kind == 'manual'
     ? []
@@ -91,14 +96,22 @@ const bindings: TriggerBinding[] = Object.entries(nodes).flatMap(([triggerNodeId
       ],
 )
 function details() {
-  return { flowId: publication.flowId, publication, enabled: true, status: 'runnable', entries: liveEntries(content, publication, bindings), version: 1 }
+  return {
+    inputDefs: flowInputDefinitions(content),
+    flowId: publication.flowId,
+    publication,
+    enabled: true,
+    status: 'runnable',
+    entries: liveEntries(content, publication, bindings),
+    version: 1,
+  }
 }
 
 it('projects six published entry types with business fields and independent binding state', () => {
   const result = decodeLiveDetails(details())
   expect(result.entries).toHaveLength(6)
   expect(result.entries.find((entry) => entry.type == 'start')).not.toHaveProperty('binding')
-  expect(result.entries.find((entry) => entry.type == 'start')).toHaveProperty('config.parameters.message', { schema: { type: 'string' }, nullable: false })
+  expect(result).toHaveProperty('inputDefs.message', { schema: { type: 'string' }, nullable: false })
   expect(result.entries.find((entry) => entry.type == 'webhook')).toMatchObject({
     config: {
       method: 'POST',
@@ -170,7 +183,7 @@ it('reads the encoded public endpoint and rejects mixed publications and malform
 })
 
 it('returns an unpublished view without an invented enable switch', () => {
-  const empty = { flowId: publication.flowId, publication: null, status: 'not-published', entries: [], version: 1 }
+  const empty = { flowId: publication.flowId, publication: null, inputDefs: null, status: 'not-published', entries: [], version: 1 }
   expect(decodeLiveDetails(empty)).toEqual(empty)
   expect(() => decodeLiveDetails({ ...empty, enabled: false })).toThrow()
 })
@@ -197,9 +210,21 @@ it('reads legacy published Manual entries without creating a runtime binding', (
   const legacy: RevisionContent = {
     modelVersion: 6,
     modules: {},
-    document: { bindings: {}, graph: { nodes: { original: { kind: 'manual', name: 'Original' } }, edges: [] } },
+    document: {
+      inputDefs: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: false }],
+      bindings: {},
+      graph: { nodes: { original: { kind: 'manual', name: 'Original' } }, edges: [] },
+    },
   }
   const entries = liveEntries(legacy, publication, [])
   expect(entries).toEqual([{ nodeId: 'original', type: 'manual', name: 'Original', config: {} }])
   expect(decodeLiveDetails({ ...details(), entries }).entries).toEqual(entries)
 })
+
+it.each([undefined, null, { message: { schema: { type: 'string' } } }, { message: { schema: { type: 'string' }, nullable: false, default: 'unsupported' } }])(
+  'reports malformed workflow input definitions through the public response error contract: %j',
+  async (inputDefs) => {
+    const client = new ControlClient(async () => Response.json({ ...details(), inputDefs }))
+    await expect(client.getLiveDetails(publication.flowId)).rejects.toMatchObject({ code: 'response.invalid', status: 502 })
+  },
+)

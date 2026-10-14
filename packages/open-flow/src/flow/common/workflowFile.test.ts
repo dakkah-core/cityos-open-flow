@@ -203,7 +203,11 @@ it.each([2, 4, 5, 6] as const)('round trips supported normalized Revision model 
   const file: WorkflowFile = {
     kind: 'open-flow-workflow',
     version: 1,
-    content: { modelVersion, modules: {}, document: { bindings: {}, graph: { nodes: { start: { kind: 'manual', name: 'Start' } }, edges: [] } } },
+    content: {
+      modelVersion,
+      modules: {},
+      document: { bindings: {}, graph: { nodes: { start: { kind: 'manual', name: 'Start' } }, edges: [] } },
+    },
   }
   expect(parseWorkflowFile(encodeWorkflowFile(file))).toEqual(file)
 })
@@ -222,4 +226,22 @@ it('keeps Action declarations found only in legacy connection hints', () => {
   expect(result.content.document.graph.nodes.code).toMatchObject({
     task: { capabilities: [{ kind: 'connector', actionHints: ['mail.send'], connectionHints: [] }] },
   })
+})
+
+it('preserves workflow input definitions and node-only Start metadata through portable files', () => {
+  const file: WorkflowFile = {
+    kind: 'open-flow-workflow',
+    version: 1,
+    content: {
+      modelVersion: 7,
+      modules: {},
+      document: {
+        inputDefs: [{ handle: 'message', jsonSchema: { type: 'string', minLength: 1 }, nullable: false, description: 'Call message' }],
+        bindings: {},
+        graph: { nodes: { start: { kind: 'start', name: 'Start', description: 'Entry' } }, edges: [] },
+      },
+    },
+  }
+  expect(parseWorkflowFile(encodeWorkflowFile(file))).toEqual(file)
+  expect(decodeRevision(encodeRevision(file.content))).toEqual(file.content)
 })

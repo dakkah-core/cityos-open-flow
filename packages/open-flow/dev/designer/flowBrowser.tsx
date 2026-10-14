@@ -19,7 +19,7 @@ const sampleWorkflow: WorkflowFile = {
   content: {
     modelVersion: 6,
     modules: {},
-    document: { bindings: {}, graph: { nodes: { start: { kind: 'start', parameters: [], name: 'Start' } }, edges: [] } },
+    document: { bindings: {}, graph: { nodes: { start: { kind: 'start', name: 'Start' } }, edges: [] } },
   },
   presentation: {},
 }

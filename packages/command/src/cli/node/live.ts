@@ -4,6 +4,7 @@ export function liveText(live: LiveDetails): string {
   if (live.publication == null) return `not-published\t${live.flowId}`
   return [
     `live\t${live.flowId}\t${live.publication.publicationId}\t${live.publication.revisionId}\t${live.status}\tenabled=${live.enabled}`,
+    `inputDefs=${JSON.stringify(live.inputDefs)}`,
     ...live.entries.flatMap((entry) => [
       `${entry.type}\t${entry.nodeId}\t${entry.name}`,
       ...('binding' in entry

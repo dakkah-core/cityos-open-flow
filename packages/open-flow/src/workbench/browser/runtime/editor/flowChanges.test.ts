@@ -779,13 +779,13 @@ describe('Webhook product editing', () => {
     expect(get.content.document.graph.nodes.task).toMatchObject({
       inputs: { value: { sources: [{ nodeId: 'hook', output: 'body' }] } },
     })
-    expect(checkInputSource(get.content.document.graph, 'task', 'value', { nodeId: 'hook', output: 'body' })).toEqual({
+    expect(checkInputSource(get.content.document.graph, 'task', 'value', { nodeId: 'hook', output: 'body' }, [])).toEqual({
       kind: 'output-missing',
     })
 
     const restored = applyFlowChanges(get, inverseFlowChanges(current.content, changes))
     expect(restored.content.document.graph).toEqual(current.content.document.graph)
-    expect(checkInputSource(restored.content.document.graph, 'task', 'value', { nodeId: 'hook', output: 'body' })).toEqual({
+    expect(checkInputSource(restored.content.document.graph, 'task', 'value', { nodeId: 'hook', output: 'body' }, [])).toEqual({
       kind: 'available',
     })
   })
@@ -793,7 +793,7 @@ describe('Webhook product editing', () => {
 
 it('copies a trigger group while preserving the single Start contract', () => {
   const current = applyFlowChanges(draft(''), [
-    { kind: 'graph.node.create', nodeId: 'manual', node: { kind: 'start', name: 'Start', parameters: [] } },
+    { kind: 'graph.node.create', nodeId: 'manual', node: { kind: 'start', name: 'Start' } },
     { kind: 'graph.node.create', nodeId: 'timer', node: { kind: 'cron', name: 'Schedule', cronTimes: [] } },
     { kind: 'graph.edge.connect', edge: { source: 'timer', target: 'task' } },
   ])

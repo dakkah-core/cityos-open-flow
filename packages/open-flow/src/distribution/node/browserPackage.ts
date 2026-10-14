@@ -304,6 +304,7 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
       [
         'authoring',
         'authoringSchema',
+        'authoringFields',
         'draftOperations',
         'flowInspection',
         'liveDetails',
@@ -338,6 +339,7 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
       .replaceAll("'./connectorDecoders.ts'", "'./connectorDecoders.js'")
       .replaceAll("'./flowInspection.ts'", "'./flowInspection.js'")
       .replaceAll("'./liveDetails.ts'", "'./liveDetails.js'")
+      .replaceAll("'./authoringFields.ts'", "'./authoringFields.js'")
       .replaceAll("'./eventSources.ts'", "'./event-sources.js'")
       .replaceAll("'../../execution/common/runLifecycle.ts'", "'./run-lifecycle.js'")
       .replaceAll("'../../flow/common/change.ts'", "'../browser/flow-change.js'")

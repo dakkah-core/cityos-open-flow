@@ -58,7 +58,10 @@ function WebhookStory({ dark, language, log }: { dark: boolean; language: UiLang
           {...webhook}
           disabled={disabled}
           outputSection={
-            <TriggerSummary trigger={{ kind: 'webhook', method: webhook.method, name: 'Webhook', bodyFields: webhook.bodyFields, options: webhook.options }} />
+            <TriggerSummary
+              inputDefs={[]}
+              trigger={{ kind: 'webhook', method: webhook.method, name: 'Webhook', bodyFields: webhook.bodyFields, options: webhook.options }}
+            />
           }
           onChange={(next) => {
             setWebhook(next)

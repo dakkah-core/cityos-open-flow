@@ -108,6 +108,7 @@ it('preserves editable graph relationships and defaults without catalog schemas 
   expect(compact).toMatchObject({
     flow: { flowId: 'flow', name: 'Mail' },
     draft: {
+      inputDefs: [],
       revisionId: 'r1',
       graph: {
         edges: draft.content.document.graph.edges,

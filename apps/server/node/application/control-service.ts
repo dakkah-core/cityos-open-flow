@@ -36,7 +36,7 @@ import type { StoredFlow, StoredFlowRevision } from '../storage/flow-store.ts'
 import type { PublicationAcceptance } from '../storage/publication-store.ts'
 import type { StoredTriggerBinding } from '../storage/trigger-store.ts'
 
-import { controlErrorCode, liveEntries } from '@oomol-lab/open-flow/control-api'
+import { controlErrorCode, liveEntries, flowInputDefinitions } from '@oomol-lab/open-flow/control-api'
 import { readAuthoring, searchAuthoring, compileAuthoring, authoringSchema, authoringDiagnostics, AuthoringError } from '@oomol-lab/open-flow/control-requests'
 import { resolveDraftOperations } from '@oomol-lab/open-flow/control-requests'
 import { resourceNameIssue } from '@oomol-lab/open-flow/flow-change'
@@ -1070,12 +1070,13 @@ export class ControlService {
   getLiveDetails(flowId: string, endpointOrigin: string): LiveDetails {
     const currentFlow = this.getFlow(flowId)
     const stored = this.store.publications.live(flowId)
-    if (stored == null) return { flowId, publication: null, status: 'not-published', entries: [], version: 1 }
+    if (stored == null) return { flowId, inputDefs: null, publication: null, status: 'not-published', entries: [], version: 1 }
     const current = publication(stored.publication)
     const revision = readRevisionOrRepair(() => this.store.flows.revision(flowId, current.revisionId))
     if (revision == null || revision.digest != current.revisionDigest) {
       throw new ControlError(serverErrorCode.flowRevisionStorageConflict, 'The fixed Revision does not match the Publication.')
     }
+    const content = revisionContent(revision)
     const bindings = this.store.triggers.listTriggerBindings(flowId).map((item) => triggerBinding(item, endpointOrigin))
     const enabled = currentFlow.live?.enabled === true
     return {
@@ -1083,7 +1084,8 @@ export class ControlService {
       publication: current,
       enabled,
       status: enabled ? liveStatus(currentFlow.status, current.engineContract) : 'suspended',
-      entries: liveEntries(revisionContent(revision), current, bindings),
+      inputDefs: flowInputDefinitions(content),
+      entries: liveEntries(content, current, bindings),
       version: 1,
     }
   }

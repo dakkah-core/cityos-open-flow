@@ -1,4 +1,4 @@
-import type { InputPort, Group, JsonValue } from '../../flow/common/change.ts'
+import type { InputPort, Group, JsonValue, RevisionContent } from '../../flow/common/change.ts'
 
 import { dequal } from 'dequal/lite'
 const record = (value: unknown): Record<string, unknown> =>
@@ -45,4 +45,9 @@ export function fieldsToPorts(fields: unknown, previous: readonly (InputPort | G
     }),
     ...Array.from(remaining, ([handle, value]) => port(handle, value)),
   ]
+}
+
+/** The workflow input contract shared by draft authoring and published views. */
+export function flowInputDefinitions(content: RevisionContent) {
+  return fieldsView(content.document.inputDefs ?? [])
 }

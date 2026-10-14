@@ -23,8 +23,10 @@ function portField(ports: Ports, path: readonly string[], parent: string): strin
 }
 
 /** Accept a decoded JSON Pointer, including or omitting its initial empty component. */
-export function authoringDiagnosticField(_content: RevisionContent, node: GraphNode, parts: readonly string[]): string {
+export function authoringDiagnosticField(content: RevisionContent, node: GraphNode | undefined, parts: readonly string[]): string {
   const path = parts[0] == '' ? parts.slice(1) : parts
+  if (path[0] == 'document' && path[1] == 'inputDefs') return portField(content.document.inputDefs ?? [], path.slice(2), 'inputDefs')
+  if (node == null) return 'config'
   if (path[0] == 'modules') return 'code'
   let location = path[0] == 'document' && path[1] == 'graph' && path[2] == 'nodes' ? path.slice(4) : path
   const inlineDefinition = node.kind == 'task' && location[0] == 'task'
@@ -92,7 +94,7 @@ export function authoringDiagnosticField(_content: RevisionContent, node: GraphN
     case 'approval':
       return head == 'inputDefinitions' ? portField(node.inputDefinitions, location.slice(1), 'config.inputs') : 'config'
     case 'start':
-      return head == 'parameters' ? portField(node.parameters, location.slice(1), 'config.parameters') : 'config'
+      return 'config'
     case 'webhook':
       if (head == 'bodyFields') return portField(node.bodyFields, location.slice(1), 'config.body')
       return head == 'method' || head == 'options' ? ['config', ...location].join('.') : 'config'

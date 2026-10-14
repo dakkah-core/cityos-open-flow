@@ -126,7 +126,7 @@ attempt as mixed.
 
 ## Start parameter regression
 
-`start-parameters` creates a Start node with required message and amount parameters and a nullable note. The public reference edits the amount description in a later request and preserves its schema. Acceptance runs the Flow with zero, an omitted note, explicit null and an ordinary note, then checks the actual archive call. This exercises the same configuration and execution contract through CLI and MCP.
+`start-parameters` declares workflow `inputDefs` through `flow.update`, then creates a Start node with required message and amount inputs and a nullable note. The public reference reads definitions directly from the workflow outline. The public reference edits the amount description in a later request and preserves its schema. Acceptance runs the Flow with zero, an omitted note, explicit null and an ordinary note, then checks the actual archive call. This exercises the same configuration and execution contract through CLI and MCP.
 
 ```bash
 bun run lab test start-parameters

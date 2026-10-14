@@ -151,7 +151,7 @@ export function commandSchema(name = 'edits') {
       $schema: 'https://json-schema.org/draft/2020-12/schema',
       type: 'object',
       description:
-        'Named Start parameters or other Trigger outputs. The selected trigger defines its contract. Omitted nullable Start parameters become null; required parameters must be supplied.',
+        'Named Start parameters or other Trigger outputs. Start uses the workflow inputDefs returned by flow read; other triggers define their own output contracts. Omitted nullable Start parameters become null; required parameters must be supplied.',
     }
   if (name == 'input')
     return {

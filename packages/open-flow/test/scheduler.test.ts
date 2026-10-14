@@ -891,13 +891,9 @@ describe('revision graph scheduler', () => {
   })
 
   it('enforces timeout and Fiber interruption for each Task invocation', async () => {
-    const source = revision(
-      {
-        bindings: {},
-        graph: { edges: [], nodes: { slow: { inputs: {}, kind: 'task', task: task('slow', [], []), timeoutMs: 10 } } },
-      },
-      ['slow'],
-    )
+    const source = revision({ bindings: {}, graph: { edges: [], nodes: { slow: { inputs: {}, kind: 'task', task: task('slow', [], []), timeoutMs: 10 } } } }, [
+      'slow',
+    ])
     const prepared = await prepareFlow(source, 'main', engine)
     const events: SchedulerEvent[] = []
     await expect(
@@ -976,13 +972,7 @@ describe('revision graph scheduler', () => {
   })
 
   it('fails the run when a Node fiber dies with a defect', async () => {
-    const source = revision(
-      {
-        bindings: {},
-        graph: { edges: [], nodes: { task: { inputs: {}, kind: 'task', task: task('task', [], []) } } },
-      },
-      ['task'],
-    )
+    const source = revision({ bindings: {}, graph: { edges: [], nodes: { task: { inputs: {}, kind: 'task', task: task('task', [], []) } } } }, ['task'])
     const prepared = await prepareFlow(source, 'main', engine)
     const events: SchedulerEvent[] = []
 

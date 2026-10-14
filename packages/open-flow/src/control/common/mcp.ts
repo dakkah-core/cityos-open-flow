@@ -125,7 +125,7 @@ export const mcpTools = {
     false,
   ),
   flow_run: tool(
-    'Start a Run and return its runId. For draft supply flowId and revisionId; for live supply publicationId and select a Start node. Only draft Runs may simulate other Triggers. Always fix the source, Trigger and idempotencyKey. Start parameters come from flow_read config.parameters and are supplied in trigger.outputs; required parameters must be present, omitted nullable parameters become null, and unknown parameters are rejected. Poll run_get for completion.',
+    'Start a Run and return its runId. For draft supply flowId and revisionId; for live supply publicationId and select a Start node. Only draft Runs may simulate other Triggers. Always fix the source, Trigger and idempotencyKey. Start parameters come from flow_read data.inputDefs and are supplied in trigger.outputs; required parameters must be present, omitted nullable parameters become null, and unknown parameters are rejected. Poll run_get for completion.',
     z
       .discriminatedUnion('source', [
         z.strictObject({

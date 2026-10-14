@@ -51,7 +51,7 @@ const initialState: RequestState = {
 function inputSpec(draft: Draft, triggerId: string) {
   const trigger = revisionView(draft).graph()?.nodes[triggerId]
   if (trigger == null || 'inputs' in trigger || trigger.kind == 'manual' || trigger.kind == 'cron') return undefined
-  const definitions = triggerOutputDefinitions(trigger)
+  const definitions = triggerOutputDefinitions(trigger, revisionView(draft).inputDefs())
   return definitions.length === 0
     ? undefined
     : { definitions, allowOmittedNullable: trigger.kind == 'start', samples: trigger.kind == 'error' ? sampleErrorOutputs : undefined }
@@ -337,7 +337,7 @@ export class RunRequestStore {
         if (this.#state.value.inputRequest === request) this.#set({ inputRequest: { ...request, attempted: true } })
         return false
       }
-      const outputs = normalizeTriggerOutputs(node, request?.editor?.values() ?? trigger.outputs)
+      const outputs = normalizeTriggerOutputs(node, request?.editor?.values() ?? trigger.outputs, revisionView(prepared).inputDefs())
       if (outputs == null) {
         this.#setNotice({ kind: 'error', message: this.#i18n.t('runInput.invalid') })
         return false

@@ -1,3 +1,5 @@
+import type { JsonValue } from '../../types/index.ts'
+
 import { z } from 'zod'
 import { authoringDefinitionSchemas as definitions } from '../../flow/common/changeSchema.ts'
 import { authoringLlmConfiguration } from './authoringLlm.ts'
@@ -67,6 +69,12 @@ const inputFields = z
   .describe(
     'Optional business input constraints by name. A binding to a new Code, Agent, LLM, Wait or Approval input automatically declares an input accepting any JSON. Existing constraints are preserved. Omitted schema accepts any JSON; omitted nullable is true. Use default for inherited values; input.set supplies data.',
   )
+export const flowInputFields = z
+  .record(id, field)
+  .describe(
+    'Workflow input definitions by name. Omitted schema accepts any JSON; omitted nullable is true. No defaults. Supply call values as trigger.outputs.',
+  )
+export const flowInputFieldsView = z.record(id, field.extend({ schema: json as z.ZodType<JsonValue>, nullable: z.boolean() }))
 const outputFields = z.record(id, field).describe('Code return fields by name. Omitted schema accepts any JSON; omitted nullable is true.')
 const expression = z.strictObject({
   left: operand,
@@ -76,13 +84,7 @@ const expression = z.strictObject({
 const all = z.strictObject({ all: z.array(expression) })
 const when = z.union([expression, all, z.strictObject({ any: z.array(z.union([expression, all])) })])
 export const authoringConfigurations = {
-  start: z.strictObject({
-    parameters: z
-      .record(id, field)
-      .describe(
-        'Workflow entry parameters by name. Supply values as trigger.outputs when calling the Flow. Omitted schema accepts any JSON; omitted nullable is true. Nullable parameters may be omitted and become null. Parameters have no defaults.',
-      ),
-  }),
+  start: z.strictObject({}),
   error: z.strictObject({ sourceFlowIds: z.array(id).optional() }),
   webhook: definitions.webhook.omit({ bodyFields: true }).extend({ body: inputFields }).strict(),
   cron: z.strictObject({ schedule: definitions.schedule }),
@@ -123,6 +125,11 @@ const updates = z.strictObject({
     ),
 })
 export const authoringEditSchema = z.discriminatedUnion('op', [
+  z.strictObject({
+    op: z.literal('flow.update'),
+    set: z.strictObject({ inputDefs: flowInputFields.optional() }).optional(),
+    clear: z.array(z.array(id).min(1)).optional(),
+  }),
   z.strictObject({
     op: z.literal('node.add'),
     as: id
@@ -178,7 +185,7 @@ const requestContracts = {
   read: {
     schema: authoringReadSchema,
     guidance:
-      'Choose one mode: outline (omit nodes and text), node details (nodes), or text excerpt (text). nodes and text are mutually exclusive. Text defaults to 80 lines, at most 200 lines and 24000 characters. For the complete text, repeat at nextStart with the same revision until truncated is false.',
+      'The outline includes workflow inputDefs. Choose one mode: outline (omit nodes and text), node details (nodes), or text excerpt (text). nodes and text are mutually exclusive. Text defaults to 80 lines, at most 200 lines and 24000 characters. For the complete text, repeat at nextStart with the same revision until truncated is false.',
     examples: [{}, { revision: 'REVISION', nodes: ['NODE'] }, { revision: 'REVISION', text: { node: 'NODE', field: 'prompt', start: 1, lines: 80 } }],
   },
   search: {
@@ -189,12 +196,13 @@ const requestContracts = {
   edit: {
     schema: authoringRequestSchema,
     guidance:
-      'Use the observed revision as baseRevision and a stable requestId. Edits are ordered and atomic. node.add.as declares a batch-local alias without $. Every later reference to that new node must use $alias, including node, edge source/target and output source node fields; a bare alias is not the node ID. Use returned node references in later batches. Updates recursively merge objects (including schemas); {} preserves existing fields. Arrays replace as a whole. Remove fields with clear paths. Text replacement requires exactly one match. Read the target text first. A saved draft can have validation diagnostics.',
+      'Use flow.update set.inputDefs to edit workflow inputs; clear paths are relative to the workflow, e.g. ["inputDefs","amount"]. Start node config is empty. Use the observed revision as baseRevision and a stable requestId. Edits are ordered and atomic. node.add.as declares a batch-local alias without $. Every later reference to that new node must use $alias, including node, edge source/target and output source node fields; a bare alias is not the node ID. Use returned node references in later batches. Updates recursively merge objects (including schemas); {} preserves existing fields. Arrays replace as a whole. Remove fields with clear paths. Text replacement requires exactly one match. Read the target text first. A saved draft can have validation diagnostics.',
     examples: [
       {
         baseRevision: 'REVISION',
         requestId: 'CREATE_REQUEST',
         edits: [
+          { op: 'flow.update', set: { inputDefs: { message: { schema: { type: 'string' }, nullable: false } } } },
           { op: 'node.add', as: 'start', type: 'start', name: 'Start' },
           { op: 'node.add', as: 'step', type: 'code', name: 'Process', code: 'export default ({value}) => ({result:value})' },
           { op: 'edge.connect', source: '$start', target: '$step' },
@@ -240,7 +248,7 @@ export function authoringSchema(kind?: AuthoringType) {
         extensibleInputs: ['code', 'agent', 'llm', 'wait', 'approval'].includes(kind),
         guidance:
           kind == 'start'
-            ? 'Declare workflow entry parameters through config.parameters. REST calls and manual runs supply them as trigger.outputs. Downstream nodes bind these parameters as Start outputs. Start has no input sources or defaults; non-nullable parameters are required, and omitted nullable parameters become null.'
+            ? 'Declare workflow inputs through flow.update set.inputDefs; read them in the flow_read outline. REST calls and manual runs supply them as trigger.outputs. Downstream nodes bind these parameters as Start outputs. Start has no input sources or defaults; non-nullable parameters are required, and omitted nullable parameters become null.'
             : kind == 'condition'
               ? 'Edit branch operands through config.branches. A branch can test one expression, all expressions, or any alternatives. Unmatched execution uses branch otherwise.'
               : ['poll', 'integration'].includes(kind)
@@ -257,7 +265,7 @@ export function authoringSchema(kind?: AuthoringType) {
           name: 'Step',
           ...((
             {
-              start: { config: { parameters: { message: { schema: { type: 'string' }, nullable: false } } } },
+              start: { config: {} },
               connector: { config: { action: '<Action ID>', connectionId: '<Connection ID>' } },
               poll: { config: { key: '<Trigger key>', schedule: [{ type: 'every', unit: 'minute', value: 5 }] } },
               integration: { config: { key: '<Trigger key>' } },
@@ -328,14 +336,19 @@ export const authoringEditResponse = z.object({
 export const authoringReadResponse = z.object({
   flowId: id,
   revision: id,
-  data: z.object({ nodes: z.array(z.record(z.string(), json)).optional(), edges: z.array(json).optional(), text: z.record(z.string(), json).optional() }),
+  data: z.object({
+    inputDefs: flowInputFieldsView.optional(),
+    nodes: z.array(z.record(z.string(), json)).optional(),
+    edges: z.array(json).optional(),
+    text: z.record(z.string(), json).optional(),
+  }),
   version: z.literal(1),
 })
 export const authoringSearchResponse = z.object({
   flowId: id,
   revision: id,
   data: z.object({
-    matches: z.array(z.object({ node: id, field: id, line: z.int().optional(), excerpt: z.string() })),
+    matches: z.array(z.object({ node: id.optional(), field: id, line: z.int().optional(), excerpt: z.string() })),
     total: z.int(),
     nextOffset: z.int().optional(),
   }),

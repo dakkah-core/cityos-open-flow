@@ -319,14 +319,13 @@ it.each([
           modelVersion: legacy ? 6 : currentFlowModelVersion,
           modules: {},
           document: {
+            inputDefs: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: true }],
             bindings: {},
 
             graph: {
               edges: [],
               nodes: {
-                start: legacy
-                  ? { kind: 'manual', name: 'Start' }
-                  : { kind: 'start', name: 'Start', parameters: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: true }] },
+                start: legacy ? { kind: 'manual', name: 'Start' } : { kind: 'start', name: 'Start' },
                 ...(multiple ? { other: { kind: 'cron', name: 'Other', cronTimes: [] } } : {}),
               },
             },

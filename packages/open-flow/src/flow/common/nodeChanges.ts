@@ -120,7 +120,7 @@ interface TriggerSettingsBase {
 
 export type TriggerSettings =
   | (TriggerSettingsBase & { readonly kind: 'manual' })
-  | (TriggerSettingsBase & { readonly kind: 'start'; readonly parameters: readonly Port[] })
+  | (TriggerSettingsBase & { readonly kind: 'start' })
   | (TriggerSettingsBase & { readonly kind: 'error' })
   | (TriggerSettingsBase & {
       readonly bodyFields: Extract<TriggerNode, { readonly kind: 'webhook' }>['bodyFields']
@@ -497,6 +497,29 @@ export function setConnectorConnection(content: RevisionContent, nodeId: string,
   ]
 }
 
+/** Edit the workflow input contract and preserve references on a single-field rename. */
+export function updateFlowInputDefs(content: RevisionContent, value: readonly Port[]): readonly ChangeOperation[] {
+  const previous = content.document.inputDefs ?? []
+  if (dequal(previous, value)) return []
+  const operations: ChangeOperation[] = [{ kind: 'flow.input-defs.set', before: previous, value }]
+  const rename = renamedPort(previous, value)
+  if (rename != null) {
+    const instances = new Set(
+      Object.entries(content.document.graph.nodes)
+        .filter(([, node]) => node.kind == 'start')
+        .map(([id]) => id),
+    )
+    for (const [id, node] of Object.entries(content.document.graph.nodes)) {
+      if (!('inputs' in node)) continue
+      for (const [handle, before] of Object.entries(nodeInputMappings(node))) {
+        const mapping = renameOutputMapping(before, instances, rename)
+        if (before !== mapping) operations.push({ before, kind: 'graph.node.input.set', nodeId: id, handle, value: mapping })
+      }
+    }
+  }
+  return operations
+}
+
 export function updateTrigger(content: RevisionContent, nodeId: string, settings: TriggerSettings): readonly ChangeOperation[] | undefined {
   const trigger = content.document.graph.nodes[nodeId]
   if (trigger == null) return
@@ -508,24 +531,7 @@ export function updateTrigger(content: RevisionContent, nodeId: string, settings
     operations.push({ before: trigger.description, field: 'description', kind: 'graph.node.field.set', nodeId, value: settings.description })
   }
   switch (settings.kind) {
-    case 'start': {
-      if (trigger.kind != 'start') return
-      if (!dequal(trigger.parameters, settings.parameters)) {
-        operations.unshift({ before: trigger, kind: 'graph.node.replace', nodeId, node: { ...trigger, parameters: settings.parameters } })
-        const rename = renamedPort(trigger.parameters, settings.parameters)
-        if (rename != null) {
-          const instances = new Set([nodeId])
-          for (const [id, node] of Object.entries(content.document.graph.nodes)) {
-            if (!('inputs' in node)) continue
-            for (const [handle, before] of Object.entries(nodeInputMappings(node))) {
-              const value = renameOutputMapping(before, instances, rename)
-              if (before !== value) operations.push({ before, kind: 'graph.node.input.set', nodeId: id, handle, value })
-            }
-          }
-        }
-      }
-      break
-    }
+    case 'start':
     case 'error':
     case 'manual':
       if (trigger.kind != settings.kind) return

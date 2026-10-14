@@ -43,6 +43,7 @@ const binding = {
 const live = {
   flowId: 'flow',
   publication,
+  inputDefs: { message: { schema: { type: 'string' }, nullable: false } },
   enabled: true,
   status: 'runnable',
   entries: [
@@ -138,12 +139,13 @@ it('prints entry URLs, request contracts and independent states as text', async 
   const output = io()
   expect(await runCli(['live', 'flow'], host(), output.value)).toBe(0)
   expect(output.stdout()).toContain(binding.endpointUrl)
+  expect(output.stdout()).toContain('inputDefs={"message":{"schema":{"type":"string"},"nullable":false}}')
   expect(output.stdout()).toContain('"message":{"schema":{"type":"string"},"nullable":false}')
   expect(output.stdout()).toContain('enabled=true')
   expect(output.stdout()).toContain('health=healthy')
 })
 it('treats unpublished as a normal query and read failures as errors', async () => {
-  const empty = { flowId: 'flow', publication: null, entries: [], status: 'not-published', version: 1 }
+  const empty = { flowId: 'flow', publication: null, inputDefs: null, entries: [], status: 'not-published', version: 1 }
   const output = io()
   expect(await runCli(['live', 'flow', '--json'], host({ live: empty }), output.value)).toBe(0)
   expect(JSON.parse(output.stdout()).live).toEqual(empty)

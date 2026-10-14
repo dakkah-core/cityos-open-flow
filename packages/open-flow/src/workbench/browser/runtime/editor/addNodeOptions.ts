@@ -171,7 +171,7 @@ export function deriveAddNodeOptions(draft: Draft | undefined, t: TFunction): re
       inputs: [],
       kind: 'trigger',
       label: t('addNode.webhook'),
-      outputs: triggerOutputDefinitions({ kind: 'webhook', method: 'POST', name: 'Webhook', bodyFields: [] }),
+      outputs: triggerOutputDefinitions({ kind: 'webhook', method: 'POST', name: 'Webhook', bodyFields: [] }, []),
       trigger: { kind: 'webhook' },
     },
     {
@@ -182,7 +182,7 @@ export function deriveAddNodeOptions(draft: Draft | undefined, t: TFunction): re
       inputs: [],
       kind: 'trigger',
       label: t('addNode.cron'),
-      outputs: triggerOutputDefinitions({ kind: 'cron', name: 'Cron', cronTimes: [] }),
+      outputs: triggerOutputDefinitions({ kind: 'cron', name: 'Cron', cronTimes: [] }, []),
       trigger: { kind: 'cron' },
     },
     {
@@ -193,7 +193,7 @@ export function deriveAddNodeOptions(draft: Draft | undefined, t: TFunction): re
       inputs: [],
       kind: 'trigger',
       label: t('errorWorkflow.trigger'),
-      outputs: triggerOutputDefinitions({ kind: 'error', name: 'Flow Error' }),
+      outputs: triggerOutputDefinitions({ kind: 'error', name: 'Flow Error' }, []),
       trigger: { kind: 'error' },
     },
     ...options,

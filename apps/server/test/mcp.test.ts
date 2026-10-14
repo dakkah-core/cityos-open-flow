@@ -19,7 +19,7 @@ import { closeService, openService, startService } from './serviceFixture.ts'
 
 const token = 'mcp-test-operator-token-000000000001'
 const version = '2026-07-28'
-const start = { kind: 'graph.node.create', nodeId: 'start', node: { kind: 'start', name: 'Start', parameters: [] } }
+const start = { kind: 'graph.node.create', nodeId: 'start', node: { kind: 'start', name: 'Start' } }
 
 it('broadcasts REST and MCP canvas commands to every subscriber of only the authorized Flow', async () => {
   const { call, control, service, app, client } = await fixture()
@@ -512,7 +512,7 @@ it('rejects stale concurrent edits and mismatched idempotent requests without lo
   const conflict = await client.callTool({ name: 'flow_create', arguments: { name: 'Different', idempotencyKey: 'conflict-create' } })
   expect(conflict.structuredContent).toMatchObject({ error: { code: 'flow.conflict' } })
   const draft = await control.getDraft(z.string().parse(flow.flowId))
-  expect(Object.values(draft.content.document.graph.nodes)).toEqual([expect.objectContaining({ kind: 'start', parameters: [] })])
+  expect(Object.values(draft.content.document.graph.nodes)).toEqual([expect.objectContaining({ kind: 'start' })])
 })
 
 it('shares pagination cursors with the Control API and preserves invalid input and business errors', async () => {

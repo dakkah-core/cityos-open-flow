@@ -87,6 +87,10 @@ export class RevisionView {
     this.connectorProviderIds = connectorProviderIds
   }
 
+  public inputDefs() {
+    return this.#document.inputDefs ?? []
+  }
+
   public graph(): Graph {
     return this.#document.graph
   }
@@ -102,8 +106,8 @@ export class RevisionView {
     let checks: InputSourcesCheck | undefined = sources.length == 0 ? { conflict: false, sources: [] } : undefined
     let candidates: ReturnType<typeof inputSourceCandidates> | undefined
     const query: InputSourceQuery = {
-      check: () => (checks ??= checkInputSources(graph, nodeId, handle, sources)),
-      candidates: () => (candidates ??= inputSourceCandidates(graph, nodeId, handle)),
+      check: () => (checks ??= checkInputSources(graph, nodeId, handle, sources, this.inputDefs())),
+      candidates: () => (candidates ??= inputSourceCandidates(graph, nodeId, handle, this.inputDefs())),
     }
     this.#inputSources.set(key, query)
     return query
@@ -112,7 +116,7 @@ export class RevisionView {
   public sourceType(source: import('../../../flow/common/change.ts').Source): string | undefined {
     const graph = this.graph()
     const node = source.kind === 'node' ? graph.nodes[source.nodeId] : undefined
-    const output = source.kind === 'node' && node != null ? nodeOutputPorts(node)[source.output] : undefined
+    const output = source.kind === 'node' && node != null ? nodeOutputPorts(node, this.inputDefs())[source.output] : undefined
     const schema = output == null || source.kind !== 'node' ? undefined : sourcePort(output, source.field)?.jsonSchema
     if (source.kind === 'binding') return 'string'
     if (schema != null && typeof schema === 'object' && !Array.isArray(schema) && 'type' in schema && typeof schema.type === 'string') return schema.type
@@ -121,11 +125,11 @@ export class RevisionView {
 
   public outputDescription(nodeId: string, output: string): string | undefined {
     const graph = this.graph()
-    return nodeOutputDescription(graph, nodeId, output)
+    return nodeOutputDescription(graph, nodeId, output, this.inputDefs())
   }
 
   public designerInputs(): readonly unknown[] {
-    const inputs: unknown[] = [this.#document.graph]
+    const inputs: unknown[] = [this.#document.graph, this.#document.inputDefs]
     for (const [nodeId, node] of Object.entries(this.#document.graph.nodes)) {
       const resolved = this.resolveNode(nodeId, node)
       if (resolved.kind == 'task') inputs.push(resolved.definition)

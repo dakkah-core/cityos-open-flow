@@ -199,7 +199,7 @@ async function verifyCommandConsumer(consumer: string, version: string): Promise
   assert.equal(outputs[2].url, 'https://example.test/flows/flow-1')
   assert.deepEqual(outputs[3], {
     kind: 'flow.live',
-    live: { flowId: 'flow-1', publication: null, status: 'not-published', entries: [], version: 1 },
+    live: { flowId: 'flow-1', publication: null, inputDefs: null, status: 'not-published', entries: [], version: 1 },
     version: 1,
   })
   await execFileAsync(process.execPath, ['build', 'command.ts', '--target=bun', '--outfile=host.js'], { cwd: consumer })

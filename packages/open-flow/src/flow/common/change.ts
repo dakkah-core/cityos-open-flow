@@ -457,7 +457,7 @@ interface TriggerNodeBase {
 
 export type TriggerNode =
   | (TriggerNodeBase & { readonly kind: 'manual' })
-  | (TriggerNodeBase & { readonly kind: 'start'; readonly parameters: readonly Port[] })
+  | (TriggerNodeBase & { readonly kind: 'start' })
   | (TriggerNodeBase & { readonly kind: 'error'; readonly sourceFlowIds?: readonly string[] })
   | (TriggerNodeBase & {
       readonly bodyFields: readonly WebhookBodyField[]
@@ -483,6 +483,7 @@ export type TriggerNode =
 export type GraphNode = ApprovalNode | ConditionNode | TaskNode | TriggerNode | ValueNode | WaitNode
 
 export interface FlowDocument {
+  readonly inputDefs?: readonly Port[]
   readonly bindings: Readonly<Record<string, { readonly kind: 'variable'; readonly target: string }>>
   readonly graph: Graph
 }
@@ -518,20 +519,15 @@ function upgradeDecodedRevisionContent(content: RevisionContent): RevisionConten
   return {
     ...content,
     modelVersion: currentFlowModelVersion,
-    document: hasManual
-      ? {
-          ...content.document,
-          graph: {
-            ...graph,
-            nodes: Object.fromEntries(Object.entries(graph.nodes).map(([id, node]) => [id, upgradeManualTrigger(node)])),
-          },
-        }
-      : content.document,
+    document: {
+      ...content.document,
+      graph: hasManual ? { ...graph, nodes: Object.fromEntries(Object.entries(graph.nodes).map(([id, node]) => [id, upgradeManualTrigger(node)])) } : graph,
+    },
   }
 }
 
 export function upgradeManualTrigger(node: GraphNode): GraphNode {
-  return node.kind == 'manual' ? { ...node, kind: 'start', parameters: [] } : node
+  return node.kind == 'manual' ? { ...node, kind: 'start' } : node
 }
 
 export function normalizeNodeName(value: string): string {
@@ -560,6 +556,7 @@ export function nodeNameIssue(graph: Graph, nodeId: string, value: string): 'dup
 }
 
 export type ChangeOperation =
+  | { readonly kind: 'flow.input-defs.set'; readonly before: readonly Port[]; readonly value: readonly Port[] }
   | { readonly kind: 'graph.node.replace'; readonly nodeId: string; readonly before: GraphNode; readonly node: GraphNode }
   | {
       readonly before?: readonly ConnectorCapability[]
@@ -693,6 +690,10 @@ export function applyFlowChanges(content: RevisionContent, operations: readonly 
   const modules = { ...source.modules }
   for (const operation of operations) {
     switch (operation.kind) {
+      case 'flow.input-defs.set':
+        if (!dequal(document.inputDefs ?? [], operation.before)) invalid('The workflow input definitions changed before this operation was applied.')
+        document.inputDefs = operation.value
+        break
       case 'graph.trigger.sources.set': {
         const graph = document.graph
         const node = graph.nodes[operation.nodeId]

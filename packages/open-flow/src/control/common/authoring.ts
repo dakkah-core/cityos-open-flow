@@ -35,14 +35,14 @@ import {
   createWait,
   createApproval,
   cleanVariableBindings,
-  updateTrigger,
+  updateFlowInputDefs,
 } from '../../flow/common/nodeChanges.ts'
 import { conditionConfigurationView, prepareConditionConfiguration } from './authoringCondition.ts'
 import { authoringDiagnosticField } from './authoringDiagnosticFields.ts'
-import { fieldsView, fieldsToPorts } from './authoringFields.ts'
+import { fieldsView, fieldsToPorts, flowInputDefinitions } from './authoringFields.ts'
 import { llmConfigurationView, prepareLlmConfiguration, initialAuthoringLlmTask } from './authoringLlm.ts'
 import { AuthoringOpenApiAuthenticationError, openApiConfigView, openApiAuthenticationChoices, prepareOpenApiTask } from './authoringOpenApi.ts'
-import { authoringConfigurations, authoringReadSchema, authoringRequestSchema, authoringSearchSchema } from './authoringSchema.ts'
+import { flowInputFields, authoringConfigurations, authoringReadSchema, authoringRequestSchema, authoringSearchSchema } from './authoringSchema.ts'
 import { AuthoringToolInputError, outwardAgentTools, prepareAgentTools } from './authoringTools.ts'
 import { triggerConfiguration } from './authoringTriggers.ts'
 export * from './authoringSchema.ts'
@@ -165,7 +165,7 @@ export function authoringNode(content: RevisionContent, ref: string) {
         texts.prompt = node.prompt
         break
       case 'manual':
-        config = { parameters: {} }
+        config = {}
         break
       case 'start':
       case 'webhook':
@@ -191,7 +191,9 @@ export function authoringNode(content: RevisionContent, ref: string) {
     texts: Object.fromEntries(Object.entries(texts).map(([field, text]) => [field, { lines: text.split('\n').length, characters: text.length }])),
     inputs: outwardSource(content, inputMappings(node)),
     inputPorts: fieldsView(Object.entries(inputDefinitions(node)).map(([handle, port]) => Object.assign({}, port, { handle }))),
-    outputPorts: fieldsView(Object.entries(nodeOutputPorts(node)).map(([handle, port]) => Object.assign({}, port, { handle }))),
+    outputPorts: fieldsView(
+      Object.entries(nodeOutputPorts(node, content.document.inputDefs ?? [])).map(([handle, port]) => Object.assign({}, port, { handle })),
+    ),
     ...(task != null && 'executor' in task && task.executor.kind == 'openapi' ? { authenticationChoices: openApiAuthenticationChoices(task.executor) } : {}),
     incoming: edges.filter((e) => e.target == ref),
     outgoing: edges.filter((e) => e.source == ref),
@@ -235,6 +237,7 @@ export function readAuthoring(content: RevisionContent, query: AuthoringRead = {
   }
   if (q.nodes != null) return { nodes: q.nodes.map((ref) => authoringNode(content, ref)) }
   return {
+    inputDefs: flowInputDefinitions(content),
     nodes: Object.keys(content.document.graph.nodes).map((ref) => {
       const node = authoringNode(content, ref)
       return {
@@ -270,7 +273,14 @@ function compactValue(value: unknown, depth = 0): unknown {
 export function searchAuthoring(content: RevisionContent, query: AuthoringSearch) {
   const q = authoringSearchSchema.parse(query),
     needle = q.query.toLowerCase()
-  const matches: { node: string; field: string; line?: number; excerpt: string }[] = []
+  const matches: { node?: string; field: string; line?: number; excerpt: string }[] = []
+  if (q.type == null) {
+    for (const [name, definition] of Object.entries(flowInputDefinitions(content))) {
+      const text = JSON.stringify({ [name]: definition })
+      const at = text.toLowerCase().indexOf(needle)
+      if (at >= 0) matches.push({ field: `inputDefs.${name}`, excerpt: text.slice(Math.max(0, at - 100), at + Math.max(needle.length, 100)) })
+    }
+  }
   for (const [ref, node] of Object.entries(content.document.graph.nodes)) {
     const view = authoringNode(content, ref)
     if (q.type != null && q.type != view.type) continue
@@ -346,7 +356,7 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
   ): Extract<InputMapping, { kind: 'sources' }>['sources'][number] {
     if (value.kind == 'output') {
       const ref = resolve(value.node)
-      const choices = Object.keys(nodeOutputPorts(nodeAt(content, ref)))
+      const choices = Object.keys(nodeOutputPorts(nodeAt(content, ref), content.document.inputDefs ?? []))
       const port = value.port ?? (choices.length == 1 ? choices[0] : undefined)
       if (port == null) fail('source.port-required', 'Choose an output name; this node does not have exactly one output.', { node: ref, choices })
       return { kind: 'node', nodeId: ref, output: port, ...(value.field == null ? {} : { field: value.field }) }
@@ -517,13 +527,8 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
         case 'approval':
           next = { ...next, inputDefinitions: fieldsToPorts(config.inputs, node.inputDefinitions) } as GraphNode
           break
-        case 'start': {
-          const parameters = fieldsToPorts(config.parameters, node.parameters).filter((port): port is InputPort => 'handle' in port)
-          const changes = updateTrigger(content, ref, { kind: 'start', name: node.name, description: node.description, parameters })
-          if (changes != null && changes.length > 0) apply(changes)
-          next = { ...next, parameters } as GraphNode
+        case 'start':
           break
-        }
         case 'webhook': {
           const { body, ...settings } = config
           const { options: _options, ...withoutOptions } = next as Extract<GraphNode, { kind: 'webhook' }>
@@ -613,6 +618,18 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
   for (const edit of parsed.edits) {
     try {
       switch (edit.op) {
+        case 'flow.update': {
+          const merged = record(merge({ inputDefs: flowInputDefinitions(content) }, edit.set ?? {}))
+          for (const path of edit.clear ?? []) {
+            if (path[0] != 'inputDefs') fail('edit.invalid-field', `Cannot clear ${path.join('.')}.`)
+            clearPath(merged, path)
+          }
+          const fields = flowInputFields.parse(merged.inputDefs ?? {})
+          const ports = fieldsToPorts(fields, content.document.inputDefs ?? []).filter((port): port is InputPort => 'handle' in port)
+          const changes = updateFlowInputDefs(content, ports)
+          if (changes.length > 0) apply(changes)
+          break
+        }
         case 'node.add': {
           if (Object.hasOwn(aliases, edit.as)) fail('node.alias-duplicate', `Duplicate alias ${edit.as}.`)
           const nodeId = host.id(`node:${edit.as}`),
@@ -677,7 +694,6 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
                   node: {
                     kind: edit.type,
                     name,
-                    ...(edit.type == 'start' ? { parameters: [] } : {}),
                     ...(edit.type == 'cron' ? { cronTimes: [{ type: 'every', unit: 'hour', value: 1 }] } : {}),
                     ...(edit.type == 'webhook' ? { method: 'POST', bodyFields: [] } : {}),
                   } as GraphNode,
@@ -783,7 +799,7 @@ export function authoringDiagnostics(content: RevisionContent, diagnostics: read
       code: diagnostic.code,
       message,
       nodes: affected.map(([id]) => id),
-      field: affected[0] == null ? 'config' : authoringDiagnosticField(content, affected[0][1], parts),
+      field: authoringDiagnosticField(content, affected[0]?.[1], parts),
       ...(diagnostic.line ? { line: diagnostic.line, column: diagnostic.column } : {}),
     }
   })

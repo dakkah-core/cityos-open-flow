@@ -82,6 +82,9 @@ export function inverseFlowChanges(content: RevisionContent, operations: readonl
       case 'graph.trigger.sources.set':
         restore.push({ ...operation, before: operation.value, value: operation.before })
         break
+      case 'flow.input-defs.set':
+        restore.push({ ...operation, before: operation.value, value: operation.before })
+        break
       case 'binding.target.set':
         restore.push({ ...operation, before: operation.value, value: operation.before })
         break

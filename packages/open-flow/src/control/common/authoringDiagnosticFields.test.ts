@@ -182,3 +182,18 @@ describe('public authoring diagnostic fields', () => {
     expect(authoringDiagnosticField(revision, node, nodePath(['cases', '0', 'output']))).toBe('config.branches.0.name')
   })
 })
+
+it('maps workflow input diagnostics without a node, with or without the JSON Pointer prefix', () => {
+  const revision = content(code)
+  const workflow: RevisionContent = {
+    ...revision,
+    document: { ...revision.document, inputDefs: [{ handle: 'amount', jsonSchema: { type: 'number' }, nullable: false }] },
+  }
+  for (const prefix of [[], ['']]) {
+    expect(authoringDiagnosticField(workflow, undefined, [...prefix, 'document', 'inputDefs'])).toBe('inputDefs')
+    expect(authoringDiagnosticField(workflow, undefined, [...prefix, 'document', 'inputDefs', '0', 'jsonSchema', 'minimum'])).toBe(
+      'inputDefs.amount.schema.minimum',
+    )
+    expect(authoringDiagnosticField(workflow, undefined, [...prefix, 'document', 'inputDefs', '3'])).toBe('inputDefs')
+  }
+})

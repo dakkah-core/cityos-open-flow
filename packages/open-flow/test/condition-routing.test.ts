@@ -33,7 +33,7 @@ function content(condition: ConditionNode): RevisionContent {
 
       graph: {
         nodes: {
-          start: { kind: 'start', name: 'Start', parameters: [] },
+          start: { kind: 'start', name: 'Start' },
           data: {
             kind: 'value',
             inputs: {},
@@ -133,7 +133,7 @@ describe('Condition groups and routing', () => {
     ])
     const revision = content(condition)
     expect(Object.values(nodeInputMappings(condition))).toHaveLength(2)
-    expect(availableOutputs(revision.document.graph, 'a')).toEqual({ data: ['total', 'limit'] })
+    expect(availableOutputs(revision.document.graph, 'a', undefined, [])).toEqual({ data: ['total', 'limit'] })
     expect((await execute(revision)).events.filter((event) => event.type === 'node.completed').map((event) => event.nodeId)).toEqual(['data', 'condition', 'a'])
   })
   it('retains later-case Variable dependencies in first mode', () => {

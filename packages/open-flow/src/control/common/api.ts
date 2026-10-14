@@ -4,6 +4,7 @@ import type { LiveDetails } from './liveDetails.ts'
 
 import { decodeLiveDetails } from './liveDetails.ts'
 export { liveEntries } from './liveDetails.ts'
+export { flowInputDefinitions } from './authoringFields.ts'
 export type { LiveDetails, LiveEntry } from './liveDetails.ts'
 import type { AuthoringRead, AuthoringSearch, AuthoringRequest, AuthoringType } from './authoringSchema.ts'
 import type { ProviderIconAppearance } from './providerIconSprite.ts'

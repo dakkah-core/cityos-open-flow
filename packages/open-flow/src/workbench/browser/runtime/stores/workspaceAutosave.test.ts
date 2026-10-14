@@ -28,7 +28,9 @@ async function setup(startParameters?: readonly Port[]) {
   const content = applyFlowChanges({ modelVersion: currentFlowModelVersion, document: { bindings: {}, graph: { nodes: {}, edges: [] } }, modules: {} }, [
     ...createCodeTask({ moduleId: 'a', nodeId: 'a' }, 'A'),
     ...createCodeTask({ moduleId: 'b', nodeId: 'b' }, 'B'),
-    ...(startParameters == null ? [] : createBuiltinTrigger('start', { kind: 'start', name: 'Start', parameters: startParameters })),
+    ...(startParameters == null
+      ? []
+      : [{ kind: 'flow.input-defs.set' as const, before: [], value: startParameters }, ...createBuiltinTrigger('start', { kind: 'start', name: 'Start' })]),
   ])
   let revision: Draft = {
     actorId: 'actor',
@@ -357,7 +359,7 @@ it('waits for a pending parameter save when confirming an open Run form and reop
       return realChange(...args)
     })
     const createRun = vi.spyOn(client, 'createDraftRun')
-    const changing = workspace.saveStartParameters(startId, [{ handle: 'note', jsonSchema: {}, nullable: false }])
+    const changing = workspace.saveFlowInputDefs([{ handle: 'note', jsonSchema: {}, nullable: false }])
     await entered.promise
     const confirming = store.runRequests.confirmInputs()
     await Promise.resolve()

@@ -136,7 +136,7 @@ function source(nodeId: string, handle: string, from: string, output: string): C
 }
 export function initialOperations(id: string): ChangeOperation[] {
   if (id == 'start-parameters' || id == 'connector-responses' || id == 'order-alert' || id == 'fulfillment-ops' || id == 'webhook-live') return []
-  const start = node('start', { kind: 'start', name: 'Start', parameters: [] })
+  const start = node('start', { kind: 'start', name: 'Start' })
   if (id.startsWith('specialize-summary')) {
     const task: ManagedTaskDefinition = {
       name: 'Order summary',
@@ -364,7 +364,7 @@ export function assertions(id: string, base: RevisionContent, current: RevisionC
   if (id == 'start-parameters') {
     const starts = Object.values(current.document.graph.nodes).filter((candidate) => candidate.kind == 'start')
     if (starts.length != 1 || starts[0]?.kind != 'start') return ['Create one Start node.']
-    const parameters = Object.fromEntries(starts[0].parameters.map((port) => [port.handle, port]))
+    const parameters = Object.fromEntries((current.document.inputDefs ?? []).map((port) => [port.handle, port]))
     const amount = parameters.amount
     if (
       parameters.message?.nullable !== false ||

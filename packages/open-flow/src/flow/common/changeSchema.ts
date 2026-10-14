@@ -198,7 +198,7 @@ const node = z.union([
   z.strictObject({ ...base, kind: z.literal('approval'), ...wait }).omit({ timeoutMs: true }),
   z.strictObject({ ...base, kind: z.literal('wait'), ...wait }).omit({ timeoutMs: true }),
   z.object({ ...trigger, kind: z.literal('manual') }),
-  z.strictObject({ ...trigger, kind: z.literal('start'), parameters: z.array(port.strict()) }),
+  z.strictObject({ ...trigger, kind: z.literal('start') }),
   z.strictObject({ ...trigger, kind: z.literal('error'), sourceFlowIds: sourceFlowIds.optional() }),
   z.object({ ...trigger, kind: z.literal('webhook'), ...webhook }),
   z.object({ ...trigger, kind: z.literal('cron'), cronTimes: triggerScheduleSchema }),
@@ -242,6 +242,7 @@ const module = z.object({ name: text, imports: strings, source: text })
 const document = z.preprocess(
   rejectRetiredDefinitions,
   z.object({
+    inputDefs: z.array(port.strict()).optional(),
     bindings: z.record(text, binding),
     graph,
   }),
@@ -262,6 +263,13 @@ function rejectRetiredDefinitions(value: unknown): unknown {
     throw new TypeError('Independent Task definitions are no longer supported.')
   if (Object.values(record(record(candidate.graph).nodes)).some((candidateNode) => Object.hasOwn(record(candidateNode), 'taskId')))
     throw new TypeError('Task references are no longer supported.')
+  if (
+    Object.values(record(record(candidate.graph).nodes)).some((candidateNode) => {
+      const entry = record(candidateNode)
+      return entry.kind == 'start' && Object.hasOwn(entry, 'parameters')
+    })
+  )
+    throw new TypeError('Start.parameters is no longer supported; declare workflow inputDefs.')
   const subflows = candidate.subflows
   if (subflows !== undefined && (subflows === null || typeof subflows !== 'object' || Array.isArray(subflows) || Object.keys(subflows).length > 0))
     throw new TypeError('Subflows are no longer supported.')
@@ -446,6 +454,7 @@ export function repairRevisionEnvelope(value: unknown): RevisionContent {
   return decodeRevisionContent({
     modelVersion: currentFlowModelVersion,
     document: {
+      ...(Object.hasOwn(sourceDocument, 'inputDefs') ? { inputDefs: sourceDocument.inputDefs } : {}),
       bindings: repairedEntries(sourceDocument.bindings, binding),
       graph: sourceGraph,
     },
@@ -477,6 +486,7 @@ export function decodeRevisionEnvelope(value: unknown): RevisionContent {
 }
 
 const shapes = {
+  'flow.input-defs.set': { before: z.array(port.strict()), value: z.array(port.strict()) },
   'graph.trigger.sources.set': { nodeId: text, before: sourceFlowIds.optional(), value: sourceFlowIds.optional() },
   'binding.create': { bindingId: text, binding },
   'binding.delete': { bindingId: text },

@@ -299,9 +299,8 @@ function canonicalTriggerNode(trigger: TriggerNode): JsonValue {
     case 'error':
       return { ...common(trigger.kind), ...(trigger.sourceFlowIds == null ? {} : { sourceFlowIds: [...trigger.sourceFlowIds] }) }
     case 'manual':
-      return common(trigger.kind)
     case 'start':
-      return { ...common(trigger.kind), parameters: trigger.parameters.map(canonicalPort) }
+      return common(trigger.kind)
     case 'webhook':
       return {
         ...common(trigger.kind),
@@ -336,6 +335,7 @@ export function triggerRuntimeJson(trigger: TriggerNode): string {
 
 export function canonicalDocument(document: FlowDocument): JsonValue {
   return {
+    ...(document.inputDefs == null ? {} : { inputDefs: canonicalPorts(document.inputDefs) }),
     bindings: Object.fromEntries(entries(document.bindings)),
     graph: canonicalGraph(document.graph),
   }
@@ -346,6 +346,7 @@ function canonicalRevisionDocument(content: RevisionContent): JsonValue {
   if (content.modelVersion != 2) return { ...(canonicalDocument(content.document) as Record<string, JsonValue>), subflows: {}, tasks: {} }
   const { document } = content
   return {
+    ...(document.inputDefs == null ? {} : { inputDefs: canonicalPorts(document.inputDefs) }),
     bindings: Object.fromEntries(entries(document.bindings)),
     graph: canonicalLegacyGraph(document.graph),
     subflows: {},

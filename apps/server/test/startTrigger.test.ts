@@ -85,7 +85,7 @@ it('upgrades a readable legacy Draft once while preserving historical Runs, Live
         ...legacy.document.graph,
         nodes: {
           ...legacy.document.graph.nodes,
-          start: { ...legacy.document.graph.nodes.start, kind: 'start', parameters: [] },
+          start: { ...legacy.document.graph.nodes.start, kind: 'start' },
         },
       },
     },
@@ -146,15 +146,19 @@ it.each(['draft', 'live'] as const)('persists complete Start arguments for %s Ru
   const flow = await api.createFlow('Start arguments', 'arguments')
   const changed = await api.changeDraft(flow.flowId, flow.draftRevisionId, [
     {
+      kind: 'flow.input-defs.set',
+      before: [],
+      value: [
+        { handle: 'text', jsonSchema: { type: 'string' }, nullable: false },
+        { handle: 'items', jsonSchema: { type: 'array', items: { type: 'string' } }, nullable: true },
+      ],
+    },
+    {
       kind: 'graph.node.create',
       nodeId: 'start',
       node: {
         kind: 'start',
         name: 'Start',
-        parameters: [
-          { handle: 'text', jsonSchema: { type: 'string' }, nullable: false },
-          { handle: 'items', jsonSchema: { type: 'array', items: { type: 'string' } }, nullable: true },
-        ],
       },
     },
   ])
@@ -199,7 +203,7 @@ it.each([false, true])('rejects explicit Live Webhook Runs with Start present: %
   const flow = await api.createFlow('Webhook entry', 'webhook-entry')
   const changed = await api.changeDraft(flow.flowId, flow.draftRevisionId, [
     { kind: 'graph.node.create', nodeId: 'webhook', node: { kind: 'webhook', name: 'Webhook', method: 'POST', bodyFields: [] } },
-    ...(withStart ? [{ kind: 'graph.node.create' as const, nodeId: 'start', node: { kind: 'start' as const, name: 'Start', parameters: [] } }] : []),
+    ...(withStart ? [{ kind: 'graph.node.create' as const, nodeId: 'start', node: { kind: 'start' as const, name: 'Start' } }] : []),
   ])
   const operation = await api.publishFlow(flow.flowId, changed.revision.revisionId, null)
   await service.tickMaintenance()

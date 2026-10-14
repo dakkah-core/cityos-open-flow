@@ -430,15 +430,16 @@ export function NodeInspector({
               output
               readOnly={readOnly}
               disabled={disabled}
-              values={selection.trigger.parameters}
+              values={revision.inputDefs()}
               onChange={(parameters, deletion) => {
-                void store?.saveStartParameters(selection.id, parameters, deletion)
+                void store?.saveFlowInputDefs(parameters, deletion)
               }}
             />
           </section>
         )}
         {selection?.kind === 'trigger' && selection.trigger.kind !== 'webhook' && selection.trigger.kind !== 'start' && (
           <TriggerSummary
+            inputDefs={revision.inputDefs()}
             trigger={selection.trigger}
             display={
               selection.trigger.kind == 'integration' || selection.trigger.kind == 'poll' ? triggerDisplays?.[selection.trigger.definition.key] : undefined
@@ -453,7 +454,7 @@ export function NodeInspector({
             method={selection.trigger.method}
             options={selection.trigger.options ?? {}}
             disabled={disabled}
-            outputSection={<TriggerSummary trigger={selection.trigger} />}
+            outputSection={<TriggerSummary inputDefs={revision.inputDefs()} trigger={selection.trigger} />}
             onChange={(settings, deletion) => {
               void store?.saveWebhook(selection.id, settings, deletion)
             }}

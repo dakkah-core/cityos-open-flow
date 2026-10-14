@@ -299,7 +299,9 @@ describe('node authoring', () => {
         empty: { kind: 'value', value: null },
       },
     })
-    expect(checkInputSource(created.content.document.graph, ref, 'orders', { nodeId: created.nodes.source!, output: 'orders' })).toEqual({ kind: 'available' })
+    expect(checkInputSource(created.content.document.graph, ref, 'orders', { nodeId: created.nodes.source!, output: 'orders' }, [])).toEqual({
+      kind: 'available',
+    })
   })
   it('retains explicit Agent input constraints when rebinding incompatible data', async () => {
     const created = await edit(empty, [
@@ -311,7 +313,7 @@ describe('node authoring', () => {
       before = taskAt(created.content, ref).inputs
     const changed = await edit(created.content, [{ op: 'input.set', node: ref, input: 'input', source: { kind: 'output', node: created.nodes.source! } }])
     expect(taskAt(changed.content, ref).inputs).toEqual(before)
-    expect(checkInputSource(changed.content.document.graph, ref, 'input', { nodeId: created.nodes.source!, output: 'result' }).kind).toBe('schema')
+    expect(checkInputSource(changed.content.document.graph, ref, 'input', { nodeId: created.nodes.source!, output: 'result' }, []).kind).toBe('schema')
   })
   it('adds an input only to the requested node when Agent configurations are identical', async () => {
     const created = await edit(empty, [{ op: 'node.add', type: 'agent', as: 'customer', name: 'Customer' }])

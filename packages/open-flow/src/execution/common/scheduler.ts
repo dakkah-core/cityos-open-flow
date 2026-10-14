@@ -251,6 +251,7 @@ export type RunLaunch =
     }
 
 interface RunGraph {
+  readonly inputDefs: PreparedFlow['inputDefs']
   readonly flowId: string
   readonly graph: Graph
 }
@@ -533,7 +534,7 @@ function validateCheckpoint(
       const node = target.graph.nodes[id]
       if (node == null) throw new Error('Checkpoint result node is missing.')
       if (!('inputs' in node)) {
-        if (!matchesTriggerOutputs(node, outputs)) throw new Error('Checkpoint Trigger output is invalid.')
+        if (!matchesTriggerOutputs(node, outputs, target.inputDefs)) throw new Error('Checkpoint Trigger output is invalid.')
       } else {
         if (checkpoint.counts['']?.[id] == null) throw new Error('Checkpoint execution count is missing.')
         if (!jsonEqual(validateOutputs(id, node, outputs), outputs)) throw new Error('Checkpoint node outputs are incomplete.')
@@ -643,7 +644,8 @@ function runGraph(
       if (resume == null) {
         if (trigger != null) {
           const node = target.graph.nodes[trigger.nodeId]
-          if (node == null || 'inputs' in node || !matchesTriggerOutputs(node, trigger.outputs)) throw new Error('Trigger outputs are invalid.')
+          if (node == null || 'inputs' in node || !matchesTriggerOutputs(node, trigger.outputs, target.inputDefs))
+            throw new Error('Trigger outputs are invalid.')
         }
         for (const [id, node] of Object.entries(target.graph.nodes)) {
           if ('inputs' in node) continue
@@ -784,7 +786,7 @@ function runGraph(
                             id: previousId,
                             name: previous.name ?? ('inputs' in previous ? nodeTitle(previous) : undefined) ?? previousId,
                             outputs: frame[previousId]!,
-                            outputDefs: Object.entries(nodeOutputPorts(previous)).map(([handle, definition]) =>
+                            outputDefs: Object.entries(nodeOutputPorts(previous, target.inputDefs)).map(([handle, definition]) =>
                               Object.assign(
                                 {
                                   handle,
@@ -1113,7 +1115,8 @@ export function runFlow(prepared: PreparedFlow, options: FlowRunOptions): Effect
     if (options.trigger != null && (triggerNode == null || 'inputs' in triggerNode)) {
       return yield* Effect.fail(new Error(`Node "${options.trigger.nodeId}" is not a TriggerNode in Flow "${options.flowId}".`))
     }
-    const triggerOutputs = triggerNode == null || 'inputs' in triggerNode ? undefined : normalizeTriggerOutputs(triggerNode, options.trigger!.outputs)
+    const triggerOutputs =
+      triggerNode == null || 'inputs' in triggerNode ? undefined : normalizeTriggerOutputs(triggerNode, options.trigger!.outputs, prepared.inputDefs)
     if (options.trigger != null && triggerOutputs == null) return yield* Effect.fail(new Error('Trigger outputs are invalid.'))
     const trigger = options.trigger == null ? undefined : { nodeId: options.trigger.nodeId, outputs: triggerOutputs! }
     return yield* runGraph(
@@ -1129,7 +1132,7 @@ export function runFlow(prepared: PreparedFlow, options: FlowRunOptions): Effect
         waits: options.waits,
         remainingMs: options.remainingMs,
       },
-      { flowId: options.flowId, graph: prepared.graph },
+      { flowId: options.flowId, graph: prepared.graph, inputDefs: prepared.inputDefs },
       options.runId,
       options.inputs,
       trigger,

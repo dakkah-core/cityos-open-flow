@@ -26,6 +26,7 @@ export function flowInspection(inspected: Awaited<ReturnType<typeof inspectFlowD
   return {
     flow: { flowId: flow.flowId, name: flow.name, status: flow.status },
     draft: {
+      inputDefs: document.inputDefs ?? [],
       revisionId: draft.revisionId,
       graph: inspectGraph(document, document.graph),
       bindings: document.bindings,
@@ -70,7 +71,7 @@ function inspectNode(_document: FlowDocument, node: GraphNode): Record<string, u
   )
   const ports = {
     inputHandles: Object.keys(inputs),
-    outputHandles: Object.keys(nodeOutputPorts(node)),
+    outputHandles: Object.keys(nodeOutputPorts(node, _document.inputDefs ?? [])),
     ...(Object.keys(defaults).length == 0 ? {} : { inputDefaults: defaults }),
   }
   switch (node.kind) {
