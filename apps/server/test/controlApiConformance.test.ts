@@ -229,7 +229,7 @@ it('creates, edits and runs a Leina notification with a team-scoped robot select
       baseRevision: flow.draftRevisionId,
       requestId: 'create-notification',
       edits: [
-        { op: 'node.add', type: 'manual', as: 'start', name: 'Start' },
+        { op: 'node.add', type: 'start', as: 'start', name: 'Start' },
         {
           op: 'node.add',
           type: 'value',
@@ -297,7 +297,7 @@ it('creates, edits and runs a Leina notification with a team-scoped robot select
       baseRevision: approvalFlow.draftRevisionId,
       requestId: 'approval-message',
       edits: [
-        { op: 'node.add', type: 'manual', as: 'start', name: 'Start' },
+        { op: 'node.add', type: 'start', as: 'start', name: 'Start' },
         { op: 'node.add', type: 'approval', as: 'approval', name: 'Review', prompt: 'Publish the report?' },
         { op: 'node.add', type: 'connector', as: 'notify', name: 'Leina notification', config: { action: action.actionId } },
         { op: 'input.set', node: '$notify', input: 'leinaId', source: { kind: 'value', value: 'default' } },

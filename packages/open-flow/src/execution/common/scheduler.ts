@@ -1113,9 +1113,9 @@ export function runFlow(prepared: PreparedFlow, options: FlowRunOptions): Effect
     if (options.trigger != null && (triggerNode == null || 'inputs' in triggerNode)) {
       return yield* Effect.fail(new Error(`Node "${options.trigger.nodeId}" is not a TriggerNode in Flow "${options.flowId}".`))
     }
-    const outputs = triggerNode == null || 'inputs' in triggerNode ? undefined : normalizeTriggerOutputs(triggerNode, options.trigger!.outputs)
-    if (options.trigger != null && outputs == null) return yield* Effect.fail(new Error('Trigger outputs are invalid.'))
-    const trigger = options.trigger == null ? undefined : { nodeId: options.trigger.nodeId, outputs: outputs! }
+    const triggerOutputs = triggerNode == null || 'inputs' in triggerNode ? undefined : normalizeTriggerOutputs(triggerNode, options.trigger!.outputs)
+    if (options.trigger != null && triggerOutputs == null) return yield* Effect.fail(new Error('Trigger outputs are invalid.'))
+    const trigger = options.trigger == null ? undefined : { nodeId: options.trigger.nodeId, outputs: triggerOutputs! }
     return yield* runGraph(
       {
         failures: new WeakMap(),
