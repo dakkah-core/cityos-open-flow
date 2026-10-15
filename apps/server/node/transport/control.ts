@@ -629,6 +629,22 @@ export function createControlApp(service: ControlService, resolveActor?: Resolve
     return response(accepted.created ? 202 : 200, accepted.run)
   })
 
+  app.get('/flows/:flowId/call-contract', (context) => response(200, service.getWorkflowContract(context.get('actorId'), context.req.param('flowId'))))
+  app.get('/flows/:flowId/references', (context) => {
+    const direction = context.req.query('direction') ?? 'incoming'
+    const offset = Number(context.req.query('offset') ?? 0)
+    const limit = Number(context.req.query('limit') ?? 50)
+    if (
+      !['incoming', 'outgoing'].includes(direction) ||
+      !Number.isSafeInteger(offset) ||
+      offset < 0 ||
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > 100
+    )
+      throw new ControlError(controlErrorCode.flowInvalid, 'Invalid reference query.')
+    return response(200, service.getFlowReferences(context.get('actorId'), context.req.param('flowId'), direction as 'incoming' | 'outgoing', offset, limit))
+  })
   app.post('/runs', async (context) => {
     const body = await decodeRequest(context.req.raw, controlErrorCode.runInvalid, controlRequests.createLiveRun)
     service.authorize(context.get('actorId'), { publicationId: body.publicationId })

@@ -33,6 +33,7 @@ import { eventHasDetails, RunEventDetail, RunResultContent, RunText } from './ru
 import { duration } from './runPresentation.ts'
 import { RunResults } from './runResults.tsx'
 import { canCancelRun } from './runStore.ts'
+import { WorkflowCalls } from './workflowCalls.tsx'
 
 const RunVirtualItem = forwardRef<HTMLDivElement, CustomItemComponentProps>(function RunVirtualItem({ index, ...props }, ref) {
   return <div {...props} role="listitem" aria-posinset={index + 1} ref={ref} />
@@ -937,6 +938,7 @@ export function RunDrawer({
       </header>
       <div className="run-content">
         <ErrorHandling run={run} />
+        {run != null && <WorkflowCalls run={run} />}
         {run != null && <ActiveWait onLocate={onLocateWait} onResolve={onResolve} resolvingActions={resolvingActions} run={run} />}
         <RunLog
           presentation={presentation}

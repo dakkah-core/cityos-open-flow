@@ -1,4 +1,6 @@
 import type { CanvasCommand } from '../../canvas/common/commands.ts'
+
+import { workflowContractSchema, workflowReferencesSchema } from '../../workflow/common/workflow.ts'
 export type { CanvasCommand, CanvasCommandSubscriber } from '../../canvas/common/commands.ts'
 import type { LiveDetails } from './liveDetails.ts'
 
@@ -470,7 +472,20 @@ export type ErrorDispatch =
   | { readonly status: 'dispatched'; readonly flowId: string; readonly runId: string }
   | { readonly status: 'failed'; readonly flowId: string; readonly message: string }
 
+export interface WorkflowCaller {
+  readonly flowId: string
+  readonly runId: string
+  readonly nodeId: string
+  readonly executionId: string
+}
+export interface WorkflowRunCall extends WorkflowCaller {
+  readonly status: RunStatus | null
+}
+
 type RunDetailsBase = Run & {
+  readonly caller?: WorkflowCaller
+  readonly calls?: readonly WorkflowRunCall[]
+  readonly triggerNodeId?: string
   readonly errorDispatches?: readonly ErrorDispatch[]
   readonly errorSource?: { readonly flowId: string; readonly runId: string }
   readonly closureDigest: string
@@ -639,6 +654,7 @@ export function decodeRunEvent(value: unknown) {
             nodeKind !== 'agent' &&
             nodeKind !== 'value' &&
             nodeKind !== 'outputs' &&
+            nodeKind !== 'workflow' &&
             nodeKind !== 'wait'
           )
             return invalidResponse()
@@ -745,13 +761,15 @@ export class ControlClient {
     return jsonValue(result.document)
   }
 
-  async listFlows(options: { readonly cursor?: string; readonly includeTotal?: boolean; readonly limit?: number } = {}): Promise<FlowPage> {
+  async listFlows(
+    options: { readonly cursor?: string; readonly includeTotal?: boolean; readonly limit?: number; readonly signal?: AbortSignal } = {},
+  ): Promise<FlowPage> {
     const parameters = new URLSearchParams()
     if (options.cursor != null) parameters.set('cursor', options.cursor)
     if (options.limit != null) parameters.set('limit', String(options.limit))
     if (options.includeTotal != null) parameters.set('includeTotal', String(options.includeTotal))
     const query = parameters.size == 0 ? '' : `?${parameters}`
-    return flowPage(await this.request(`/v1/flows${query}`))
+    return flowPage(await this.request(`/v1/flows${query}`, options.signal == null ? undefined : { signal: options.signal }))
   }
 
   async listEventSources(
@@ -785,6 +803,15 @@ export class ControlClient {
     exact(source, ['variables', 'version'])
     if (source.version != 1 || !Array.isArray(source.variables)) return invalidResponse()
     return { variables: source.variables.map(variableListItem), version: 1 }
+  }
+
+  async getFlowReferences(flowId: string, options: { direction?: 'incoming' | 'outgoing'; offset?: number; limit?: number; signal?: AbortSignal } = {}) {
+    const query = new URLSearchParams({ direction: options.direction ?? 'incoming', offset: String(options.offset ?? 0), limit: String(options.limit ?? 50) })
+    return workflowReferencesSchema.parse(await this.request(`/v1/flows/${segment(flowId)}/references?${query}`, { signal: options.signal }))
+  }
+
+  async getWorkflowContract(flowId: string, signal?: AbortSignal) {
+    return workflowContractSchema.parse(await this.request(`/v1/flows/${segment(flowId)}/call-contract`, { signal }))
   }
 
   async getVariableReferences(name: string, signal?: AbortSignal): Promise<VariableReferences> {

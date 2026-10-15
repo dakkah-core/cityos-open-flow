@@ -19,6 +19,7 @@ function resourceReferences(input: unknown): FlowResources {
       draft == null
         ? null
         : {
+            ...(draft.calledFlowIds === undefined ? {} : { calledFlowIds: strings(draft.calledFlowIds) }),
             variableNames: strings(draft.variableNames),
             errorSourceFlowIds: strings(draft.errorSourceFlowIds),
             connections: (draft.connections as unknown[]).map((value) => {

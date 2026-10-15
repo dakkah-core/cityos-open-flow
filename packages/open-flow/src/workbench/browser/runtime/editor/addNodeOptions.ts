@@ -56,6 +56,7 @@ export type AddNodeOption = AddNodeOptionBase &
     | { readonly kind: 'decision' }
     | { readonly kind: 'agent' }
     | { readonly kind: 'openapi' }
+    | { readonly kind: 'workflow' }
     | { readonly kind: 'llm' }
     | { readonly kind: 'new-task' }
     | {
@@ -78,7 +79,7 @@ export function indexAddNodeOptions(options: readonly AddNodeOption[]): Readonly
   return indexed
 }
 
-function builtinOptions(t: TFunction): readonly AddNodeOption[] {
+function builtinOptions(draft: Draft, t: TFunction): readonly AddNodeOption[] {
   const group = t('addNode.blocks')
   return [
     {
@@ -136,6 +137,26 @@ function builtinOptions(t: TFunction): readonly AddNodeOption[] {
       outputs: [{ handle: 'value', jsonSchema: {} }],
     },
     {
+      description: t('workflow.description'),
+      group,
+      icon: ':lucide-light:workflow:',
+      id: 'workflow',
+      inputs: [],
+      outputs: [],
+      kind: 'workflow',
+      label: t('addNode.workflow'),
+    },
+    {
+      id: 'outputs',
+      kind: 'outputs',
+      label: t('addNode.outputs'),
+      description: t('addNode.outputsDescription'),
+      group: t('addNode.blocks'),
+      icon: ':lucide-light:log-out:',
+      inputs: revisionView(draft).outputDefs(),
+      outputs: [],
+    },
+    {
       description: t('addNode.commentDescription'),
       group,
       id: 'comment',
@@ -150,19 +171,7 @@ function builtinOptions(t: TFunction): readonly AddNodeOption[] {
 
 export function deriveAddNodeOptions(draft: Draft | undefined, t: TFunction): readonly AddNodeOption[] {
   if (draft == null) return []
-  const options: AddNodeOption[] = [
-    ...builtinOptions(t),
-    {
-      id: 'outputs',
-      kind: 'outputs',
-      label: t('addNode.outputs'),
-      description: t('addNode.outputsDescription'),
-      group: t('addNode.blocks'),
-      icon: ':lucide-light:log-out:',
-      inputs: revisionView(draft).outputDefs(),
-      outputs: [],
-    },
-  ]
+  const options = builtinOptions(draft, t)
   const group = t('addNode.triggers')
   const triggers: readonly AddNodeOption[] = [
     {
@@ -246,6 +255,8 @@ export function deriveAddNodeOptions(draft: Draft | undefined, t: TFunction): re
 
 export function addNodeIntent(option: AddNodeOption, revision: RevisionView, t: TFunction): AddNodeIntent | undefined {
   switch (option.kind) {
+    case 'workflow':
+      return { kind: 'workflow', name: t('addNode.workflow') }
     case 'outputs':
       return { kind: 'outputs', name: t('addNode.outputs') }
     case 'new-task': {

@@ -16,6 +16,7 @@ import { Spinner } from '../../../../ui/browser/spinner.tsx'
 import { Tooltip, TooltipTrigger, TooltipContent } from '../../../../ui/browser/tooltip.tsx'
 import { Icon } from '../icons.tsx'
 import { AccountName, accountDisplayName } from './accountName.tsx'
+import { InspectorStatusSection } from './inspectorStatusSection.tsx'
 
 const manageAccountOption = '__manage-account__'
 
@@ -291,7 +292,7 @@ export function ConnectorAccount({
     content = (
       <>
         {authorizationPending && <p>{t('inspector.account.authorizationPending')}</p>}
-        <div className="connection-prompt">
+        <div className="inspector-status-prompt">
           <p>{t('inspector.account.connectBeforeRun', { service: action.serviceName })}</p>
           <Button disabled={disabled || onConfigureAccess == null} onClick={onConfigureAccess} size="sm" type="button">
             <Icon data-icon="inline-start" name="plus" />
@@ -329,24 +330,25 @@ export function ConnectorAccount({
     )
   }
   return (
-    <section className={`connection-state ${required ? 'required' : ''}`} data-inspector-section="account">
-      <h3 className="inspector-section-title">
-        {t(!pending && accessIssue != null ? 'inspector.account.accessTitle' : required ? 'inspector.account.required' : 'inspector.account.title')}
-        {onManage != null && (
+    <InspectorStatusSection
+      tone={required ? 'warning' : 'neutral'}
+      section="account"
+      title={t(!pending && accessIssue != null ? 'inspector.account.accessTitle' : required ? 'inspector.account.required' : 'inspector.account.title')}
+      actions={
+        onManage != null && (
           <Button className="ml-auto" disabled={disabled} onClick={onManage} size="xs" type="button" variant="ghost">
             {t('inspector.account.manageAccount')}
           </Button>
-        )}
-      </h3>
-      <div className="connection-state-content">
-        {content}
-        {!pending && onConfigureAccess != null && accessIssue != null && (
-          <Button className="self-start" disabled={disabled} onClick={onConfigureAccess} size="sm" type="button" variant="default">
-            {t('inspector.account.manageAccount')}
-          </Button>
-        )}
-      </div>
-    </section>
+        )
+      }
+    >
+      {content}
+      {!pending && onConfigureAccess != null && accessIssue != null && (
+        <Button className="self-start" disabled={disabled} onClick={onConfigureAccess} size="sm" type="button" variant="default">
+          {t('inspector.account.manageAccount')}
+        </Button>
+      )}
+    </InspectorStatusSection>
   )
 }
 
@@ -378,10 +380,12 @@ export function TriggerConnection({
   const canManage = onConfigureAccess != null && !connectionLoading && connectionError == null && (activeConnections?.length ?? 0) > 0
   const connectionSection =
     providerTrigger == null ? null : (
-      <section className={`connection-state ${connection?.status == 'active' ? '' : 'required'}`} data-inspector-section="account">
-        <h3 className="inspector-section-title">
-          {t(connection?.status == 'active' ? 'inspector.account.title' : 'inspector.account.required')}
-          {canManage && (
+      <InspectorStatusSection
+        tone={connection?.status == 'active' ? 'neutral' : 'warning'}
+        section="account"
+        title={t(connection?.status == 'active' ? 'inspector.account.title' : 'inspector.account.required')}
+        actions={
+          canManage && (
             <Button
               className="ml-auto"
               disabled={disabled}
@@ -392,51 +396,50 @@ export function TriggerConnection({
             >
               {t('inspector.account.manageAccount')}
             </Button>
-          )}
-        </h3>
-        <div className="connection-state-content">
-          {authorizationPending && <p>{t('inspector.account.authorizationPending')}</p>}
-          {connectionLoading ? (
-            <p>{t('inspector.account.loading')}</p>
-          ) : connectionError != null ? (
-            <ConnectionAlert
-              detail={connectionError}
-              disabled={disabled}
-              message={t('inspector.account.refreshFailed')}
-              onRetry={() => void triggers.refresh(true)}
-            />
-          ) : (activeConnections?.length ?? 0) == 0 ? (
-            <div className="connection-prompt">
-              <p>{t('inspector.account.connectBeforeRun', { service: providerTrigger.definition.provider })}</p>
-              <Button
-                disabled={disabled || onConfigureAccess == null}
-                onClick={() => onConfigureAccess?.(providerTrigger.definition.provider)}
-                size="sm"
-                type="button"
-              >
-                {t('inspector.account.manageAccount')}
-              </Button>
-            </div>
-          ) : (
-            <>
-              <Field className="connection-field">
-                <FieldLabel className="sr-only" htmlFor={`${fieldIdPrefix}-connection`}>
-                  {t('inspector.account.connection')}
-                </FieldLabel>
-                <AccountSelect
-                  connections={activeConnections!}
-                  disabled={disabled}
-                  id={`${fieldIdPrefix}-connection`}
-                  selectedConnection={connection}
-                  selectedId={connection?.connectionId}
-                  onChange={(next) => void triggers.setConnection(selection.id, next)}
-                  onManage={onConfigureAccess == null ? undefined : () => onConfigureAccess(providerTrigger.definition.provider)}
-                />
-              </Field>
-            </>
-          )}
-        </div>
-      </section>
+          )
+        }
+      >
+        {authorizationPending && <p>{t('inspector.account.authorizationPending')}</p>}
+        {connectionLoading ? (
+          <p>{t('inspector.account.loading')}</p>
+        ) : connectionError != null ? (
+          <ConnectionAlert
+            detail={connectionError}
+            disabled={disabled}
+            message={t('inspector.account.refreshFailed')}
+            onRetry={() => void triggers.refresh(true)}
+          />
+        ) : (activeConnections?.length ?? 0) == 0 ? (
+          <div className="inspector-status-prompt">
+            <p>{t('inspector.account.connectBeforeRun', { service: providerTrigger.definition.provider })}</p>
+            <Button
+              disabled={disabled || onConfigureAccess == null}
+              onClick={() => onConfigureAccess?.(providerTrigger.definition.provider)}
+              size="sm"
+              type="button"
+            >
+              {t('inspector.account.manageAccount')}
+            </Button>
+          </div>
+        ) : (
+          <>
+            <Field className="connection-field">
+              <FieldLabel className="sr-only" htmlFor={`${fieldIdPrefix}-connection`}>
+                {t('inspector.account.connection')}
+              </FieldLabel>
+              <AccountSelect
+                connections={activeConnections!}
+                disabled={disabled}
+                id={`${fieldIdPrefix}-connection`}
+                selectedConnection={connection}
+                selectedId={connection?.connectionId}
+                onChange={(next) => void triggers.setConnection(selection.id, next)}
+                onManage={onConfigureAccess == null ? undefined : () => onConfigureAccess(providerTrigger.definition.provider)}
+              />
+            </Field>
+          </>
+        )}
+      </InspectorStatusSection>
     )
 
   return connectionSection
@@ -446,17 +449,14 @@ export function TriggerConnection({
 export function SavedConnectionReference({ action, connectionId }: { readonly action: string; readonly connectionId?: string }) {
   const t = useTranslate()
   return (
-    <section className="connection-state" data-inspector-section="account">
-      <h3 className="inspector-section-title">{t('inspector.account.title')}</h3>
-      <div className="connection-state-content">
-        <p className="reference-value">{action}</p>
-        {connectionId != null && (
-          <Field>
-            <FieldLabel>{t('inspector.account.connection')}</FieldLabel>
-            <Input aria-label={t('inspector.account.connection')} readOnly value={connectionId} />
-          </Field>
-        )}
-      </div>
-    </section>
+    <InspectorStatusSection title={t('inspector.account.title')} section="account">
+      <p className="reference-value">{action}</p>
+      {connectionId != null && (
+        <Field>
+          <FieldLabel>{t('inspector.account.connection')}</FieldLabel>
+          <Input aria-label={t('inspector.account.connection')} readOnly value={connectionId} />
+        </Field>
+      )}
+    </InspectorStatusSection>
   )
 }

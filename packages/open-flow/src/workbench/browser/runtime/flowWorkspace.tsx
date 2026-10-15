@@ -24,9 +24,9 @@ import { NodePickerPopover } from './editor/nodePickerPopover.tsx'
 import { useInspectorPanel } from './editor/useInspectorPanel.ts'
 import { WorkbenchCanvas } from './editor/workbenchCanvas.tsx'
 import { Icon } from './icons.tsx'
+import { WorkbenchLinkContext } from './linkContext.ts'
 import { NavigationStore } from './navigation.ts'
 import { PublicationsView } from './publications/publicationsView.tsx'
-import { RunLinkContext } from './runs/errorHandling.tsx'
 import { RunControl } from './runs/runControl.tsx'
 import { RunDrawer } from './runs/runDrawer.tsx'
 import { readRunDrawerOpen, writeRunDrawerOpen } from './runs/runDrawerPreference.ts'
@@ -742,7 +742,7 @@ export default function FlowWorkspace({
 
   return (
     <IconifyProvider>
-      <RunLinkContext.Provider value={hrefFor}>
+      <WorkbenchLinkContext.Provider value={hrefFor}>
         <main className="workspace">
           {view == 'design' && !canvasReady && <div className="workspace-navigation-placement">{navigationIsland}</div>}
           {view == 'design' && !canvasReady ? (
@@ -803,7 +803,7 @@ export default function FlowWorkspace({
             <PublicationsView theme={theme} key={flowId} onClose={() => navigation.open('design')} store={store} />
           )}
         </main>
-      </RunLinkContext.Provider>
+      </WorkbenchLinkContext.Provider>
     </IconifyProvider>
   )
 }

@@ -152,7 +152,12 @@ Common sources are `{"kind":"value","value":...}`,
 when there is one output, or select a nested `field`. Each node schema advertises
 supported sources. A Trigger cannot read downstream results before the Run starts.
 
-For workflow business outputs, declare fields through `flow.update.set.outputDefs` using the same named schema/nullable/description map as `inputDefs`. Add one `outputs` node with empty config, set its declared fields with `node.add.inputs` or `input.set`, and connect its execution predecessors. It runs after those dependencies settle and accepts no outgoing connections. `flow_read` exposes `outputDefs` and `outputMappings`; completed Run results expose business `outputs` separately from node results and logs. This does not invoke another workflow.
+For workflow business outputs, declare fields through `flow.update.set.outputDefs` using the same named schema/nullable/description map as `inputDefs`. Add one `outputs` node with empty config, set its declared fields with `node.add.inputs` or `input.set`, and connect its execution predecessors. It runs after those dependencies settle and accepts no outgoing connections. `flow_read` exposes `outputDefs` and `outputMappings`; completed Run results expose business `outputs` separately from node results and logs. For invocation, add a `workflow` node with `config: { "flowId": "TARGET_FLOW_ID" }`. It uses the target's current enabled Live, accepts Start parameters and returns the successful Run's business outputs. Its interface is saved locally; `node.refresh` explicitly updates that interface. `flow_check` rejects a changed target Live revision even if its ports are unchanged. Use `node.refresh` to update the saved revision and interface before running or publishing.
+
+Workflow target selection may retain an owned unpublished or disabled Flow. Without a loaded interface,
+the call stores an empty source revision; checks report the target problem or missing interface.
+After the target becomes available, `node.refresh` loads its current Live contract. Selection and
+workflow-call checks do not validate Start presence. Start remains required at actual Live invocation.
 Schema `{}` accepts dynamic JSON; it does not convert objects or arrays into text.
 
 ### Change one prompt rule
@@ -284,15 +289,16 @@ unavailable action and an action lacking an active Connection are different
 problems. Actions marked `authenticated: false` need no account. Connection
 selection rules come from the selected node contract.
 
-| Capability                      | Relevant schema and configuration                                                                                       |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Provider read or write          | `connector`: discovered `action`, optional `connectionId`, named input bindings.                                        |
-| Provider event                  | `poll` or `integration`: discovered `key`, Connection and any static inputs; polling also has a schedule.               |
-| Manual, HTTP or scheduled entry | `start`, `webhook`, `cron`: workflow `inputDefs`, HTTP body fields, or schedule.                                        |
-| Workflow failure handler        | `error`: published upstream Flows' automatic Run failures; not a node-level catch or a handler for manual Run failures. |
-| Fixed HTTP operation            | `openapi`: an OpenAPI source, path and method; resolved authentication choices and ports appear in node details.        |
-| Reusable constants              | `value`: named JSON values and optional output constraints.                                                             |
-| Durable interaction             | `wait`, `approval`: prompt and named inputs; resume through the Run's Wait ID.                                          |
+| Capability                      | Relevant schema and configuration                                                                                                  |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Provider read or write          | `connector`: discovered `action`, optional `connectionId`, named input bindings.                                                   |
+| Provider event                  | `poll` or `integration`: discovered `key`, Connection and any static inputs; polling also has a schedule.                          |
+| Manual, HTTP or scheduled entry | `start`, `webhook`, `cron`: workflow `inputDefs`, HTTP body fields, or schedule.                                                   |
+| Workflow failure handler        | `error`: published upstream Flows' automatic Run failures; not a node-level catch or a handler for manual Run failures.            |
+| Call another workflow           | `workflow`: select an owned published Flow ID; inputs and outputs derive from its saved contract. Use `node.refresh` to update it. |
+| Fixed HTTP operation            | `openapi`: an OpenAPI source, path and method; resolved authentication choices and ports appear in node details.                   |
+| Reusable constants              | `value`: named JSON values and optional output constraints.                                                                        |
+| Durable interaction             | `wait`, `approval`: prompt and named inputs; resume through the Run's Wait ID.                                                     |
 
 Connector and LLM services are configured on the Server. Missing capabilities
 should be described in terms of the required operation or event, without silently

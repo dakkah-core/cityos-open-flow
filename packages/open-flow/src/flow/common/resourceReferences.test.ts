@@ -81,6 +81,7 @@ it('collects referenced variables, selected accounts across executors, and error
     },
   }
   expect(flowResourceReferences(content)).toEqual({
+    calledFlowIds: [],
     variableNames: ['TOKEN'],
     connections: [
       { providerId: 'chat', connectionId: 'notice' },

@@ -10,7 +10,7 @@ export type ProjectedRunEvent =
     }
 
 const encoder = new TextEncoder()
-const nodeKinds = new Set(['agent', 'approval', 'condition', 'connector', 'decision', 'javascript', 'openapi', 'llm', 'value', 'wait', 'outputs'])
+const nodeKinds = new Set(['agent', 'approval', 'condition', 'connector', 'decision', 'javascript', 'openapi', 'llm', 'value', 'wait', 'outputs', 'workflow'])
 
 function object(value: unknown, description: string): Record<string, unknown> {
   if (value == null || typeof value != 'object' || Array.isArray(value)) throw new TypeError(`${description} must be an object.`)
@@ -28,12 +28,12 @@ function optionalString(value: unknown, description: string): string | undefined
 
 function nodeKind(
   value: unknown,
-): 'agent' | 'approval' | 'condition' | 'connector' | 'decision' | 'javascript' | 'openapi' | 'llm' | 'value' | 'wait' | 'outputs' | undefined {
+): 'agent' | 'approval' | 'condition' | 'connector' | 'decision' | 'javascript' | 'openapi' | 'llm' | 'value' | 'wait' | 'outputs' | 'workflow' | undefined {
   if (value === undefined) return
   if (!nodeKinds.has(value as string)) {
     throw new TypeError('Runtime node.started nodeKind is invalid.')
   }
-  return value as 'agent' | 'approval' | 'condition' | 'connector' | 'decision' | 'javascript' | 'openapi' | 'llm' | 'value' | 'wait' | 'outputs'
+  return value as 'agent' | 'approval' | 'condition' | 'connector' | 'decision' | 'javascript' | 'openapi' | 'llm' | 'value' | 'wait' | 'outputs' | 'workflow'
 }
 
 function runId(event: Record<string, unknown>): string {
@@ -54,11 +54,16 @@ function nodeContext(
   const flowId = flows.get(rawRunId)
   if (flowId == null) throw new TypeError('Runtime node event preceded its run.started event.')
   return {
-    executionId: opaqueId('execution', platformRunId, rawRunId, string(event.jobId, 'Runtime node event jobId')),
+    executionId: projectExecutionId(platformRunId, rawRunId, string(event.jobId, 'Runtime node event jobId')),
     flowId,
     nodeId: string(event.nodeId, 'Runtime node event nodeId'),
     rawRunId,
   }
+}
+
+/** Stable public identity shared by events and durable workflow-call provenance. */
+export function projectExecutionId(platformRunId: string, rawRunId: string, jobId: string): Promise<string> {
+  return opaqueId('execution', platformRunId, rawRunId, jobId)
 }
 
 async function opaqueId(prefix: 'execution' | 'scope', ...parts: readonly string[]): Promise<string> {

@@ -19,6 +19,7 @@ import { currentEngineContract } from '@oomol-lab/open-flow/runtime-contract'
 import { captureConnectorAccess } from '../deployment/connector-access.ts'
 import { checkCodeActions, checkCodePermissions, ConnectorTaskError } from '../deployment/connector.ts'
 import { AcceptanceError, ControlError } from '../error.ts'
+import { requireWorkflowCalls } from './workflow.ts'
 
 const batchSize = 100
 
@@ -150,6 +151,7 @@ export class Publisher {
   }
 
   async #publication(input: PublishFlowInput, access: ConnectorAccess | ConnectorAccessSnapshot): Promise<Parameters<PublicationStore['publish']>[0]> {
+    requireWorkflowCalls(this.#store, input.flowId, input.revision)
     const fixed = await this.#validatedFlow(input.revision)
     const providerAccess =
       access.version == 2

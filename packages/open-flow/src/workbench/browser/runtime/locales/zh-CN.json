@@ -46,7 +46,8 @@
     "start": "开始",
     "startDescription": "通过启动参数开始工作流，支持手动运行和 API 调用。",
     "outputs": "工作流输出",
-    "outputsDescription": "定义工作流输出及其取值，在上游执行依赖完成后计算。"
+    "outputsDescription": "定义工作流输出及其取值，在上游执行依赖完成后计算。",
+    "workflow": "调用工作流"
   },
   "connectorAccess": {
     "searchServices": "搜索服务",
@@ -848,6 +849,18 @@
       },
       "leina": {
         "robot-required": "请选择 Leina 机器人，或绑定机器人标识的数据来源。"
+      },
+      "workflow": {
+        "revision-stale": "目标工作流的线上版本已更新。",
+        "dependency-stale": "目标工作流中的调用需要更新。",
+        "target-required": "请选择目标工作流。",
+        "unpublished": "目标工作流尚未发布。",
+        "disabled": "目标工作流的线上版本已停用。",
+        "retiring": "目标工作流正在删除。",
+        "unavailable": "目标工作流不可用。",
+        "recursive": "不支持递归调用工作流。",
+        "interface-required": "尚未加载目标工作流的接口定义。",
+        "dependency-invalid": "目标工作流中有无法调用的工作流节点。"
       }
     },
     "notChecked": "尚未检查",
@@ -1470,5 +1483,27 @@
     "unavailable": "机器人不可用：{{id}}",
     "loadFailed": "加载机器人失败，请关闭后重新打开以重试。",
     "empty": "当前团队还没有 Leina 机器人。"
+  },
+  "workflow": {
+    "description": "调用另一个工作流，传入参数并获取结果。",
+    "target": "目标工作流",
+    "select": "选择工作流",
+    "refresh": "更新接口定义",
+    "loading": "加载中…",
+    "empty": "暂无工作流。",
+    "parent": "返回父运行",
+    "viewRun": "查看运行",
+    "unavailable": "运行已不可用",
+    "staleTitle": "目标工作流版本已更新",
+    "problemTitle": "目标工作流不可用",
+    "recheck": "重新检查",
+    "search": "搜索工作流",
+    "noMatches": "没有匹配的工作流",
+    "retry": "重试",
+    "open": "在新窗口打开工作流",
+    "groups": {
+      "published": "已发布",
+      "other": "未发布或不可用"
+    }
   }
 }

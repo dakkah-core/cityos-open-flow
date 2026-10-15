@@ -143,3 +143,7 @@ with the npm import; arguments, host callbacks and CLI exit codes remain unchang
 ### Unreleased dependency joins
 
 Engine Contract remains `open-flow-engine/v5`, and Scheduler checkpoints remain version 5. Invocations now wait for their iteration's selected or skipped predecessors, merge selected ancestor data, and repeat through loop iterations. Checkpoints require dependency progress and loop state; earlier development shapes are rejected without conversion. `context.getPrevious()` now returns an array, including for a single predecessor, and an empty array for roots. No legacy API or scheduling mode is retained. Flow model and isolated runtime digest are unchanged.
+
+## Workflow calls
+
+The managed `workflow` executor adds independent Live Run invocation without restoring embedded Subflows or historical publication admission. Existing Flow model and Engine identifiers are retained for this unpublished addition. Checkpoint v5 accepts optional pending `calls`; existing Wait/Agent checkpoints remain readable. Control API version 1 adds the call contract, indexed Flow references, durable caller/callee projections and entry `triggerNodeId` for Draft and ordinary Start runs. Missing `calledFlowIds` in old resource summaries means no workflow-call references; no historical graphs are rescanned to seed this new relation kind.

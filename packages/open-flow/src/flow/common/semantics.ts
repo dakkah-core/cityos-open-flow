@@ -127,6 +127,7 @@ export function variableBindings(revision: RevisionContent, bindingIds: Iterable
 }
 
 export interface FlowResourceReferences {
+  readonly calledFlowIds?: readonly string[]
   readonly variableNames: readonly string[]
   readonly connections: readonly { readonly providerId: string; readonly connectionId: string }[]
   readonly errorSourceFlowIds: readonly string[]
@@ -139,6 +140,15 @@ export function flowResourceReferences(content: RevisionContent): FlowResourceRe
     connections.set(JSON.stringify([use.providerId, use.connectionId]), { providerId: use.providerId, connectionId: use.connectionId })
   }
   return {
+    calledFlowIds: [
+      ...new Set(
+        Object.values(content.document.graph.nodes).flatMap((node) =>
+          node.kind == 'task' && 'executor' in node.task && node.task.executor.kind == 'workflow' && node.task.executor.flowId
+            ? [node.task.executor.flowId]
+            : [],
+        ),
+      ),
+    ].toSorted(),
     variableNames: [...new Set(Object.values(variableBindings(content, flowDependencies(content).bindings)))].toSorted(),
     connections: [...connections].toSorted(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)).map(([, value]) => value),
     errorSourceFlowIds: [

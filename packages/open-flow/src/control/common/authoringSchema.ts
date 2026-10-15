@@ -11,6 +11,7 @@ const patch = z.record(id, json)
 export const authoringTypes = [
   'start',
   'outputs',
+  'workflow',
   'webhook',
   'cron',
   'error',
@@ -88,6 +89,7 @@ const expression = z.strictObject({
 const all = z.strictObject({ all: z.array(expression) })
 const when = z.union([expression, all, z.strictObject({ any: z.array(z.union([expression, all])) })])
 export const authoringConfigurations = {
+  workflow: z.strictObject({ flowId: id }),
   start: z.strictObject({}),
   outputs: z.strictObject({}),
   error: z.strictObject({ sourceFlowIds: z.array(id).optional() }),
@@ -151,6 +153,7 @@ export const authoringEditSchema = z.discriminatedUnion('op', [
     prompt: z.string().optional(),
   }),
   z.strictObject({ op: z.literal('node.update'), node: referenceSchema, set: updates.optional(), clear: z.array(z.array(id).min(1)).optional() }),
+  z.strictObject({ op: z.literal('node.refresh'), node: referenceSchema }),
   z.strictObject({ op: z.literal('node.remove'), node: referenceSchema }),
   z.strictObject({ op: z.literal('input.set'), node: referenceSchema, input: id, source: authoringSourceSchema }),
   z.strictObject({ op: z.enum(['edge.connect', 'edge.disconnect']), source: referenceSchema, target: referenceSchema, branch: id.optional() }),
@@ -274,6 +277,7 @@ export function authoringSchema(kind?: AuthoringType) {
             {
               start: { config: {} },
               outputs: { config: {} },
+              workflow: { config: { flowId: '<Flow ID>' } },
               connector: { config: { action: '<Action ID>', connectionId: '<Connection ID>' } },
               poll: { config: { key: '<Trigger key>', schedule: [{ type: 'every', unit: 'minute', value: 5 }] } },
               integration: { config: { key: '<Trigger key>' } },

@@ -46,7 +46,8 @@
     "start": "Start",
     "startDescription": "Start the workflow manually or through an API call with startup parameters.",
     "outputs": "Workflow Outputs",
-    "outputsDescription": "Define the workflow outputs and their values. Runs after its upstream dependencies settle."
+    "outputsDescription": "Define the workflow outputs and their values. Runs after its upstream dependencies settle.",
+    "workflow": "Call Workflow"
   },
   "connectorAccess": {
     "searchServices": "Search services",
@@ -848,6 +849,18 @@
       },
       "leina": {
         "robot-required": "Select a Leina robot or bind its identifier to an input source."
+      },
+      "workflow": {
+        "revision-stale": "The target workflow’s Live revision has changed.",
+        "dependency-stale": "A call inside the target workflow needs updating.",
+        "target-required": "Select a target workflow.",
+        "unpublished": "The target workflow has not been published.",
+        "disabled": "The target workflow’s Live is disabled.",
+        "retiring": "The target workflow is being deleted.",
+        "unavailable": "Workflow is unavailable.",
+        "recursive": "Recursive workflow calls are not supported.",
+        "interface-required": "The target workflow’s interface has not been loaded.",
+        "dependency-invalid": "The target workflow contains an invalid workflow call."
       }
     },
     "notChecked": "Not checked",
@@ -1470,5 +1483,27 @@
     "unavailable": "Unavailable robot: {{id}}",
     "loadFailed": "Could not load robots. Close and reopen to retry.",
     "empty": "No Leina robots in this team."
+  },
+  "workflow": {
+    "description": "Call another workflow with inputs and return its results.",
+    "target": "Target workflow",
+    "select": "Select workflow",
+    "refresh": "Update interface",
+    "loading": "Loading…",
+    "empty": "No workflows available.",
+    "parent": "Return to calling Run",
+    "viewRun": "View Run",
+    "unavailable": "Run unavailable",
+    "staleTitle": "Target workflow updated",
+    "problemTitle": "Target workflow unavailable",
+    "recheck": "Recheck",
+    "search": "Search workflows",
+    "noMatches": "No matching workflows",
+    "retry": "Retry",
+    "open": "Open workflow in a new window",
+    "groups": {
+      "published": "Published",
+      "other": "Unpublished or unavailable"
+    }
   }
 }

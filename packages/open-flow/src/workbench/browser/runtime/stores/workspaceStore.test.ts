@@ -1288,3 +1288,33 @@ it('upgrades legacy manual nodes before editing and rereads a conflicting Draft 
     store.dispose()
   }
 })
+
+it('lists all workflow targets across pages using only list metadata', async () => {
+  const client = new WorkbenchClient(vi.fn())
+  const store = new WorkspaceStore(client, vi.fn())
+  vi.spyOn(client, 'getEditor').mockResolvedValue(editor)
+  const list = vi
+    .spyOn(client, 'listFlows')
+    .mockResolvedValueOnce({ version: 1, flows: [flow], nextCursor: 'next' })
+    .mockResolvedValueOnce({
+      version: 1,
+      flows: [
+        { ...flow, flowId: 'disabled', live: { enabled: false, publicationId: 'p1', revisionId: 'r1' } },
+        { ...flow, flowId: 'ready', live: { enabled: true, publicationId: 'p2', revisionId: 'r2' } },
+      ],
+    })
+  const contract = vi.spyOn(client, 'getWorkflowContract')
+  try {
+    await store.selectFlow(flow.flowId)
+    expect(await store.listWorkflowTargets()).toEqual([
+      { flowId: flow.flowId, name: flow.name, problem: 'recursive' },
+      { flowId: 'disabled', name: flow.name, problem: 'disabled' },
+      { flowId: 'ready', name: flow.name, problem: null },
+    ])
+    expect(list).toHaveBeenCalledTimes(2)
+    expect(list).toHaveBeenLastCalledWith({ cursor: 'next', limit: 100, signal: undefined })
+    expect(contract).not.toHaveBeenCalled()
+  } finally {
+    store.dispose()
+  }
+})

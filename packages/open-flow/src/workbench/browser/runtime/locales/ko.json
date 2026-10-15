@@ -46,7 +46,8 @@
     "start": "시작",
     "startDescription": "시작 매개변수를 사용해 수동으로 또는 API 호출로 워크플로를 시작합니다.",
     "outputs": "워크플로 출력",
-    "outputsDescription": "워크플로 출력과 값을 정의합니다. 상위 실행이 확정되면 계산합니다."
+    "outputsDescription": "워크플로 출력과 값을 정의합니다. 상위 실행이 확정되면 계산합니다.",
+    "workflow": "워크플로 호출"
   },
   "connectorAccess": {
     "searchServices": "서비스 검색",
@@ -848,6 +849,18 @@
       },
       "leina": {
         "robot-required": "Leina 로봇을 선택하거나 식별자의 입력 소스를 연결하세요."
+      },
+      "workflow": {
+        "revision-stale": "대상 워크플로의 Live 리비전이 변경되었습니다.",
+        "dependency-stale": "대상 워크플로 내부의 호출을 업데이트해야 합니다.",
+        "target-required": "대상 워크플로를 선택하세요.",
+        "unpublished": "대상 워크플로가 아직 게시되지 않았습니다.",
+        "disabled": "대상 워크플로의 Live가 비활성화되어 있습니다.",
+        "retiring": "대상 워크플로를 삭제하는 중입니다.",
+        "unavailable": "대상 워크플로를 사용할 수 없습니다.",
+        "recursive": "재귀 호출은 지원되지 않습니다.",
+        "interface-required": "대상 워크플로의 인터페이스를 불러오지 않았습니다.",
+        "dependency-invalid": "대상 워크플로 내부에 호출할 수 없는 워크플로 노드가 있습니다."
       }
     },
     "notChecked": "검사 안 됨",
@@ -1470,5 +1483,27 @@
     "unavailable": "사용할 수 없는 로봇: {{id}}",
     "loadFailed": "로봇을 불러오지 못했습니다. 닫았다가 다시 열어 재시도하세요.",
     "empty": "이 팀에는 Leina 로봇이 없습니다."
+  },
+  "workflow": {
+    "description": "다른 워크플로에 입력을 전달하고 결과를 가져옵니다.",
+    "target": "대상 워크플로",
+    "select": "워크플로 선택",
+    "refresh": "인터페이스 업데이트",
+    "loading": "Loading…",
+    "empty": "워크플로가 없습니다.",
+    "parent": "상위 실행으로 돌아가기",
+    "viewRun": "실행 보기",
+    "unavailable": "실행을 사용할 수 없음",
+    "staleTitle": "대상 워크플로가 업데이트됨",
+    "problemTitle": "대상 워크플로를 사용할 수 없음",
+    "recheck": "다시 확인",
+    "search": "워크플로 검색",
+    "noMatches": "일치하는 워크플로가 없습니다",
+    "retry": "재시도",
+    "open": "새 창에서 워크플로 열기",
+    "groups": {
+      "published": "게시됨",
+      "other": "미게시 또는 사용 불가"
+    }
   }
 }

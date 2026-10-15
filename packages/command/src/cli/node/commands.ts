@@ -145,7 +145,6 @@ export function commandSchema(name = 'edits') {
   const contract = authoringRequestContract(name)
   if (contract != null) return contract
   if (name == 'edits') return authoringSchema()
-  if (authoringTypes.includes(name as AuthoringType)) return authoringSchema(name as AuthoringType)
   if (name == 'outputs')
     return {
       $schema: 'https://json-schema.org/draft/2020-12/schema',
@@ -153,6 +152,7 @@ export function commandSchema(name = 'edits') {
       description:
         'Named Start parameters or other Trigger outputs. Start uses the workflow inputDefs returned by flow read; other triggers define their own output contracts. Omitted nullable Start parameters become null; required parameters must be supplied.',
     }
+  if (authoringTypes.includes(name as AuthoringType)) return authoringSchema(name as AuthoringType)
   if (name == 'input')
     return {
       $schema: 'https://json-schema.org/draft/2020-12/schema',

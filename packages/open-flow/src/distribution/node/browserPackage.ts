@@ -57,6 +57,7 @@ export async function buildBrowserPackage(options: BuildBrowserPackageOptions): 
   await buildRuntime(options, commonOutputPath, connectorProxyEntryPath, 'connector-proxy', true)
   await buildRuntime(options, commonOutputPath, 'src/decision/common/decision.ts', 'decision', false)
   await buildRuntime(options, commonOutputPath, 'src/openapi/common/openapi.ts', 'openapi', false)
+  await buildRuntime(options, commonOutputPath, 'src/workflow/common/workflow.ts', 'workflow', false)
   await buildRuntime(options, commonOutputPath, connectorActionEntryPath, 'connector-action', false)
   await buildRuntime(options, commonOutputPath, controlRequestsEntryPath, 'control-requests', false)
   await buildRuntime(options, commonOutputPath, mcpEntryPath, 'mcp', false)
@@ -283,6 +284,7 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
     const flowChangeDeclaration = (await readFile(path.join(declarationRoot, 'flow/common/change.d.ts'), 'utf8'))
       .replaceAll("'../../decision/common/decision.ts'", "'../common/decision.js'")
       .replaceAll("'../../openapi/common/openapi.ts'", "'../common/openapi.js'")
+      .replaceAll("'../../workflow/common/workflow.ts'", "'../common/workflow.js'")
       .replaceAll("'../../types/index.ts'", "'../index.js'")
       .replaceAll("'./changeSchema.ts'", "'./flow-change-schema.js'")
       .replaceAll("'./inputValue.ts'", "'./flow-input-value.js'")
@@ -318,6 +320,7 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
           .replaceAll(/(['"])\.\.\/\.\.\/types\/index\.ts\1/g, "'../index.js'")
           .replaceAll("'./draftOperations.ts'", "'./draftOperations.js'")
           .replaceAll("'./authoring.ts'", "'./authoring.js'")
+          .replaceAll("'../../workflow/common/workflow.ts'", "'./workflow.js'")
           .replaceAll("'./authoringSchema.ts'", "'./authoringSchema.js'")
           .replaceAll("'../../flow/common/changeSchema.ts'", "'../browser/flow-change-schema.js'")
           .replaceAll("'./providerAccess.ts'", "'./providerAccess.js'")
@@ -327,6 +330,7 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
       }),
     )
     const controlApiDeclaration = (await readFile(path.join(declarationRoot, 'control/common/api.d.ts'), 'utf8'))
+      .replaceAll("'../../workflow/common/workflow.ts'", "'./workflow.js'")
       .replaceAll("'../../canvas/common/commands.ts'", "'./canvas-commands.js'")
       .replaceAll("'../../flow/common/workflowFile.ts'", "'./flow-workflowFile.js'")
       .replaceAll("'../../flow/common/semantics.ts'", "'./flow-semantics.js'")
@@ -475,6 +479,13 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
           "'../browser/flow-change.js'",
         ),
       ),
+      writeFile(
+        path.join(commonOutputPath, 'workflow.d.ts'),
+        (await readFile(path.join(declarationRoot, 'workflow/common/workflow.d.ts'), 'utf8')).replaceAll(
+          "'../../flow/common/change.ts'",
+          "'../browser/flow-change.js'",
+        ),
+      ),
       writeFile(path.join(commonOutputPath, 'connector-action.d.ts'), connectorActionDeclaration),
       writeFile(path.join(commonOutputPath, 'connector-proxy.d.ts'), connectorProxyDeclaration),
       writeFile(
@@ -483,6 +494,7 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
           .replaceAll("'../../canvas/common/commands.ts'", "'./canvas-commands.js'")
           .replaceAll("'./draftOperations.ts'", "'./draftOperations.js'")
           .replaceAll("'./authoring.ts'", "'./authoring.js'")
+          .replaceAll("'../../workflow/common/workflow.ts'", "'./workflow.js'")
           .replaceAll("'./authoringSchema.ts'", "'./authoringSchema.js'")
           .replaceAll("'../../flow/common/changeSchema.ts'", "'../browser/flow-change-schema.js'")
           .replaceAll("'./providerAccess.ts'", "'./providerAccess.js'")

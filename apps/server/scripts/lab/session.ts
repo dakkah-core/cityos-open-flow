@@ -31,6 +31,7 @@ import { createMocks } from './mocks.ts'
 import { labOrigins } from './network.ts'
 import { diff, summary } from './report.ts'
 import { assertions, initialOperations, scenario, samples, stageCount } from './scenarios.ts'
+import { seedWorkflowTarget } from './workflowFixture.ts'
 
 export interface Manifest {
   id: string
@@ -89,6 +90,7 @@ export class LabSession {
     this.modelOrigin = origin(this.modelServer)
     labOrigins.add(this.modelOrigin)
     await this.openService()
+    if (this.scenarioId == 'workflow-call') await seedWorkflowTarget(this.service)
     const flow = (await this.service.control.createFlow('operator', `Lab ${this.scenarioId}`, 'lab-initial')).flow
     const operations = initialOperations(this.scenarioId)
     if (operations.length > 0) await this.service.control.changeDraft('operator', flow.flowId, flow.draftRevisionId, operations, 'lab-seed')

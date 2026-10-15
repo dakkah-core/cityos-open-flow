@@ -7,7 +7,8 @@ import { Button } from '../../src/ui/browser/button.tsx'
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '../../src/ui/browser/dialog.tsx'
 import { ErrorTriggerSources } from '../../src/workbench/browser/runtime/editor/errorTriggerSources.tsx'
 import { createI18n } from '../../src/workbench/browser/runtime/i18n.ts'
-import { ErrorHandling, RunLinkContext } from '../../src/workbench/browser/runtime/runs/errorHandling.tsx'
+import { WorkbenchLinkContext } from '../../src/workbench/browser/runtime/linkContext.ts'
+import { ErrorHandling } from '../../src/workbench/browser/runtime/runs/errorHandling.tsx'
 import { FlowDeletionImpact } from '../../src/workbench/browser/runtime/shell/resourceBrowser.tsx'
 import { useStoryActions } from './storyActions.tsx'
 
@@ -101,7 +102,7 @@ function Sample({ dark, language }: { dark: boolean; language: Parameters<Fronte
           <FlowDeletionImpact listeners={undefined} failed={false} onRetry={() => {}} />
           <FlowDeletionImpact listeners={undefined} failed onRetry={() => {}} />
         </section>
-        <RunLinkContext.Provider value={({ flowId, runId }) => `?flow=${flowId}&run=${runId}`}>
+        <WorkbenchLinkContext.Provider value={({ flowId, runId }) => `?flow=${flowId}&run=${runId}`}>
           <section className="space-y-3">
             <h3>Error handling status</h3>
             <ErrorHandling run={{ ...run, errorDispatches: [{ status: 'pending', flowId: 'handler' }] }} />
@@ -109,7 +110,7 @@ function Sample({ dark, language }: { dark: boolean; language: Parameters<Fronte
             <ErrorHandling run={{ ...run, errorDispatches: [{ status: 'failed', flowId: 'handler', message: 'The error workflow is disabled.' }] }} />
             <ErrorHandling run={{ ...run, errorSource: { flowId: 'source', runId: 'source-run' } }} />
           </section>
-        </RunLinkContext.Provider>
+        </WorkbenchLinkContext.Provider>
       </div>
     </I18nProvider>
   )

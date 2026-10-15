@@ -138,6 +138,7 @@ export class ServerService {
       this.#logger,
       (flowId, runId) => this.#runChanged(flowId, runId),
       () => this.#maintenance.wake(),
+      (...args) => this.control.runs.invokeWorkflow(...args),
     )
     const pollDefinitions = triggerDefinitions.filter((definition): definition is PollDefinition => definition.snapshot.type == 'poll')
     const integrationDefinitions = triggerDefinitions.filter((definition): definition is IntegrationDefinition => definition.snapshot.type == 'integration')
@@ -486,6 +487,10 @@ export class ServerService {
 
   #notifyFlow(event: FlowChangeEvent): void {
     for (const listener of this.#flowSubscribers.get(event.flowId) ?? []) listener(event)
+    if (event.kind == 'run.created' || event.kind == 'run.changed') {
+      const caller = this.#store.runs.workflowOrigin(event.runId)
+      if (caller != null) this.#notifyFlow({ kind: 'run.changed', flowId: caller.flowId, runId: caller.runId, version: 1 })
+    }
   }
 
   #notifyFlowCatalog(event: FlowCatalogEvent = { kind: 'flows.changed', version: 1 }, ownerId?: string): void {

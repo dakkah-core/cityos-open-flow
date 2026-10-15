@@ -46,7 +46,8 @@
     "start": "開始",
     "startDescription": "透過啟動參數開始工作流程，支援手動執行和 API 呼叫。",
     "outputs": "工作流程輸出",
-    "outputsDescription": "定義工作流程輸出及其取值，在上游執行相依完成後計算。"
+    "outputsDescription": "定義工作流程輸出及其取值，在上游執行相依完成後計算。",
+    "workflow": "呼叫工作流程"
   },
   "connectorAccess": {
     "searchServices": "搜尋服務",
@@ -848,6 +849,18 @@
       },
       "leina": {
         "robot-required": "請選擇 Leina 機器人，或綁定機器人識別碼的資料來源。"
+      },
+      "workflow": {
+        "revision-stale": "目標工作流程的線上版本已更新。",
+        "dependency-stale": "目標工作流程中的呼叫需要更新。",
+        "target-required": "請選擇目標工作流程。",
+        "unpublished": "目標工作流程尚未發佈。",
+        "disabled": "目標工作流程的線上版本已停用。",
+        "retiring": "目標工作流程正在刪除。",
+        "unavailable": "目標工作流程無法使用。",
+        "recursive": "不支援遞迴呼叫工作流程。",
+        "interface-required": "尚未載入目標工作流程的介面定義。",
+        "dependency-invalid": "目標工作流程中有無法呼叫的工作流程節點。"
       }
     },
     "notChecked": "尚未檢查",
@@ -1470,5 +1483,27 @@
     "unavailable": "機器人無法使用：{{id}}",
     "loadFailed": "載入機器人失敗，請關閉後重新開啟以重試。",
     "empty": "目前團隊尚無 Leina 機器人。"
+  },
+  "workflow": {
+    "description": "呼叫另一個工作流程，傳入參數並取得結果。",
+    "target": "目標工作流程",
+    "select": "選擇工作流程",
+    "refresh": "更新介面定義",
+    "loading": "Loading…",
+    "empty": "目前沒有工作流程。",
+    "parent": "返回父執行",
+    "viewRun": "查看執行",
+    "unavailable": "執行已無法使用",
+    "staleTitle": "目標工作流程版本已更新",
+    "problemTitle": "目標工作流程無法使用",
+    "recheck": "重新檢查",
+    "search": "搜尋工作流程",
+    "noMatches": "沒有符合的工作流程",
+    "retry": "重試",
+    "open": "在新視窗開啟工作流程",
+    "groups": {
+      "published": "已發佈",
+      "other": "未發佈或無法使用"
+    }
   }
 }

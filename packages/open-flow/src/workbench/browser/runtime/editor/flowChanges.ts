@@ -44,6 +44,7 @@ import {
 import { remapInputMappings, renamedPort, renameOutputMapping } from '../../../../flow/common/portChanges.ts'
 import { renamePromptInput } from '../../../../flow/common/promptTemplate.ts'
 import { valueForEditor } from '../../../../form/common/editorComponent.ts'
+import { withWorkflowTask } from '../../../../workflow/common/workflow.ts'
 
 export type FlowChanges = readonly ChangeOperation[]
 
@@ -72,6 +73,7 @@ interface TaskSettingsBase {
 }
 
 export type TaskSettings =
+  | (TaskSettingsBase & { readonly kind: 'workflow'; readonly before: ManagedTaskDefinition; readonly task: ManagedTaskDefinition })
   | (TaskSettingsBase & { readonly kind: 'decision'; readonly before: ManagedTaskDefinition; readonly task: ManagedTaskDefinition })
   | (TaskSettingsBase & { readonly kind: 'openapi'; readonly before: ManagedTaskDefinition; readonly task: ManagedTaskDefinition })
   | (TaskSettingsBase & { readonly kind: 'agent'; readonly before: ManagedTaskDefinition; readonly task: ManagedTaskDefinition })
@@ -85,6 +87,7 @@ export type AddNodeIntent =
   | { readonly kind: 'outputs'; readonly name: string }
   | { readonly kind: 'decision'; readonly name: string }
   | { readonly kind: 'openapi'; readonly name: string }
+  | { readonly kind: 'workflow'; readonly name: string }
   | { readonly kind: 'agent'; readonly name: string; readonly prompt?: string; readonly outputDescription?: string }
   | { readonly kind: 'approval'; readonly name: string }
   | { readonly kind: 'code'; readonly name: string; readonly ports?: TaskPorts }
@@ -144,6 +147,9 @@ export function nameCreatedNodes(revision: RevisionView, changes: FlowChanges): 
 export function addNode(revision: RevisionView, nodeId: string, intent: AddNodeIntent): FlowChanges | undefined {
   let changes: FlowChanges | undefined
   switch (intent.kind) {
+    case 'workflow':
+      changes = createManagedTask({ nodeId }, { name: intent.name, inputs: [], outputs: [], executor: { kind: 'workflow', flowId: '', revisionId: '' } })
+      break
     case 'decision':
       changes = createDecisionTask({ nodeId }, intent.name)
       break
@@ -324,6 +330,27 @@ export function updateTask(revision: RevisionView, nodeId: string, settings: Tas
   const node = revision.graph()?.nodes[nodeId]
   if (node?.kind != 'task') return
   switch (settings.kind) {
+    case 'workflow': {
+      if (!dequal(node.task, settings.before)) return
+      const next = withWorkflowTask(node, settings.task)
+      if ('executor' in node.task && node.task.executor.kind == 'workflow' && (!node.task.executor.flowId || node.name == node.task.name)) {
+        return [
+          {
+            kind: 'graph.node.replace',
+            nodeId,
+            before: node,
+            node: {
+              ...next,
+              name: nextNodeName(
+                settings.task.name,
+                new Set(Object.entries(revision.graph()!.nodes).flatMap(([id, item]) => (id != nodeId && item.name != null ? [item.name] : []))),
+              ),
+            },
+          },
+        ]
+      }
+      return [{ kind: 'graph.node.replace', nodeId, before: node, node: next }]
+    }
     case 'decision':
     case 'openapi':
     case 'agent': {

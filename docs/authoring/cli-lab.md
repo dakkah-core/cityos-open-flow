@@ -326,3 +326,5 @@ The Lab host allows fetch requests only to registered local services and does no
 Undefined model, Action, or other external requests fail. Lab is a development experiment
 environment, not a general-purpose network sandbox for arbitrary untrusted code. Code isolation
 remains the responsibility of the production runtime.
+
+`workflow-call` discovers a published target through the public Flow catalog, creates a Call Workflow node, edits its name, explicitly refreshes its contract, and returns the child business output. It verifies zero and signed numeric parameters and parent/child log isolation. Run `bun run lab test workflow-call` and `bun run lab test workflow-call --mcp`.

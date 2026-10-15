@@ -8,6 +8,7 @@ import type {
   RevisionContent,
   TriggerKeySnapshot,
 } from '../../flow/common/change.ts'
+import type { WorkflowContract, WorkflowCandidate } from '../../workflow/common/workflow.ts'
 import type { ConnectorAction, Diagnostic } from './api.ts'
 import type { AuthoringConditionConfiguration, AuthoringConditionSource } from './authoringCondition.ts'
 import type { AuthoringOpenApiConfig } from './authoringOpenApi.ts'
@@ -39,6 +40,7 @@ import {
   updateFlowOutputDefs,
   renameFlowOutputSources,
 } from '../../flow/common/nodeChanges.ts'
+import { withWorkflowTask, workflowTask, workflowSelectionTask } from '../../workflow/common/workflow.ts'
 import { conditionConfigurationView, prepareConditionConfiguration } from './authoringCondition.ts'
 import { authoringDiagnosticField } from './authoringDiagnosticFields.ts'
 import { fieldsView, fieldsToPorts, flowInputDefinitions } from './authoringFields.ts'
@@ -147,6 +149,7 @@ export function authoringNode(content: RevisionContent, ref: string) {
           ),
         ),
       }
+    else if (task.executor.kind == 'workflow') config = { flowId: task.executor.flowId }
     else if (task.executor.kind == 'openapi') {
       config = { ...openApiConfigView(task.executor) }
     }
@@ -326,6 +329,7 @@ export function searchAuthoring(content: RevisionContent, query: AuthoringSearch
 }
 
 export interface AuthoringHost {
+  workflow?(flowId: string): Promise<WorkflowContract | WorkflowCandidate>
   id(label: string): string
   action(id: string): Promise<ConnectorAction>
   trigger(key: string): TriggerKeySnapshot
@@ -394,7 +398,12 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
     if (!dequal(before, node)) {
       const previous = before.kind == 'task' ? before.task.outputs : before.kind == 'value' ? before.values : []
       const next = node.kind == 'task' ? node.task.outputs : node.kind == 'value' ? node.values : []
-      apply([{ kind: 'graph.node.replace', nodeId: ref, before, node }, ...renameFlowOutputSources(content, new Set([ref]), previous, next)])
+      apply([
+        { kind: 'graph.node.replace', nodeId: ref, before, node },
+        ...(node.kind == 'task' && 'executor' in node.task && node.task.executor.kind == 'workflow'
+          ? []
+          : renameFlowOutputSources(content, new Set([ref]), previous, next)),
+      ])
     }
   }
   function taskNode(ref: string, task: ManagedTaskDefinition) {
@@ -416,6 +425,11 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
       inputs: Object.entries(action.inputs).map(([handle, port]) => Object.assign({ handle }, port)),
       outputs: Object.entries(action.outputs).map(([handle, port]) => Object.assign({ handle }, port)),
     }
+  }
+  async function resolveWorkflow(flowId: string, name: string, previous?: ManagedTaskDefinition) {
+    if (host.workflow == null) fail('workflow.unavailable', 'Workflow calls are unavailable.')
+    const target = await host.workflow(flowId)
+    return 'inputs' in target ? workflowTask(target, name) : workflowSelectionTask({ ...target, name }, undefined, previous)
   }
   async function configure(ref: string, patch: Record<string, unknown> = {}, clear: readonly (readonly string[])[] = []) {
     const node = nodeAt(content, ref),
@@ -476,7 +490,13 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
     } else if (node.kind == 'task' && 'executor' in node.task) {
       const before = node.task
       let task: ManagedTaskDefinition
-      if (type == 'connector') {
+      if (type == 'workflow') {
+        task =
+          before.executor.kind == 'workflow' && before.executor.flowId == config.flowId
+            ? { ...before, name: String(update.name) }
+            : await resolveWorkflow(String(config.flowId), String(update.name))
+        next = withWorkflowTask({ ...node, ...metadata } as typeof node, task)
+      } else if (type == 'connector') {
         if (before.executor.kind == 'connector' && config.action == before.executor.action) {
           const { connectionId: _connectionId, ...executor } = before.executor
           task = { ...before, name: String(update.name), executor: { ...executor, ...config } } as ManagedTaskDefinition
@@ -663,6 +683,15 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
           if (outputChanges.length > 0) apply(outputChanges)
           break
         }
+        case 'node.refresh': {
+          const ref = resolve(edit.node)
+          const node = nodeAt(content, ref)
+          if (node.kind != 'task' || !('executor' in node.task) || node.task.executor.kind != 'workflow')
+            fail('node.invalid-type', 'Only workflow call nodes support refresh.')
+          const task = await resolveWorkflow(node.task.executor.flowId, node.name ?? node.task.name, node.task)
+          apply([{ kind: 'graph.node.replace', nodeId: ref, before: node, node: withWorkflowTask(node, task) }])
+          break
+        }
         case 'node.add': {
           if (Object.hasOwn(aliases, edit.as)) fail('node.alias-duplicate', `Duplicate alias ${edit.as}.`)
           const nodeId = host.id(`node:${edit.as}`),
@@ -672,6 +701,9 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
           const config = edit.config ?? {}
           let changes: readonly ChangeOperation[]
           switch (edit.type) {
+            case 'workflow':
+              changes = createManagedTask(identity, await resolveWorkflow(String(authoringConfigurations.workflow.parse(config).flowId), name))
+              break
             case 'outputs':
               changes = [{ kind: 'graph.node.create', nodeId, node: { kind: 'outputs', name } }]
               break

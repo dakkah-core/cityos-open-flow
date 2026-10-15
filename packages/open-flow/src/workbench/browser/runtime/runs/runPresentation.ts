@@ -3,7 +3,7 @@ import type { Run } from '../api.ts'
 
 import { formatDuration } from '../../../../base/common/formatDuration.ts'
 
-export function runLabel(run: Run | undefined, t: TFunction): string {
+export function runLabel(run: Pick<Run, 'status'> | undefined, t: TFunction): string {
   if (run == null) return t('run.statusNone')
   switch (run.status) {
     case 'queued':

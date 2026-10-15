@@ -92,6 +92,7 @@ const managedFields = z.object({
         .object({ action: text, connectionId: text.optional(), inputDefinitions: z.array(input), messageHandle: text, inputs: z.record(text, agentValue) })
         .optional(),
     }),
+    z.strictObject({ kind: z.literal('workflow'), flowId: text, revisionId: text }),
   ]),
 })
 

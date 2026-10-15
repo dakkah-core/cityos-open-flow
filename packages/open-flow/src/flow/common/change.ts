@@ -201,6 +201,7 @@ export interface ConditionNode extends GraphNodeBase {
 }
 
 export type ManagedTaskExecutor =
+  | import('../../workflow/common/workflow.ts').WorkflowExecutor
   | import('../../decision/common/decision.ts').DecisionExecutor
   | import('../../openapi/common/openapi.ts').OpenApiExecutor
   | { readonly kind: 'connector'; readonly action: string; readonly connectionId?: string; readonly outputMode?: 'value' }

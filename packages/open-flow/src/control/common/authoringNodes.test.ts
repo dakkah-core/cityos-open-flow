@@ -45,6 +45,7 @@ function trigger(type: 'poll' | 'integration', key: string = type): TriggerKeySn
     : { ...common, type, endpoint: { methods: ['POST'], successStatus: 200, body: { allowArray: false, allowEmpty: false, formats: ['json'] } } }
 }
 const host: AuthoringHost = {
+  workflow: async (flowId) => ({ version: 1, flowId, name: 'Target', revisionId: 'r1', publicationId: 'p1', triggerNodeId: 'start', inputs: [], outputs: [] }),
   id: (name) => name,
   action: async (id) => ({
     actionId: id,

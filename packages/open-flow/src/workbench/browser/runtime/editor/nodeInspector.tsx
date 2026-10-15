@@ -33,6 +33,7 @@ import { CodeTaskSection } from './codeTaskSection.tsx'
 import { ConditionBranchesEditor } from './conditionBranchesEditor.tsx'
 import { ConnectorAccount, TriggerConnection, SavedConnectionReference } from './connectionSettings.tsx'
 import { DecisionSection } from './decisionSection.tsx'
+import { diagnosticMessage } from './diagnostics.ts'
 import { ErrorTriggerSources, ErrorTriggerSourcesEditor } from './errorTriggerSources.tsx'
 import { FeishuTriggerConfig } from './feishuTriggerConfig.tsx'
 import { GeneralSettings } from './generalSettings.tsx'
@@ -51,6 +52,7 @@ import { TriggerScheduleEditor } from './triggerScheduleEditor.tsx'
 import { TriggerSummary } from './triggerSummary.tsx'
 import { WebhookDeployment } from './webhookDeployment.tsx'
 import { WebhookEditor } from './webhookEditor.tsx'
+import { WorkflowSection, WorkflowInterfaceAlert, useWorkflowActions } from './workflowSection.tsx'
 
 export function inspectorIcon(node: ResolvedSelection | undefined): IconName {
   if (node?.kind == 'trigger') return 'trigger'
@@ -61,6 +63,7 @@ export function inspectorIcon(node: ResolvedSelection | undefined): IconName {
   if (node?.kind == 'outputs') return 'outputs'
   if (node?.kind == 'task' && node.definition != null && 'executor' in node.definition) {
     if (node.definition.executor.kind == 'decision') return 'decision'
+    if (node.definition.executor.kind == 'workflow') return 'flow'
     if (node.definition.executor.kind == 'openapi') return 'task'
     return node.definition.executor.kind == 'connector' ? 'connection' : 'llm'
   }
@@ -111,6 +114,8 @@ function nodePurposePlaceholder(
           return t('addNode.agentDescription')
         case 'decision':
           return t('decision.description')
+        case 'workflow':
+          return t('workflow.description')
         case 'openapi':
           return t('openapi.description')
         case 'connector':
@@ -274,10 +279,25 @@ export function NodeInspector({
   const isAgent = task != null && 'executor' in task && task.executor.kind == 'agent'
   const isDecision = task != null && 'executor' in task && task.executor.kind == 'decision'
   const isOpenApi = task != null && 'executor' in task && task.executor.kind == 'openapi'
+  const unconfiguredWorkflow = task != null && 'executor' in task && task.executor.kind == 'workflow' && !task.executor.flowId
   const unconfiguredOpenApi = task != null && 'executor' in task && task.executor.kind == 'openapi' && !task.executor.path
   const isLlm = task != null && 'executor' in task && task.executor.kind == 'llm'
   const connector = task != null && 'executor' in task && task.executor.kind == 'connector' ? task.executor : undefined
   const nodeId = selection?.kind == 'task' ? selection.id : undefined
+  const workflowSettings =
+    task != null && 'executor' in task && task.executor.kind == 'workflow' && selection != null
+      ? {
+          task,
+          nodeId: selection.id,
+          onCheck: () => store?.check() ?? Promise.resolve(),
+          disabled: disabled || readOnly,
+          load: (flowId: string, signal?: AbortSignal) => store!.loadWorkflowContract(flowId, signal),
+          onSave: (before: typeof task, value: typeof task) =>
+            store?.saveTaskSettings(selection.id, { kind: 'workflow', name: value.name, before, task: value }) ?? Promise.resolve(false),
+        }
+      : undefined
+  const workflowActions = useWorkflowActions(workflowSettings)
+  const workflowIssue = diagnostics?.find((issue) => issue.code.startsWith('workflow.') && issue.code != 'workflow.target-required')
   const locatedRequest = useRef<number>()
   useEffect(() => {
     if (focus == null) return
@@ -337,6 +357,16 @@ export function NodeInspector({
             fieldIdPrefix={`task-${selection?.id}`}
             loading={connectorLoading}
             nodeId={nodeId}
+          />
+        )}
+        {!readOnly && workflowSettings != null && (workflowIssue != null || workflowActions.error != null) && (
+          <WorkflowInterfaceAlert
+            key={`workflow-alert:${selection?.id}`}
+            flowId={workflowSettings.task.executor.kind == 'workflow' ? workflowSettings.task.executor.flowId : ''}
+            actions={workflowActions}
+            disabled={disabled}
+            stale={workflowIssue?.code == 'workflow.revision-stale'}
+            message={workflowIssue == null ? undefined : diagnosticMessage(workflowIssue, t)}
           />
         )}
         {selection != null && (
@@ -483,6 +513,15 @@ export function NodeInspector({
             }
           />
         )}
+        {workflowSettings != null && (
+          <WorkflowSection
+            key={`workflow:${selection?.id}`}
+            {...workflowSettings}
+            actions={workflowActions}
+            list={(signal) => store!.listWorkflowTargets(signal)}
+          />
+        )}
+
         {isOpenApi && task != null && 'executor' in task && (
           <OpenApiSection
             key={`openapi:${selection?.id}`}
@@ -548,6 +587,7 @@ export function NodeInspector({
           />
         )}
         {!unconfiguredOpenApi &&
+          !unconfiguredWorkflow &&
           (selection?.kind === 'outputs' || selection?.kind === 'approval' || selection?.kind === 'wait' || selection?.kind === 'task') &&
           (() => {
             const definitions: (InputPort | Group)[] =
@@ -735,7 +775,7 @@ export function NodeInspector({
             />
           </div>
         )}
-        {!unconfiguredOpenApi && selection?.kind === 'task' && selection.definition != null && (
+        {!unconfiguredOpenApi && !unconfiguredWorkflow && selection?.kind === 'task' && selection.definition != null && (
           <section className="inspector-port-section">
             <PortDefinitionEditor
               readOnly={readOnly}

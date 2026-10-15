@@ -29,6 +29,39 @@ export async function reference(call: ToolCall, id: string, flowId: string, stag
   }
   const dataPort = { schema: {}, nullable: true },
     stringPort = { schema: { type: 'string' }, nullable: false }
+  if (id == 'workflow-call') {
+    await call('flow_schema', { type: 'workflow' })
+    const catalog = await call('flow_list', {})
+    const target = (catalog.flows as { flowId: string; name: string }[]).find((flow) => flow.name == 'Lab double')
+    if (target == null) throw new Error('Published target not found')
+    const before = await read()
+    await submit(before.revision, [
+      {
+        op: 'flow.update',
+        set: { inputDefs: { amount: { schema: { type: 'number' }, nullable: false } }, outputDefs: { total: { schema: { type: 'number' }, nullable: false } } },
+      },
+      { op: 'node.add', as: 'start', type: 'start', name: 'Start' },
+      {
+        op: 'node.add',
+        as: 'call',
+        type: 'workflow',
+        name: 'Double',
+        config: { flowId: target.flowId },
+        inputs: { amount: { kind: 'output', node: '$start', port: 'amount' } },
+      },
+      { op: 'node.add', as: 'outputs', type: 'outputs', name: 'Outputs', inputs: { total: { kind: 'output', node: '$call', port: 'total' } } },
+      { op: 'edge.connect', source: '$start', target: '$call' },
+      { op: 'edge.connect', source: '$call', target: '$outputs' },
+    ])
+    const ref = await find('Double')
+    const saved = await read()
+    await submit(saved.revision, [
+      { op: 'node.update', node: ref, set: { name: 'Called double' } },
+      { op: 'node.refresh', node: ref },
+    ])
+    await call('flow_check', { flowId, revisionId: savedRevision })
+    return
+  }
   if (id == 'workflow-outputs') {
     await call('flow_schema', { type: 'outputs' })
     const before = await read()

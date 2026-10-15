@@ -54,7 +54,19 @@ export type SchedulerEvent =
       readonly inputs: Readonly<Record<string, JsonValue>>
       readonly jobId: string
       readonly nodeId: string
-      readonly nodeKind: 'agent' | 'approval' | 'condition' | 'connector' | 'decision' | 'javascript' | 'openapi' | 'llm' | 'value' | 'wait' | 'outputs'
+      readonly nodeKind:
+        | 'agent'
+        | 'approval'
+        | 'condition'
+        | 'connector'
+        | 'decision'
+        | 'javascript'
+        | 'openapi'
+        | 'llm'
+        | 'value'
+        | 'wait'
+        | 'outputs'
+        | 'workflow'
       readonly nodeTitle?: string
       readonly runId: string
       readonly type: 'node.started'
@@ -169,7 +181,15 @@ interface DependencyState {
   seeded: boolean
 }
 
+export interface PendingWorkflowCall {
+  readonly jobId: string
+  readonly nodeId: string
+  readonly childRunId: string
+  readonly input: Readonly<Record<string, JsonValue>>
+}
+
 export interface FlowRunCheckpoint {
+  readonly calls?: readonly PendingWorkflowCall[]
   readonly bindingValues: Readonly<Record<string, string>>
   readonly inputs: Readonly<Record<string, Readonly<Record<string, JsonValue>>>>
   readonly results: Readonly<Record<string, { readonly jobId: string; readonly outputs: Readonly<Record<string, JsonValue>> }>>
@@ -199,6 +219,7 @@ export type FlowRunOutcome =
     }
 
 interface TaskInvocationBase {
+  readonly workflowRunId?: string
   readonly agent?: { readonly action: 'approve' | 'reject'; readonly checkpoint: AgentCheckpoint }
   readonly additionalInputs: Readonly<Record<string, JsonValue>>
   readonly blockId: string
@@ -296,7 +317,7 @@ function nodeTitle(node: ExecutableNode): string | undefined {
 
 function nodeKind(
   node: ExecutableNode,
-): 'agent' | 'approval' | 'condition' | 'connector' | 'decision' | 'javascript' | 'openapi' | 'llm' | 'value' | 'wait' | 'outputs' {
+): 'agent' | 'approval' | 'condition' | 'connector' | 'decision' | 'javascript' | 'openapi' | 'llm' | 'value' | 'wait' | 'outputs' | 'workflow' {
   if (node.kind != 'task') return node.kind
   return 'moduleId' in node.task ? 'javascript' : node.task.executor.kind
 }
@@ -340,7 +361,11 @@ const agentResultSchema = z.union([
 
 export function decodeFlowRunCheckpoint(input: unknown): FlowRunCheckpoint {
   const source = checkpointRecord(input, 'Flow Run checkpoint')
-  checkpointExact(source, ['agents', 'bindingValues', 'counts', 'dependencies', 'inputs', 'results', 'version', 'waits'], 'Flow Run checkpoint')
+  checkpointExact(
+    source,
+    ['agents', 'bindingValues', 'counts', 'dependencies', 'inputs', 'results', 'version', 'waits', ...(source.calls === undefined ? [] : ['calls'])],
+    'Flow Run checkpoint',
+  )
   if (source.version != 5) throw new Error('Flow Run checkpoint version is unsupported.')
   const bindingValues = Object.fromEntries(
     Object.entries(checkpointRecord(source.bindingValues, 'Checkpoint bindings')).map(([id, value]) => {
@@ -380,7 +405,11 @@ export function decodeFlowRunCheckpoint(input: unknown): FlowRunCheckpoint {
     waitId: z.string().min(1),
   }
   const savedWait = z.strictObject({ ...savedWaitFields, pending: z.json().optional() })
-  const pendingWaits = z.array(savedWait).min(1).parse(source.waits)
+  const pendingWaits = z.array(savedWait).parse(source.waits)
+  const calls = z
+    .array(z.strictObject({ jobId: z.string().min(1), nodeId: z.string().min(1), childRunId: z.string().min(1), input: z.record(z.string(), z.json()) }))
+    .parse(source.calls ?? [])
+  if (pendingWaits.length + calls.length == 0) throw new Error('Checkpoint has no pending execution.')
   const agents = z
     .record(
       z.string(),
@@ -407,10 +436,20 @@ export function decodeFlowRunCheckpoint(input: unknown): FlowRunCheckpoint {
     jobs.add(pending.jobId)
     waits.add(pending.waitId)
   }
+  for (const call of calls) {
+    if (
+      jobs.has(call.jobId) ||
+      dependencies.nodes[call.nodeId]?.status != 'running' ||
+      dependencies.nodes[call.nodeId]?.jobId != call.jobId ||
+      Object.values(results).some((result) => result.jobId == call.jobId)
+    )
+      throw new Error('Checkpoint call execution conflicts.')
+    jobs.add(call.jobId)
+  }
   if (Object.values(dependencies.nodes).some((state) => state.status == 'running' && !jobs.has(state.jobId!)))
     throw new Error('Checkpoint dependency has no waiting execution.')
   if (Object.keys(agents).some((id) => !jobs.has(id))) throw new Error('Checkpoint Agent has no waiting execution.')
-  return { agents, bindingValues, counts, dependencies, inputs, results, version: 5, waits: pendingWaits }
+  return { agents, bindingValues, counts, dependencies, inputs, results, version: 5, waits: pendingWaits, ...(source.calls === undefined ? {} : { calls }) }
 }
 
 function jsonEqual(left: JsonValue, right: JsonValue): boolean {
@@ -479,7 +518,7 @@ function validateOutputs(
   document: Pick<PreparedFlow, 'outputDefs'>,
 ): Readonly<Record<string, JsonValue>> {
   const raw = outputRecord(value, nodeId)
-  const discardUndeclared = node.kind == 'task' && 'executor' in node.task && node.task.executor.kind == 'connector'
+  const discardUndeclared = node.kind == 'task' && 'executor' in node.task && (node.task.executor.kind == 'connector' || node.task.executor.kind == 'workflow')
   const ports =
     node.kind == 'outputs'
       ? nodePorts(node, document)
@@ -554,7 +593,7 @@ function validateCheckpoint(
   const triggerIds = Object.keys(checkpoint.results).filter((id) => isTriggerNode(target.graph.nodes[id]!))
   if (triggerIds.length != 1) throw new Error('Checkpoint must contain exactly one selected Trigger.')
   const pendingCounts = new Map<string, number>()
-  for (const waiting of checkpoint.waits) pendingCounts.set(waiting.nodeId, (pendingCounts.get(waiting.nodeId) ?? 0) + 1)
+  for (const waiting of [...checkpoint.waits, ...(checkpoint.calls ?? [])]) pendingCounts.set(waiting.nodeId, (pendingCounts.get(waiting.nodeId) ?? 0) + 1)
   for (const [id, count] of pendingCounts) {
     if ((checkpoint.counts['']?.[id] ?? 0) < count + (checkpoint.results[id] == null ? 0 : 1))
       throw new Error('Checkpoint waiting execution count is incomplete.')
@@ -579,6 +618,18 @@ function validateCheckpoint(
       if (result == null || (state.jobId != null && state.jobId != result.jobId) || !jsonEqual(state.output!, result.outputs))
         throw new Error('Checkpoint completed dependency conflicts with its result.')
     }
+  }
+  for (const call of checkpoint.calls ?? []) {
+    const node = target.graph.nodes[call.nodeId]
+    if (
+      node?.kind != 'task' ||
+      !('executor' in node.task) ||
+      node.task.executor.kind != 'workflow' ||
+      !jsonEqual(resolveInputs(call.nodeId, node), call.input) ||
+      checkpoint.agents[call.jobId] != null ||
+      checkpoint.dependencies.nodes[call.nodeId]?.output != null
+    )
+      throw new Error('Checkpoint workflow call does not match its node.')
   }
   for (const waiting of checkpoint.waits) {
     const node = target.graph.nodes[waiting.nodeId]
@@ -610,6 +661,7 @@ function validateCheckpoint(
 }
 
 type NodeResult =
+  | { readonly kind: 'calling'; readonly childRunId: string; readonly input: Readonly<Record<string, JsonValue>> }
   | { readonly kind: 'completed'; readonly releasedHandles?: readonly string[]; readonly outputs: Readonly<Record<string, JsonValue>> }
   | { readonly kind: 'suspended'; readonly value: JsonValue; readonly agent: FlowRunCheckpoint['agents'][string] }
 
@@ -657,6 +709,7 @@ function runGraph(
       const runNode = yield* FiberSet.runtime(active)()
       let firstCause: Cause.Cause<Error> | undefined
       let firstFailure: Error | undefined
+      const pendingCalls = new Map((resume?.checkpoint.calls ?? []).map((call) => [call.jobId, call]))
       const pendingWaits = new Map((resume?.checkpoint.waits ?? []).map((wait) => [wait.jobId, wait]))
       const changes = yield* Queue.unbounded<void>()
       let remainingMs = context.remainingMs
@@ -732,7 +785,7 @@ function runGraph(
               return mapping?.kind != 'sources' || mapping.sources.every((source) => source.kind != 'binding')
             }),
           )
-          if (resolution == null)
+          if (resolution == null && !pendingCalls.has(jobId))
             yield* context.emit({
               inputs: projectedInputs,
               jobId,
@@ -760,6 +813,7 @@ function runGraph(
               const previousIds = dependencies.state.nodes[nodeId]!.previous
               const additional = new Set((node.additionalInputs ?? []).map((port) => port.handle))
               const result = yield* context.invokeTask({
+                ...(pendingCalls.has(jobId) ? { workflowRunId: pendingCalls.get(jobId)!.childRunId } : {}),
                 additionalInputs: Object.fromEntries(Object.entries(nodeInputs).filter(([handle]) => additional.has(handle))),
                 blockId: 'moduleId' in node.task ? node.task.moduleId : nodeId,
                 flowId: target.flowId,
@@ -807,7 +861,16 @@ function runGraph(
                     }
                   : { kind: 'managed' as const }),
               })
-              if (config != null) {
+              if ('executor' in node.task && node.task.executor.kind == 'workflow') {
+                const response = z
+                  .discriminatedUnion('kind', [
+                    z.strictObject({ kind: z.literal('calling'), childRunId: z.string().min(1) }),
+                    z.strictObject({ kind: z.literal('completed'), outputs: z.record(z.string(), z.json()) }),
+                  ])
+                  .parse(result)
+                if (response.kind == 'calling') return { kind: 'calling' as const, childRunId: response.childRunId, input: nodeInputs }
+                outputs = response.outputs
+              } else if (config != null) {
                 const response: AgentResult = agentResultSchema.parse(result)
                 if (response.kind == 'suspended') {
                   const checkpoint = response.checkpoint
@@ -875,6 +938,11 @@ function runGraph(
           yield* Queue.offer(changes, undefined)
         })
       const settleNode = (nodeId: string, jobId: string, result: NodeResult): Effect.Effect<void, Error> => {
+        if (result.kind == 'calling') {
+          pendingCalls.set(jobId, { jobId, nodeId, childRunId: result.childRunId, input: result.input })
+          return Effect.void
+        }
+        pendingCalls.delete(jobId)
         if (result.kind == 'completed') {
           delete agents[jobId]
           return commit(nodeId, jobId, result.outputs, result.releasedHandles)
@@ -1030,18 +1098,28 @@ function runGraph(
             ),
             now,
           )
+        for (const call of pendingCalls.values()) {
+          yield* observe(
+            call.nodeId,
+            call.jobId,
+            Effect.gen(function* () {
+              const result = yield* executeNode(call.nodeId, target.graph.nodes[call.nodeId] as ExecutableNode, call.jobId, call.input)
+              yield* settleNode(call.nodeId, call.jobId, result)
+            }),
+          ).pipe(Effect.catch(() => Effect.void))
+        }
         const ready = dependencies.ready()
         for (const nodeId of ready) executeReady(nodeId)
         const running = yield* FiberSet.size(active)
         if (firstCause != null) continue
-        if (running == 0 && pendingWaits.size == 0 && ready.length == 0) {
+        if (running == 0 && pendingWaits.size == 0 && pendingCalls.size == 0 && ready.length == 0) {
           if (dependencies.incomplete) return yield* Effect.fail(new Error('Execution graph contains unresolved dependencies.'))
           break
         }
         if (running > 0 || ready.length > 0) idleSince = undefined
         else idleSince ??= now
         const left = idleSince == null ? remainingMs : waitRetentionMs - (now - idleSince)
-        if (idleSince != null && left! <= 0) {
+        if (idleSince != null && (left! <= 0 || pendingCalls.size > 0)) {
           const checkpoint: FlowRunCheckpoint = {
             bindingValues: context.bindingValues,
             inputs: launch,
@@ -1051,6 +1129,7 @@ function runGraph(
             version: 5,
             agents,
             waits: [...pendingWaits.values()],
+            ...(pendingCalls.size == 0 ? {} : { calls: [...pendingCalls.values()] }),
           }
           const encoded = JSON.stringify(checkpoint)
           if (new TextEncoder().encode(encoded).byteLength > 16 * 1024 * 1024) return yield* Effect.fail(new Error('Flow Run checkpoint exceeds 16 MiB.'))
@@ -1065,6 +1144,7 @@ function runGraph(
                 true,
               )
         let next = Effect.raceFirst(activity, decision)
+        if (pendingCalls.size > 0) next = Effect.raceFirst(next, Effect.sleep(1000).pipe(Effect.as({})))
         if (left != null) next = Effect.raceFirst(next, Effect.sleep(Math.max(0, left)).pipe(Effect.as({})))
         const resolutions = yield* next
         applyResolutions(resolutions, yield* Clock.currentTimeMillis)

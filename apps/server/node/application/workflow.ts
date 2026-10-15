@@ -1,0 +1,146 @@
+import type { RevisionContent } from '@oomol-lab/open-flow/flow-change'
+import type { WorkflowContract } from '@oomol-lab/open-flow/workflow'
+import type { Store } from '../storage/store.ts'
+
+import { decodeRevision } from '@oomol-lab/open-flow/flow-encoding'
+import { flowDependencies } from '@oomol-lab/open-flow/flow-semantics'
+import { workflowCompatibility, workflowPorts, workflowCandidate } from '@oomol-lab/open-flow/workflow'
+import { ControlError } from '../error.ts'
+
+/** Resolve availability and content once for both authoring and strict call checks. */
+function readWorkflowTarget(store: Store, ownerId: string, flowId: string) {
+  const flow = store.flows.get(flowId)
+  if (flow?.ownerId != ownerId) throw new ControlError('flow.not-found', 'The workflow is unavailable.')
+  const candidate = workflowCandidate({ ...flow, live: flow.publicationId == null ? null : { enabled: flow.liveEnabled == 1 } })
+  if (candidate.problem != null) return { kind: 'unavailable' as const, candidate }
+  const publication = store.publications.publication(flowId, flow.publicationId!)
+  if (publication == null) throw new ControlError('flow.invalid', 'Called workflow Publication is unavailable.')
+  const saved = store.flows.revision(flowId, publication.revisionId)
+  if (saved == null) throw new ControlError('flow.invalid', 'Called workflow Revision is unavailable.')
+  const content = decodeRevision(new TextEncoder().encode(saved.content))
+  const contract: WorkflowContract = {
+    version: 1,
+    flowId,
+    name: flow.name,
+    revisionId: saved.revisionId,
+    publicationId: publication.publicationId,
+    inputs: workflowPorts(content.document.inputDefs ?? []),
+    outputs: workflowPorts(content.document.outputDefs ?? []),
+  }
+  return { kind: 'available' as const, contract, content }
+}
+
+export function workflowTarget(store: Store, ownerId: string, flowId: string) {
+  const target = readWorkflowTarget(store, ownerId, flowId)
+  if (target.kind == 'unavailable') {
+    const { problem } = target.candidate
+    throw new ControlError('flow.invalid', `Called workflow is ${problem}.`, { details: { reason: `workflow.${problem}` } })
+  }
+  return target
+}
+
+export function workflowAuthoringTarget(store: Store, ownerId: string, flowId: string) {
+  const target = readWorkflowTarget(store, ownerId, flowId)
+  return target.kind == 'available' ? target.contract : target.candidate
+}
+
+function pointer(value: string): string {
+  return value.replaceAll('~', '~0').replaceAll('/', '~1')
+}
+
+export function workflowDiagnostics(store: Store, flowId: string, content: RevisionContent, triggerId?: string) {
+  const owner = store.flows.get(flowId)?.ownerId
+  const cache = new Map<string, ReturnType<typeof workflowTarget> | Error>()
+  const diagnostics: { code: string; message: string; path: string; line: number; column: number; values: Record<string, string> }[] = []
+  const visit = (revision: RevisionContent, entry: string | undefined, ancestors: ReadonlySet<string>, rootNode?: string, expanded?: Set<string>) => {
+    for (const nodeId of flowDependencies(revision, entry).nodes) {
+      const node = revision.document.graph.nodes[nodeId]
+      if (node?.kind != 'task' || !('executor' in node.task) || node.task.executor.kind != 'workflow') continue
+      const targetId = node.task.executor.flowId
+      const at = rootNode ?? nodeId
+      const path = `/document/graph/nodes/${pointer(at)}/task/executor/flowId`
+      if (!targetId) {
+        diagnostics.push({
+          code: rootNode == null ? 'workflow.target-required' : 'workflow.dependency-invalid',
+          message: rootNode == null ? 'Select a target workflow.' : 'A call inside the target workflow has no target selected.',
+          path,
+          line: 0,
+          column: 0,
+          values: {},
+        })
+        continue
+      }
+      try {
+        if (ancestors.has(targetId))
+          throw new ControlError('flow.invalid', 'Recursive workflow calls are not supported.', { details: { reason: 'workflow.recursive' } })
+        if (!cache.has(targetId)) {
+          try {
+            cache.set(targetId, workflowTarget(store, owner ?? '', targetId))
+          } catch (error) {
+            cache.set(targetId, error instanceof Error ? error : new Error(String(error)))
+          }
+        }
+        const target = cache.get(targetId)!
+        if (target instanceof Error) throw target
+        for (const issue of workflowCompatibility(node, target.contract)) {
+          const location =
+            rootNode != null
+              ? path
+              : issue.side == 'revision'
+                ? `/document/graph/nodes/${pointer(at)}/task/executor/revisionId`
+                : issue.side == 'input'
+                  ? `/document/graph/nodes/${pointer(at)}/inputs/${pointer(issue.field)}`
+                  : `/document/graph/nodes/${pointer(at)}/task/outputs/${node.task.outputs.findIndex((port) => 'handle' in port && port.handle == issue.field)}`
+          diagnostics.push({
+            code:
+              issue.side == 'revision'
+                ? rootNode == null
+                  ? node.task.executor.revisionId
+                    ? 'workflow.revision-stale'
+                    : 'workflow.interface-required'
+                  : 'workflow.dependency-stale'
+                : rootNode == null
+                  ? 'workflow.interface'
+                  : 'workflow.dependency-invalid',
+            message:
+              issue.side == 'revision' && rootNode != null
+                ? 'A nested workflow call references an outdated Live revision. Update the called workflow and publish it again.'
+                : issue.message,
+            path: location,
+            line: 0,
+            column: 0,
+            values: { field: issue.field, flowId: targetId },
+          })
+        }
+        // Expansion is per calling node so shared dependencies still diagnose every caller.
+        // The read cache above remains shared across the whole check.
+        const visited = expanded ?? new Set<string>()
+        if (!visited.has(targetId)) {
+          visit(target.content, undefined, new Set([...ancestors, targetId]), at, visited)
+          visited.add(targetId)
+        }
+      } catch (error) {
+        diagnostics.push({
+          code:
+            rootNode != null
+              ? 'workflow.dependency-invalid'
+              : error instanceof ControlError && typeof error.details?.reason == 'string'
+                ? error.details.reason
+                : 'workflow.unavailable',
+          message: error instanceof Error ? error.message : String(error),
+          path,
+          line: 0,
+          column: 0,
+          values: {},
+        })
+      }
+    }
+  }
+  visit(content, triggerId, new Set([flowId]))
+  return diagnostics
+}
+
+export function requireWorkflowCalls(store: Store, flowId: string, content: RevisionContent, triggerId?: string) {
+  const diagnostics = workflowDiagnostics(store, flowId, content, triggerId)
+  if (diagnostics.length) throw new ControlError('flow.invalid', diagnostics[0]!.message)
+}

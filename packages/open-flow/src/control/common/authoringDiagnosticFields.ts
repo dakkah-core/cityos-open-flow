@@ -65,6 +65,7 @@ export function authoringDiagnosticField(content: RevisionContent, node: GraphNo
       const field = location[1]
       if (field == null || field == 'kind') return 'config'
       if (field == 'prompt') return 'prompt'
+      if (executor?.kind == 'workflow' && field == 'revisionId') return 'config.flowId'
       if (executor?.kind == 'openapi') {
         if (field == 'document') return 'config'
         if (field == 'auth') return 'config.authentication'

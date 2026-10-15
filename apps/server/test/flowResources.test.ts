@@ -13,7 +13,7 @@ import { revisionResourceReferences } from '../node/storage/flow-resources.ts'
 import { migrateFlowResources } from '../node/storage/migrate-flow-resources.ts'
 import { Store } from '../node/storage/store.ts'
 
-const empty = { variableNames: [], connections: [], errorSourceFlowIds: [] }
+const empty = { calledFlowIds: [], variableNames: [], connections: [], errorSourceFlowIds: [] }
 
 function content(name = 'TOKEN'): RevisionContent {
   return {
@@ -104,7 +104,12 @@ it('returns current delta-backed resources in one list/detail query without read
   expect(query).toHaveBeenCalledTimes(1)
   expect(read).not.toHaveBeenCalled()
   expect(flowView(page.flows.find((flow) => flow.flowId == 'flow')!)).toEqual(flowView(stored))
-  const expected = { variableNames: ['NEW_TOKEN'], connections: [{ providerId: 'mail', connectionId: 'account' }], errorSourceFlowIds: ['source'] }
+  const expected = {
+    calledFlowIds: [],
+    variableNames: ['NEW_TOKEN'],
+    connections: [{ providerId: 'mail', connectionId: 'account' }],
+    errorSourceFlowIds: ['source'],
+  }
   expect(flowView(stored).resourceReferences.draft).toEqual(expected)
   const client = new ControlClient(async () => Response.json({ flows: page.flows.map(flowView), version: 1 }))
   expect((await client.listFlows()).flows.find((flow) => flow.flowId == 'flow')!.resourceReferences.draft).toEqual(expected)
@@ -238,4 +243,41 @@ it('reads references without revisions and treats an unparseable Draft independe
   expect(store.resourceReferences.variableReferences('operator', 'MISSING')).toEqual({ version: 1, references: [] })
   expect(read).not.toHaveBeenCalled()
   read.mockRestore()
+})
+
+it('indexes workflow targets without additional revision reads and preserves delta storage', () => {
+  const { database, store } = setup()
+  create(store)
+  const read = vi.spyOn(store.revisions, 'read')
+  expect(commit(store, content('BASELINE'), 'baseline').kind).toBe('committed')
+  const baselineReads = read.mock.calls.length
+  read.mockClear()
+  const next = content('BASELINE')
+  const call = {
+    kind: 'task' as const,
+    inputs: {},
+    task: { name: 'Call', inputs: [], outputs: [], executor: { kind: 'workflow' as const, flowId: 'target', revisionId: 'target-r1' } },
+  }
+  const withCalls = {
+    ...next,
+    document: { ...next.document, graph: { ...next.document.graph, nodes: { ...next.document.graph.nodes, first: call, second: call } } },
+  }
+  expect(commit(store, withCalls, 'calls', 'baseline').kind).toBe('committed')
+  expect(read.mock.calls.length).toBe(baselineReads)
+  expect(database.connection.prepare("SELECT 1 FROM revision_deltas WHERE revision_id = 'calls'").get()).toBeDefined()
+  expect(database.connection.prepare("SELECT 1 FROM revisions WHERE revision_id = 'calls'").get()).toBeUndefined()
+  read.mockImplementation(() => {
+    throw new Error('Reference reads must not resolve Revisions')
+  })
+  expect(store.resourceReferences.flowReferences('operator', 'target', 'incoming').references).toMatchObject([{ flowId: 'flow', draft: true }])
+  expect(store.resourceReferences.flowReferences('operator', 'flow', 'outgoing')).toMatchObject({
+    total: 1,
+    references: [{ flowId: 'target', available: false }],
+  })
+  expect(store.resourceReferences.flowReferences('operator', 'target', 'incoming', 50)).toMatchObject({ total: 1, references: [] })
+  expect(store.resourceReferences.variableReferences('operator', 'BASELINE').references).toHaveLength(1)
+  expect(store.resourceReferences.flowReferences('other', 'target', 'incoming').references).toEqual([])
+  read.mockRestore()
+  expect(commit(store, next, 'removed', 'calls').kind).toBe('committed')
+  expect(store.resourceReferences.flowReferences('operator', 'target', 'incoming').total).toBe(0)
 })

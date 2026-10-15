@@ -16,6 +16,20 @@ export function runtimeAssertions(id: string, sample: Sample, status: string, ca
     return errors
   }
   if (status != 'completed') return [`Run ${sample.name} ended ${status}.`]
+  if (id == 'workflow-call') {
+    const terminal = events.findLast((event) => event.kind == 'run.completed')
+    const result = terminal?.kind == 'run.completed' ? terminal.payload.result : undefined
+    if (
+      result == null ||
+      typeof result != 'object' ||
+      Array.isArray(result) ||
+      !('outputs' in result) ||
+      !isDeepStrictEqual(result.outputs, { total: Number(sample.outputs?.amount) * 2 })
+    )
+      errors.push('Return the called workflow business output.')
+    if (events.some((event) => event.kind == 'node.log')) errors.push('Child logs must remain in the child Run.')
+    if (!events.some((event) => event.kind == 'node.started' && event.payload.nodeKind == 'workflow')) errors.push('Execute the workflow call node.')
+  }
   if (id == 'workflow-outputs') {
     const terminal = events.findLast((event) => event.kind == 'run.completed')
     const result = terminal?.kind == 'run.completed' ? terminal.payload.result : undefined

@@ -6,8 +6,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { nodeInputMappings } from '../../../../flow/common/condition.ts'
 import { CodeTaskSection } from './codeTaskSection.tsx'
 import { ConnectorAccount, TriggerConnection } from './connectionSettings.tsx'
+import { InspectorStatusSection } from './inspectorStatusSection.tsx'
 import { NodeInspector } from './nodeInspector.tsx'
 import { OpenApiSection } from './openApiSection.tsx'
+import { WorkflowInterfaceAlert } from './workflowSection.tsx'
 
 vi.mock('use-value-enhancer', () => ({ useVal: (value: { value: unknown }) => value.value }))
 
@@ -26,6 +28,7 @@ vi.mock('val-i18n-react', async (importOriginal) => ({
 }))
 
 function find(element: ReactElement, predicate: (item: ReactElement) => boolean): ReactElement | undefined {
+  if (element.type === InspectorStatusSection) return find(InspectorStatusSection(element.props as Parameters<typeof InspectorStatusSection>[0]), predicate)
   if (predicate(element)) return element
   for (const child of Children.toArray((element.props as { readonly children?: ReactNode }).children)) {
     if (!isValidElement(child)) continue
@@ -727,5 +730,34 @@ describe('OpenAPI configuration feedback', () => {
     expect(input.props['aria-describedby']).toBe('error-id')
     expect(find(panel, (item) => item.props['aria-expanded'] != null)).toBeUndefined()
     expect(load).not.toHaveBeenCalled()
+  })
+})
+
+describe('Workflow interface status', () => {
+  it.each([
+    { code: undefined, readOnly: false, shown: false },
+    { code: 'workflow.revision-stale', readOnly: false, shown: true },
+    { code: 'workflow.dependency-stale', readOnly: false, shown: true },
+    { code: 'workflow.unpublished', readOnly: false, shown: true },
+    { code: 'workflow.revision-stale', readOnly: true, shown: false },
+  ])('shows the update action only for an editable stale call ($code, readOnly=$readOnly)', ({ code, readOnly, shown }) => {
+    const task = { name: 'Call', inputs: [], outputs: [], executor: { kind: 'workflow', flowId: 'target', revisionId: 'r1' } }
+    const node = { kind: 'task', name: 'Call', task, inputs: {} }
+    const rendered = NodeInspector({
+      ...(readOnly
+        ? { readOnly: true as const }
+        : {
+            readOnly: false as const,
+            variables: { enabled: true, names: [], loaded: false, loading: false, onOpen: vi.fn() },
+            connectors: {} as never,
+            triggers: {} as never,
+            store: { $: { flowId: { value: 'parent' } } } as never,
+          }),
+      revision: { inputMappings: () => ({}), graph: () => ({ nodes: { call: node } }) } as never,
+      selection: { kind: 'task', id: 'call', node, definition: task } as never,
+      diagnostics: code ? [{ code, message: 'Changed', path: '/document/graph/nodes/call/task/executor/revisionId', line: 0, column: 0 }] : [],
+      theme: 'light',
+    })
+    expect(find(rendered, (item) => item.type === WorkflowInterfaceAlert) != null).toBe(shown)
   })
 })

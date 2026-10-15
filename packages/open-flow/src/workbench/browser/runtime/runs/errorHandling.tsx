@@ -1,14 +1,12 @@
 import type { Run, RunDetails } from '../api.ts'
-import type { WorkbenchLocation } from '../contract.ts'
 
-import { createContext, useContext } from 'react'
+import { useContext } from 'react'
 import { useTranslate } from 'val-i18n-react'
-
-export const RunLinkContext = createContext<((location: WorkbenchLocation) => string) | undefined>(undefined)
+import { WorkbenchLinkContext } from '../linkContext.ts'
 
 export function ErrorHandling({ run }: { readonly run: Run | RunDetails | undefined }) {
   const t = useTranslate()
-  const hrefFor = useContext(RunLinkContext)
+  const hrefFor = useContext(WorkbenchLinkContext)
   if (run == null || !('waits' in run) || (run.errorSource == null && run.errorDispatches == null)) return null
   const link = (flowId: string, runId: string, label: string) =>
     hrefFor == null ? (

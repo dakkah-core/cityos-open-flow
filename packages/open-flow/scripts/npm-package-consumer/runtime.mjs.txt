@@ -166,3 +166,7 @@ for (const name of ['SKILL.md', 'references/flow-authoring.md', 'references/flow
   const resource = import.meta.resolve(`@oomol-lab/open-flow/skills/open-flow/${name}`)
   assert.ok((await readFile(new URL(resource), 'utf8')).length > 0)
 }
+
+const workflow = await import('@oomol-lab/open-flow/workflow')
+const workflowContract = { version: 1, flowId: 'target', name: 'Target', revisionId: 'r1', publicationId: 'p1', inputs: [], outputs: [] }
+assert.deepEqual(workflow.workflowTask(workflowContract), { name: 'Target', executor: { kind: 'workflow', flowId: 'target', revisionId: 'r1' }, inputs: [], outputs: [] })

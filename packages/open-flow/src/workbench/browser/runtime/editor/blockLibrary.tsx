@@ -104,6 +104,8 @@ function menuItems(options: readonly AddNodeOption[], providersOnly = false): Li
 
 function fallbackIcon(item: LibraryNodeItem): IconName {
   switch (item.type) {
+    case 'workflow':
+      return 'flow'
     case 'agent':
       return 'llm'
     case 'condition':

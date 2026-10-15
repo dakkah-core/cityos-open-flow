@@ -53,6 +53,7 @@ import {
 } from '../../../../flow/common/nodeChanges.ts'
 import { encodeWorkflowFile, workflowFileName } from '../../../../flow/common/workflowFile.ts'
 import { feishuResourceKind, supportsFeishuChatFilter } from '../../../../trigger/providers/feishu/config.ts'
+import { workflowCandidate } from '../../../../workflow/common/workflow.ts'
 import { ApiError } from '../api.ts'
 import {
   canvasPresentationChange,
@@ -827,6 +828,23 @@ export class WorkspaceStore {
     const position = this.#designer().nodes.find((node) => node.id == nodeId)?.position
     if (position == null) return
     await this.#canvasChange('edit', 1, [], (value) => setComment(value, nodeId, { ...comment, position }))
+  }
+
+  public async listWorkflowTargets(signal?: AbortSignal) {
+    const flowId = this.$.revision.value?.revision.flowId
+    if (flowId == null) return []
+    const candidates: import('../../../../workflow/common/workflow.ts').WorkflowCandidate[] = []
+    let cursor: string | undefined
+    do {
+      const page = await this.#client.listFlows({ cursor, limit: 100, signal })
+      candidates.push(...page.flows.map((flow) => workflowCandidate(flow, flowId)))
+      cursor = page.nextCursor
+    } while (cursor != null)
+    return candidates
+  }
+
+  public loadWorkflowContract(flowId: string, signal?: AbortSignal) {
+    return this.#client.getWorkflowContract(flowId, signal)
   }
 
   public loadOpenApiDocument(url: string, signal?: AbortSignal): Promise<JsonValue> {

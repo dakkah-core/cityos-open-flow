@@ -115,6 +115,7 @@ function nodeIcon(node: ResolvedNode): string | undefined {
       if (task == null) return
       if ('moduleId' in task) return ':carbon:code:'
       if (task.executor.kind == 'decision') return ':carbon:ml-model-reference:'
+      if (task.executor.kind == 'workflow') return ':lucide-light:workflow:'
       if (task.executor.kind == 'openapi') return ':logos:openapi-icon:'
       return task.executor.kind == 'connector' ? ':carbon:connection-signal:' : ':carbon:machine-learning-model:'
     }
@@ -315,6 +316,11 @@ function runProjection(
       nodes.set(nodeId, { ...nodes.get(nodeId), runId: run.runId, status: 'running' })
     }
     const waitingCounts = new Map<string, number>()
+    if ('calls' in run)
+      for (const call of run.calls ?? []) {
+        if (call.status != null && ['queued', 'starting', 'running', 'waiting'].includes(call.status))
+          waitingCounts.set(call.nodeId, (waitingCounts.get(call.nodeId) ?? 0) + 1)
+      }
     if ('waits' in run) for (const wait of run.waits) waitingCounts.set(wait.nodeId, (waitingCounts.get(wait.nodeId) ?? 0) + 1)
     for (const [nodeId, count] of waitingCounts) {
       if ((runningCounts.get(nodeId) ?? 0) <= count) nodes.set(nodeId, { ...nodes.get(nodeId), runId: run.runId, status: 'waiting' })
@@ -332,6 +338,7 @@ function executorName(task: TaskDefinition | undefined, providerName: string | u
   if ('moduleId' in task) return t?.('designer.executorJavaScript') ?? 'JavaScript'
   if (task.executor.kind == 'agent') return t?.('addNode.agent') ?? 'AI Agent'
   if (task.executor.kind == 'decision') return t?.('addNode.decision') ?? 'AI Decision'
+  if (task.executor.kind == 'workflow') return t?.('addNode.workflow') ?? 'Call Workflow'
   if (task.executor.kind == 'openapi') return 'OpenAPI'
   if (task.executor.kind == 'llm') return t?.('designer.executorLlm') ?? 'LLM'
   return `${t?.('designer.executorConnector') ?? 'Connector'} · ${providerName ?? task.executor.action.split('.')[0]}`

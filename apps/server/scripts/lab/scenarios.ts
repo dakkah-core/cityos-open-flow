@@ -6,6 +6,13 @@ import { fulfillmentSamples, fulfillmentStages } from './fulfillment.ts'
 
 export const scenarios = [
   {
+    id: 'workflow-call',
+    entry: { kind: 'start' },
+    name: 'Call a published workflow',
+    version: 1,
+    task: 'Find the published workflow Lab double. Add Start with required number amount, call that workflow using the Start amount, and return its total through Workflow Outputs. Rename the call node without reloading its interface, then explicitly refresh its interface. Preserve the input binding.',
+  },
+  {
     id: 'workflow-outputs',
     entry: { kind: 'start' },
     name: 'Declare and compute workflow outputs',
@@ -143,6 +150,7 @@ function source(nodeId: string, handle: string, from: string, output: string): C
 }
 export function initialOperations(id: string): ChangeOperation[] {
   if (
+    id == 'workflow-call' ||
     id == 'workflow-outputs' ||
     id == 'start-parameters' ||
     id == 'connector-responses' ||
@@ -313,6 +321,7 @@ export interface Sample {
   parameters?: Record<string, JsonValue>
 }
 export function samples(id: string, stage = 0): Sample[] {
+  if (id == 'workflow-call') return [0, -2.5, 12.5].map((amount) => ({ name: String(amount), orders: [], order, outputs: { amount } }))
   if (id == 'workflow-outputs' || id == 'start-parameters') {
     const cases: Pick<Sample, 'name' | 'outputs'>[] = [
       { name: 'zero-and-omitted', outputs: { message: 'Created', amount: 0 } },
@@ -376,6 +385,12 @@ function effectiveNode(content: RevisionContent, id: string): unknown {
 }
 /** Independent assertions: compare behavior and preserved effective configurations, not generated IDs. */
 export function assertions(id: string, base: RevisionContent, current: RevisionContent): string[] {
+  if (id == 'workflow-call')
+    return Object.values(current.document.graph.nodes).filter(
+      (candidate) => candidate.kind == 'task' && 'executor' in candidate.task && candidate.task.executor.kind == 'workflow',
+    ).length == 1
+      ? []
+      : ['Create one workflow call.']
   if (id == 'workflow-outputs') {
     const outputs = Object.entries(current.document.graph.nodes).filter(([, candidate]) => candidate.kind == 'outputs')
     const definitions = Object.fromEntries((current.document.outputDefs ?? []).map((port) => [port.handle, port]))

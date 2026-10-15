@@ -488,6 +488,7 @@ export const controlApiConformanceCases: readonly ControlApiConformanceCase[] = 
       equal(
         record(created.resourceReferences, 'Flow resource references').draft,
         {
+          calledFlowIds: [],
           variableNames: [],
           connections: [],
           errorSourceFlowIds: [],

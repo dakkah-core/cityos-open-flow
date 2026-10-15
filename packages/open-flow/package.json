@@ -42,6 +42,7 @@
     "./run-lifecycle": "./src/execution/common/runLifecycle.ts",
     "./run-events": "./src/execution/common/events.ts",
     "./runtime-contract": "./src/execution/common/runtime.ts",
+    "./workflow": "./src/workflow/common/workflow.ts",
     "./scheduler": "./src/execution/common/scheduler.ts",
     "./theme.css": "./src/ui/browser/theme.css",
     "./webhook-trigger": "./src/trigger/common/webhook.ts",

@@ -8,6 +8,7 @@ import type { ConnectorAccessContext, ConnectorHost } from '../deployment/connec
 import type { LlmHost } from '../deployment/llm.ts'
 import type { StoredRun } from '../storage/run-store.ts'
 import type { Store } from '../storage/store.ts'
+import type { RunControl } from './run-control.ts'
 
 import { normalizeConnectorRuntimeInputs } from '@oomol-lab/open-flow/connector-action'
 import { controlErrorCode } from '@oomol-lab/open-flow/control-api'
@@ -61,6 +62,7 @@ export class RunExecutor {
   readonly #logger: Logger
   readonly #runChanged: (flowId: string, runId: string) => void
   readonly #wakeMaintenance: () => void
+  readonly #invokeWorkflow: RunControl['invokeWorkflow']
 
   constructor(
     store: Store,
@@ -72,7 +74,9 @@ export class RunExecutor {
     logger: Logger,
     runChanged: (flowId: string, runId: string) => void,
     wakeMaintenance: () => void,
+    invokeWorkflow: RunControl['invokeWorkflow'],
   ) {
+    this.#invokeWorkflow = invokeWorkflow
     this.#store = store
     this.#isolatedVm = isolatedVm
     this.#resolveConnector = resolveConnector
@@ -362,6 +366,8 @@ export class RunExecutor {
     const task = node.task
     const executor = task.executor
     switch (executor.kind) {
+      case 'workflow':
+        return this.#invokeWorkflow(run, invocation.nodeId, invocation.jobId, invocation.input, node, invocation.workflowRunId)
       case 'openapi':
         return executeOpenApi(executor, invocation.input, invocation.signal)
       case 'agent': {

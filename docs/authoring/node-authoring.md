@@ -28,6 +28,13 @@ When a node has multiple business outputs, the caller must select one. The tool 
 
 Workflow Outputs is an execution sink with workflow-owned `outputDefs` and `outputMappings`. Its public type is `outputs` with empty config. Declare the workflow fields through `flow.update.set.outputDefs`, then assign their sources through existing node input operations. Keep its business result separate from node logs and do not expose its fields as downstream data ports.
 
+Call Workflow has public type `workflow` and config `{ flowId }`. The platform obtains the current published workflow input/output contract and stores capability-derived Task ports. Ordinary updates preserve that snapshot; `node.refresh` explicitly reloads it. Server checks require its saved revision to match current Live, including publications with unchanged ports. A mismatch blocks testing and publishing, and exposes an update action in the inspector’s top status section. Refresh matches fields by exact name, removes mappings for removed inputs, and retains unresolved output references for diagnostics. Callers must not assemble executor identities or copy another workflow's graph.
+
+Workflow target selection may retain an owned unpublished or disabled Flow. Without a loaded interface,
+the call stores an empty source revision; checks report the target problem or missing interface.
+After the target becomes available, `node.refresh` loads its current Live contract. Selection and
+workflow-call checks do not validate Start presence. Start remains required at actual Live invocation.
+
 Model execution branches and data outputs separately. Only data outputs produced at runtime can be bound.
 Condition branches and other control signals cannot act as data ports. Expose Wait data and decisions according to their runtime contract.
 

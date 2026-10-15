@@ -5,7 +5,7 @@ import type { ResolvedSelection, RevisionView } from '../revisionView.ts'
 import { sourceOutputLabel } from '../../../../flow/common/sourceField.ts'
 import { schemaMismatchMessage } from './schemaMismatchMessage.ts'
 
-export type InspectorSection = 'account' | 'condition' | 'inputs' | 'module' | 'node' | 'task' | 'trigger'
+export type InspectorSection = 'account' | 'condition' | 'inputs' | 'module' | 'node' | 'task' | 'trigger' | 'workflow-status'
 export type DiagnosticScope = 'code' | 'flow' | 'node' | 'task'
 
 export interface DiagnosticLocation {
@@ -118,7 +118,10 @@ function location(revision: RevisionView | undefined, diagnostic: Diagnostic): D
     if (node != null)
       return {
         nodeId,
-        section: nodeSection(node.node, slash < 0 ? '' : path.slice(slash)),
+        section:
+          diagnostic.code.startsWith('workflow.') && diagnostic.code != 'workflow.target-required'
+            ? 'workflow-status'
+            : nodeSection(node.node, slash < 0 ? '' : path.slice(slash)),
       }
     return
   }

@@ -71,6 +71,7 @@ import {
   publication,
 } from './control-views.ts'
 import { RunControl } from './run-control.ts'
+import { workflowTarget, workflowAuthoringTarget, workflowDiagnostics } from './workflow.ts'
 
 type PublishInput = {
   readonly control:
@@ -842,6 +843,15 @@ export class ControlService {
     return { ...authoringSchema(query.type), version: 1 as const }
   }
 
+  getWorkflowContract(actorId: string, flowId: string) {
+    return workflowTarget(this.store, actorId, flowId).contract
+  }
+
+  getFlowReferences(actorId: string, flowId: string, direction: 'incoming' | 'outgoing', offset: number, limit: number) {
+    this.authorize(actorId, { flowId })
+    return this.store.resourceReferences.flowReferences(actorId, flowId, direction, offset, limit)
+  }
+
   async checkAuthoring(flowId: string, revisionId: string) {
     const check = await this.checkFlow(flowId, revisionId, currentEngineContract)
     const revision = this.getRevision(flowId, revisionId)
@@ -865,6 +875,7 @@ export class ControlService {
         return (
           await compileAuthoring(base, request, {
             id,
+            workflow: async (targetId) => workflowAuthoringTarget(this.store, actorId, targetId),
             action: (action) => this.getConnectorAction(action, flowId, undefined, undefined, actorId),
             trigger: (key) => this.getTriggerKey(key),
             openapi: (url) => loadOpenApiDocument(url),
@@ -1289,6 +1300,7 @@ export class ControlService {
       throw new ControlError(controlErrorCode.flowInvalid, 'The stored Flow Revision is not structurally valid.', { cause: error })
     }
     const connector = this.resolveConnector()
+    const callDiagnostics = workflowDiagnostics(this.store, flowId, content)
     const accountDiagnostics = await actionAccountDiagnostics(content, checked.closure.dependencies, async (actionId) => {
       if (connector == null) throw new ConnectorTaskError('connector.unconfigured', 'Connector is not configured for this deployment.')
       const teamId = await this.resolveConnectorScope(flowId)
@@ -1311,13 +1323,13 @@ export class ControlService {
     })
     return {
       closureDigest: checked.closure.digest,
-      diagnostics: [...checked.diagnostics, ...llmDiagnostics, ...accountDiagnostics],
+      diagnostics: [...checked.diagnostics, ...llmDiagnostics, ...accountDiagnostics, ...callDiagnostics],
       engineContract,
       flowId,
       modelVersion: content.modelVersion,
       revisionDigest: stored.digest,
       revisionId,
-      valid: checked.valid && llmDiagnostics.length == 0 && accountDiagnostics.length == 0,
+      valid: checked.valid && llmDiagnostics.length == 0 && accountDiagnostics.length == 0 && callDiagnostics.length == 0,
       version: 1,
     }
   }

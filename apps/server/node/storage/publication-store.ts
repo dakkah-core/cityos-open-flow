@@ -685,8 +685,7 @@ export class PublicationStore {
           )
           .run(input.flowId, publicationId, input.publishedAt)
 
-        if (flow?.status == 'active')
-          this.#references.replaceVariables(flow.ownerId, input.flowId, 'live', revisionResourceReferences(content)?.variableNames ?? [])
+        if (flow?.status == 'active') this.#references.replaceResources(flow.ownerId, input.flowId, 'live', revisionResourceReferences(content))
         this.#installWebhooks(input, publicationId)
         this.#installCrons(input, publicationId)
         const errors = input.errorTriggers ?? []

@@ -1,3 +1,4 @@
+import type { WorkflowContract, WorkflowExecutor } from '@oomol-lab/open-flow/workflow'
 import type { CanvasCommand, CanvasBroadcast } from '@oomol-lab/open-flow/control-api'
 // Compiled against the installed tarball by check-npm-package.ts; this template is not executed.
 import '@oomol-lab/open-flow/preview.css'
@@ -223,3 +224,6 @@ export { verifyWorkbenchHost } from '@oomol-lab/open-flow/workbench-host-conform
 const canvasCommand: CanvasCommand = { type: 'pan', dx: 200, dy: -100 }
 const canvasResult: Promise<CanvasBroadcast> = new ControlClient(async () => new Response()).broadcastCanvas('flow', canvasCommand)
 void canvasResult
+
+export const workflowKind: WorkflowExecutor['kind'] = 'workflow'
+export type CalledWorkflow = WorkflowContract

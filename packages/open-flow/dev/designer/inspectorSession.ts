@@ -1,12 +1,13 @@
-import type { ConnectorAccess, ConnectorActionMetadata } from '../../src/control/common/api.ts'
+import type { ConnectorAccess, ConnectorActionMetadata, Diagnostic } from '../../src/control/common/api.ts'
 import type { ChangeOperation, RevisionContent, JsonValue } from '../../src/flow/common/change.ts'
 import type { UiLanguage } from '../../src/localization/common/languages.ts'
+import type { WorkflowContract } from '../../src/workflow/common/workflow.ts'
 import type { LogAction } from './stories.tsx'
 
 import { currentFlowModelVersion } from '@oomol-lab/open-flow/flow-change'
 import { applyFlowChanges } from '../../src/flow/common/change.ts'
 import { removeConnectionUsage } from '../../src/flow/common/connectionUsage.ts'
-import { WorkbenchClient } from '../../src/workbench/browser/runtime/api.ts'
+import { ApiError, WorkbenchClient } from '../../src/workbench/browser/runtime/api.ts'
 import { setNodePositions } from '../../src/workbench/browser/runtime/canvasPresentation.ts'
 import { createI18n } from '../../src/workbench/browser/runtime/i18n.ts'
 import { ConnectorStore } from '../../src/workbench/browser/runtime/stores/connectorStore.ts'
@@ -18,6 +19,10 @@ export function createInspectorTransport(
   log: LogAction,
   initialContent: RevisionContent,
   options: {
+    readonly saveError?: () => boolean
+    readonly checkDiagnostics?: (content: RevisionContent) => readonly Diagnostic[]
+    readonly workflows?: () => readonly { flowId: string; name: string; live: { enabled: boolean; publicationId: string; revisionId: string } | null }[]
+    readonly workflowContract?: (flowId: string, signal?: AbortSignal) => Promise<WorkflowContract>
     readonly leinaBots?: (signal?: AbortSignal) => Promise<JsonValue>
     readonly openApiDocument?: (url: string, signal?: AbortSignal) => Promise<JsonValue>
     readonly published?: boolean
@@ -116,6 +121,16 @@ export function createInspectorTransport(
         return Response.json(await options.leinaBots(init?.signal ?? undefined))
       } catch {
         return Response.json({ error: { code: 'connector.unavailable', message: 'Leina is unavailable.' } }, { status: 503 })
+      }
+    }
+    if (url.pathname.endsWith('/call-contract') && options.workflowContract != null) {
+      const flowId = decodeURIComponent(url.pathname.split('/')[3]!)
+      try {
+        return Response.json(await options.workflowContract(flowId, init?.signal ?? undefined))
+      } catch (error) {
+        if (error instanceof ApiError)
+          return Response.json({ error: { code: error.code, message: error.message, details: error.details } }, { status: error.status })
+        return Response.json({ error: { code: 'flow.invalid', message: 'Workflow unavailable.' } }, { status: 409 })
       }
     }
     if (url.pathname == '/v1/openapi/document' && options.openApiDocument != null) {
@@ -253,7 +268,12 @@ export function createInspectorTransport(
       })
     if (url.pathname === '/v1/trigger-keys/catalog')
       return Response.json({ version: 2, locale: url.searchParams.get('locale') ?? 'en', definitions: [], display: {} })
-    if (url.pathname === '/v1/flows') return Response.json({ flows: [{ ...flow, draftRevisionId: revision().revisionId }], total: 1, version: 1 })
+    if (url.pathname === '/v1/flows')
+      return Response.json({
+        flows: [{ ...flow, draftRevisionId: revision().revisionId }, ...(options.workflows?.() ?? []).map((target) => Object.assign({}, flow, target))],
+        total: 1 + (options.workflows?.().length ?? 0),
+        version: 1,
+      })
     if (url.pathname.endsWith('/editor'))
       return Response.json({
         flow: { ...flow, draftRevisionId: revision().revisionId },
@@ -270,6 +290,7 @@ export function createInspectorTransport(
         version: 1,
       })
     if (url.pathname.endsWith('/draft/changes')) {
+      if (options.saveError?.()) return Response.json({ error: { code: 'flow.conflict', message: 'Draft changed.' } }, { status: 409 })
       content = applyFlowChanges(content, (JSON.parse(String(init?.body)) as { operations: ChangeOperation[] }).operations)
       sequence++
       log('inspector.saved', content.document.graph.nodes)
@@ -279,18 +300,20 @@ export function createInspectorTransport(
       if (init?.method === 'PUT') presentation = JSON.parse(String(init.body)).value
       return Response.json({ revision: sequence, updatedAt: timestamp, value: presentation, version: 1 })
     }
-    if (url.pathname.endsWith('/check'))
+    if (url.pathname.endsWith('/check')) {
+      const diagnostics = options.checkDiagnostics?.(content) ?? []
       return Response.json({
         closureDigest: 'lab',
-        diagnostics: [],
+        diagnostics,
         engineContract: 'open-flow-engine/v5',
         flowId: flow.flowId,
         modelVersion: currentFlowModelVersion,
         revisionDigest: revision().digest,
         revisionId: revision().revisionId,
-        valid: true,
+        valid: diagnostics.length == 0,
         version: 1,
       })
+    }
     throw new Error(`Unexpected inspector Lab request: ${url.pathname}`)
   })
   return { client, flowId: flow.flowId }

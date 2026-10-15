@@ -34,6 +34,7 @@ import {
 import { RunResultView } from './runOutput.tsx'
 import { duration, runLabel, statusClass } from './runPresentation.ts'
 import { canCancelRun, hasRunFilter } from './runStore.ts'
+import { WorkflowCalls } from './workflowCalls.tsx'
 
 interface RunFilterDraft {
   readonly createdBefore: string
@@ -525,6 +526,7 @@ export function RunsView({
                 </div>
               </header>
               <ErrorHandling run={run} />
+              <WorkflowCalls run={run} />
               <ActiveWait
                 onLocate={onLocateWait}
                 onResolve={(waitId, action, comment) => void store.runs.resolve(waitId, action, comment)}

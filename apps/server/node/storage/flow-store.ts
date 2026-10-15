@@ -151,7 +151,7 @@ export class FlowStore {
       this.#database
         .prepare('INSERT INTO flow_presentations (flow_id, revision, value, updated_at) VALUES (?, 1, ?, ?)')
         .run(input.flowId, JSON.stringify(input.presentation ?? {}), input.createdAt)
-      this.#references.replaceVariables(input.actorId, input.flowId, 'draft', resources?.variableNames ?? [])
+      this.#references.replaceResources(input.actorId, input.flowId, 'draft', resources)
       this.#database.prepare('INSERT INTO flow_connector_teams (flow_id, team_id) VALUES (?, ?)').run(input.flowId, input.connectorTeamId ?? null)
       return { created: true, flow: this.get(input.flowId)! }
     })
@@ -481,7 +481,7 @@ export class FlowStore {
       this.#database
         .prepare('UPDATE flows SET draft_revision_id = ?, draft_resource_references = ?, updated_at = ? WHERE flow_id = ?')
         .run(input.revisionId, resources == null ? null : JSON.stringify(resources), input.createdAt, input.flowId)
-      this.#references.replaceVariables(flow.ownerId, input.flowId, 'draft', resources?.variableNames ?? [])
+      this.#references.replaceResources(flow.ownerId, input.flowId, 'draft', resources)
       return { kind: 'committed', revision: this.change(input.flowId, input.changeId)! }
     })
   }

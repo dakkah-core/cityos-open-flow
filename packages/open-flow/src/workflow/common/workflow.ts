@@ -1,0 +1,141 @@
+import type { TaskNode, ManagedTaskDefinition, Port, JsonValue } from '../../flow/common/change.ts'
+
+import { z } from 'zod'
+import { comparePorts, matchesSchema } from '../../flow/common/schema.ts'
+
+export interface WorkflowExecutor {
+  readonly kind: 'workflow'
+  readonly flowId: string
+  readonly revisionId: string
+}
+
+const portSchema = z.strictObject({
+  handle: z.string().min(1),
+  jsonSchema: z.json() as z.ZodType<JsonValue>,
+  nullable: z.boolean(),
+  description: z.string().optional(),
+})
+export const workflowContractSchema = z.strictObject({
+  version: z.literal(1),
+  flowId: z.string().min(1),
+  name: z.string(),
+  revisionId: z.string().min(1),
+  publicationId: z.string().min(1),
+  inputs: z.array(portSchema),
+  outputs: z.array(portSchema),
+})
+export type WorkflowContract = z.infer<typeof workflowContractSchema>
+
+export interface WorkflowCandidate {
+  readonly flowId: string
+  readonly name: string
+  readonly problem: 'unpublished' | 'disabled' | 'retiring' | 'recursive' | null
+}
+
+/** Classify only list metadata; opening the selector does not inspect a Revision. */
+export function workflowCandidate(
+  flow: { flowId: string; name: string; status: string; live?: { enabled: boolean } | null },
+  sourceFlowId?: string,
+): WorkflowCandidate {
+  const problem =
+    flow.flowId == sourceFlowId
+      ? 'recursive'
+      : flow.status != 'active'
+        ? 'retiring'
+        : flow.live == null
+          ? 'unpublished'
+          : !flow.live.enabled
+            ? 'disabled'
+            : null
+  return { flowId: flow.flowId, name: flow.name, problem }
+}
+
+export function workflowCandidateGroup(candidate: WorkflowCandidate): 'published' | 'other' {
+  return candidate.problem == null ? 'published' : 'other'
+}
+
+/** A selected target is durable even before its callable interface is available. */
+export function workflowSelectionTask(
+  candidate: Pick<WorkflowCandidate, 'flowId' | 'name'>,
+  contract?: WorkflowContract,
+  previous?: ManagedTaskDefinition,
+): ManagedTaskDefinition {
+  if (contract != null) return workflowTask(contract, candidate.name)
+  if (previous?.executor.kind == 'workflow' && previous.executor.flowId == candidate.flowId) return previous
+  return { name: candidate.name, inputs: [], outputs: [], executor: { kind: 'workflow', flowId: candidate.flowId, revisionId: '' } }
+}
+
+export function workflowTask(contract: WorkflowContract, name = contract.name): ManagedTaskDefinition {
+  return { name, executor: { kind: 'workflow', flowId: contract.flowId, revisionId: contract.revisionId }, inputs: contract.inputs, outputs: contract.outputs }
+}
+
+export function workflowPorts(ports: readonly Port[]): WorkflowContract['inputs'] {
+  return ports.map(({ handle, jsonSchema, nullable, description }) => ({ handle, jsonSchema, nullable, ...(description == null ? {} : { description }) }))
+}
+
+export function workflowCompatibility(
+  node: TaskNode,
+  contract: WorkflowContract,
+): readonly { side: 'revision' | 'input' | 'output'; field: string; message: string }[] {
+  const issues: { side: 'revision' | 'input' | 'output'; field: string; message: string }[] = []
+  if ('executor' in node.task && node.task.executor.kind == 'workflow' && node.task.executor.revisionId != contract.revisionId)
+    return [
+      {
+        side: 'revision',
+        field: 'revisionId',
+        message: node.task.executor.revisionId
+          ? 'The called workflow Live revision has changed. Update the interface definition.'
+          : 'The called workflow interface has not been loaded. Refresh the interface definition.',
+      },
+    ]
+
+  for (const port of contract.inputs) {
+    const source = node.inputs[port.handle]
+    const saved = node.task.inputs.find((p) => 'handle' in p && p.handle == port.handle)
+    if (source == null || source.kind == 'unset') {
+      if (!port.nullable) issues.push({ side: 'input', field: port.handle, message: `Required workflow input "${port.handle}" is missing.` })
+    } else if (source.kind == 'value') {
+      const value = source.value ?? null
+      if (value == null ? !port.nullable : !matchesSchema(value, port.jsonSchema))
+        issues.push({ side: 'input', field: port.handle, message: `Workflow input "${port.handle}" changed type.` })
+    } else if (saved != null && 'handle' in saved && comparePorts(saved, port).kind != 'compatible')
+      issues.push({ side: 'input', field: port.handle, message: `Workflow input "${port.handle}" changed type.` })
+  }
+  for (const [handle, source] of Object.entries(node.inputs)) {
+    if (source.kind != 'unset' && !contract.inputs.some((p) => p.handle == handle))
+      issues.push({ side: 'input', field: handle, message: `Workflow input "${handle}" was removed.` })
+  }
+  for (const port of node.task.outputs) {
+    if (!('handle' in port)) continue
+    const current = contract.outputs.find((p) => p.handle == port.handle)
+    if (current == null || comparePorts(current, port).kind != 'compatible')
+      issues.push({ side: 'output', field: port.handle, message: `Workflow output "${port.handle}" was removed or changed type.` })
+  }
+  return issues
+}
+
+/** Refresh capability ports by exact name; removed outputs remain unresolved at consumers. */
+export function withWorkflowTask(node: TaskNode, task: ManagedTaskDefinition): TaskNode {
+  return {
+    ...node,
+    task,
+    inputs: Object.fromEntries(Object.entries(node.inputs).filter(([handle]) => task.inputs.some((port) => 'handle' in port && port.handle == handle))),
+  }
+}
+
+export const workflowReferencesSchema = z.strictObject({
+  version: z.literal(1),
+  direction: z.enum(['incoming', 'outgoing']),
+  total: z.int().nonnegative(),
+  nextOffset: z.int().nonnegative().optional(),
+  references: z.array(
+    z.strictObject({
+      flowId: z.string(),
+      name: z.string().nullable(),
+      available: z.boolean(),
+      draft: z.boolean(),
+      live: z.strictObject({ publicationId: z.string(), enabled: z.boolean() }).nullable(),
+    }),
+  ),
+})
+export type WorkflowReferences = z.infer<typeof workflowReferencesSchema>
