@@ -18,6 +18,7 @@ import { WorkbenchClient } from '../../src/workbench/browser/runtime/api.ts'
 import { setComment, setNodePositions, setFlowViewport } from '../../src/workbench/browser/runtime/canvasPresentation.ts'
 import { CanvasHistoryControls } from '../../src/workbench/browser/runtime/editor/canvasHistoryControls.tsx'
 import { CanvasHistoryScope } from '../../src/workbench/browser/runtime/editor/canvasHistoryScope.tsx'
+import { ContextPanel } from '../../src/workbench/browser/runtime/editor/contextPanel.tsx'
 import { WorkbenchCanvas } from '../../src/workbench/browser/runtime/editor/workbenchCanvas.tsx'
 import { createI18n } from '../../src/workbench/browser/runtime/i18n.ts'
 import { WorkspaceStore } from '../../src/workbench/browser/runtime/stores/workspaceStore.ts'
@@ -288,6 +289,7 @@ function HistorySession({
     },
   }
   const [actionVisible, setActionVisible] = useState(true)
+  const [inspectorOpen, setInspectorOpen] = useState(false)
   const model = designerGraph(draft, presentation?.value, diagnostics?.diagnostics, {}, {}, i18n.t)
   return (
     <I18nProvider i18n={i18n}>
@@ -342,7 +344,7 @@ function HistorySession({
           <div className="p-2">
             <input aria-label="Text undo isolation" placeholder="Text undo stays here" className="border rounded px-2" />
           </div>
-          <div className="editor-grid context-panel-closed" style={{ flex: 1, minHeight: 0 }}>
+          <div className={`editor-grid${inspectorOpen ? '' : ' context-panel-closed'}`} style={{ flex: 1, minHeight: 0 }}>
             <WorkbenchCanvas
               history={controls}
               model={model}
@@ -351,7 +353,7 @@ function HistorySession({
               selectedNodeIds={selected}
               addNodeOptions={options}
               disabled={draft == null || history.applying || history.failed}
-              inspectorOpen={false}
+              inspectorOpen={inspectorOpen}
               ignoredNodeIds={ignored}
               onIgnoreNodes={(ids, ignore) => setIgnored(ignore ? [...ignored, ...ids] : ignored.filter((id) => !ids.includes(id)))}
               onAddNode={(...args) => store.addNode(...args)}
@@ -366,9 +368,21 @@ function HistorySession({
               onMoveNodes={(positions) => void store.moveNodes(positions)}
               onMoveViewport={(viewport) => void store.moveViewport(viewport)}
               onSelectNodes={(ids) => store.selectNodes(ids)}
-              onToggleInspector={() => {}}
+              onToggleInspector={() => setInspectorOpen((open) => !open)}
               provideAddNodeOptions={async () => options}
             />
+            {inspectorOpen && (
+              <ContextPanel
+                focusOnOpen={false}
+                icon="settings"
+                onClose={() => setInspectorOpen(false)}
+                resizable
+                theme={dark ? 'dark' : 'light'}
+                title="Notification positioning"
+              >
+                <p>Delete the value field, then resize or close this panel to check that the notification stays centered over the canvas.</p>
+              </ContextPanel>
+            )}
           </div>
         </CanvasHistoryScope>
       ) : (
@@ -440,7 +454,7 @@ export const historyStory: FrontendStory = {
   id: 'canvas-history',
   title: 'Canvas operations',
   description:
-    'Delete Input, select Transform and press Backspace once: each node is removed on its first press. Undo/redo restores nodes and edges. Edit code after a canvas action to confirm Undo remains available. Delete the value field to inspect the saved notification and Undo action. Hold saves to inspect pending changes.',
+    'Delete Input, select Transform and press Backspace once: each node is removed on its first press. Undo/redo restores nodes and edges. Edit code after a canvas action to confirm Undo remains available. Delete the value field to inspect the saved notification and Undo action. Open, resize and close the context panel to check canvas-centered notifications. Hold saves to inspect pending changes.',
   standalone: true,
   render: (log, dark, language) => (
     <div
