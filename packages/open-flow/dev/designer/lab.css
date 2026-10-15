@@ -91,11 +91,6 @@ body {
   color: var(--ui-foreground);
   font-weight: 500;
 }
-.lab-preferences {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
 .lab-sidebar,
 .lab-content {
   min-width: 0;

@@ -226,7 +226,6 @@ export function FrontendLab() {
           </ol>
         </nav>
         <HostNavigationActions
-          className="lab-preferences"
           theme={theme}
           onThemeChange={setTheme}
           language={language}
