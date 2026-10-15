@@ -53,28 +53,30 @@ interface Variable {
 }
 ```
 
-| Method   | Path                  | Request             | Success                                     | Missing                  |
-| -------- | --------------------- | ------------------- | ------------------------------------------- | ------------------------ |
-| `GET`    | `/v1/variables`       | No body/query       | `200 { variables: Variable[], version: 1 }` | Not applicable           |
-| `GET`    | `/v1/variables/:name` | No body/query       | `200 Variable`                              | `404 variable.not-found` |
-| `PUT`    | `/v1/variables/:name` | `{ value: string }` | `200 Variable`                              | Not applicable           |
-| `DELETE` | `/v1/variables/:name` | No body/query       | `200 { version: 1 }`                        | `404 variable.not-found` |
+| Method   | Path                  | Request             | Success                                             | Missing                  |
+| -------- | --------------------- | ------------------- | --------------------------------------------------- | ------------------------ |
+| `GET`    | `/v1/variables`       | No body/query       | `200 { variables: VariableListItem[], version: 1 }` | Not applicable           |
+| `GET`    | `/v1/variables/:name` | No body/query       | `200 Variable`                                      | `404 variable.not-found` |
+| `PUT`    | `/v1/variables/:name` | `{ value: string }` | `200 Variable`                                      | Not applicable           |
+| `DELETE` | `/v1/variables/:name` | No body/query       | `200 { version: 1 }`                                | `404 variable.not-found` |
 
 Names are case-sensitive, contain 1–256 ASCII characters, and match `^[A-Za-z_][A-Za-z0-9_]*$`. The `OO_` prefix is reserved case-insensitively. Lists use ascending ASCII/BINARY name order. Values may contain empty strings, NUL, newlines, and Unicode, up to 64 KiB in UTF-8. Each account permits 200 distinct names. Existing records remain editable at the limit. PUT with the same value preserves `updatedAt`. Invalid requests return `variable.invalid`; a 201st name returns `variable.limit-reached`.
 
 Each account, including administrators and the Operator, can enumerate and read only its own values. Variables are exportable account configuration. They provide no Secret Manager guarantees for nonexportable values, per-variable ACLs, KMS, rotation, or separate auditing.
 
+`VariableListItem` extends `Variable` with `referenceCount: number`, the number of distinct active Flows referencing the Variable in their current Draft or Live. Values and counts are read from one database snapshot. Single-Variable reads and writes still return `Variable`.
+
 ### Variable references
 
-`GET /v1/variables/:name/references` returns `{ version: 1, references, unknown }`.
+`GET /v1/variables/:name/references` returns `{ version: 1, references }`.
 The name follows the Variable name contract; missing Variables return `404 variable.not-found`.
-Only active Flows owned by the authenticated account are inspected, without catalog pagination.
+Only active Flows owned by the authenticated account are included, without catalog pagination.
+Reads use a resource-reference index maintained atomically with Draft and Live changes; they do not read Revision content.
 Each reference contains `flowId`, `flowName`, `draft: boolean`, and
 `live: { publicationId: string, enabled: boolean } | null`. A Flow appears once, ordered by
 name (BINARY), then ID. Draft and current Publication references are combined; disabled Live
 publications remain included, while historical publications and retiring Flows are excluded.
-Unknown versions are returned separately as `{ flowId, flowName, scope: 'draft' | 'live' }`.
-An unknown version must not be interpreted as having no references.
+Unparseable or missing revision content contributes no references for that scope; the other scope remains independent. Repair, upgrade, or a new publication refreshes the corresponding index.
 
 These are static references, not observed Run usage. No Variable values are returned.
 The response is an advisory snapshot, not a deletion lock. Deleting a referenced Variable remains

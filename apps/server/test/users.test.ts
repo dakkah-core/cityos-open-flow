@@ -535,7 +535,7 @@ it('isolates environment variable CRUD for ordinary users, administrators and th
     expect((await f.request('/v1/variables/TOKEN', headers, 'PUT', { version: undefined, value })).status).toBe(200)
   }
   for (const [headers, value] of accounts) {
-    expect(await (await f.request('/v1/variables', headers)).json()).toMatchObject({ variables: [{ name: 'TOKEN', value }] })
+    expect(await (await f.request('/v1/variables', headers)).json()).toMatchObject({ variables: [{ name: 'TOKEN', value, referenceCount: 0 }] })
     expect(await (await f.request('/v1/variables/TOKEN', headers)).json()).toMatchObject({ name: 'TOKEN', value })
   }
   expect((await f.request('/v1/variables/TOKEN', ah, 'PUT', { version: undefined, value: 'changed' })).status).toBe(200)
@@ -584,6 +584,7 @@ it('publishes and runs with the Flow owner’s variables without falling back to
   await f.service.tickMaintenance()
   const publication = f.service.control.getPublishOperation(flow.flowId, operation.operationId)
   if (publication.status != 'succeeded') throw new Error('Publication did not complete.')
+  expect(await (await f.request('/v1/variables', headers)).json()).toMatchObject({ variables: [{ name: 'TOKEN', referenceCount: 1 }] })
   const references = await (await f.request('/v1/variables/TOKEN/references', headers)).json()
   expect(references).toEqual({
     version: 1,
@@ -595,9 +596,8 @@ it('publishes and runs with the Flow owner’s variables without falling back to
         live: { publicationId: publication.publicationId, enabled: true },
       },
     ],
-    unknown: [],
   })
-  expect(await (await f.request('/v1/variables/TOKEN/references', administrator)).json()).toEqual({ version: 1, references: [], unknown: [] })
+  expect(await (await f.request('/v1/variables/TOKEN/references', administrator)).json()).toEqual({ version: 1, references: [] })
 
   await startService(f.service)
   const accepted = await run()

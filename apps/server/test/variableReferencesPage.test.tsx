@@ -30,7 +30,7 @@ beforeEach(() => {
   hooks.index = 0
   hooks.effects = []
 })
-const empty: VariableReferences = { version: 1, references: [], unknown: [] }
+const empty: VariableReferences = { version: 1, references: [] }
 
 function find(element: ReactElement, predicate: (props: Record<string, unknown>) => boolean): ReactElement | undefined {
   if (predicate(element.props as Record<string, unknown>)) return element
@@ -47,7 +47,7 @@ it('only requests references once opened and ignores responses after cleanup', a
   const next = Promise.withResolvers<VariableReferences>()
   const getVariableReferences = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(next.promise)
   const client = { getVariableReferences } as unknown as ControlClient
-  VariableReferencesButton({ client, name: 'TOKEN', container: null, disabled: false })
+  VariableReferencesButton({ client, name: 'TOKEN', container: null, disabled: false, referenceCount: 0 })
   expect(getVariableReferences).not.toHaveBeenCalled()
   hooks.values = []
   hooks.index = 0
@@ -62,7 +62,7 @@ it('only requests references once opened and ignores responses after cleanup', a
   next.resolve(empty)
   await next.promise
   await Promise.resolve()
-  first.resolve({ ...empty, unknown: [{ flowId: 'old', flowName: 'Old', scope: 'draft' }] })
+  first.resolve({ ...empty, references: [{ flowId: 'old', flowName: 'Old', draft: true, live: null }] })
   await first.promise
   await Promise.resolve()
   expect(hooks.values[0]).toEqual(empty)
@@ -70,7 +70,7 @@ it('only requests references once opened and ignores responses after cleanup', a
   cleanup()
 })
 
-it('shows version links, disabled publications and incomplete results without claiming no references', () => {
+it('shows version links and disabled publications', () => {
   const html = renderToStaticMarkup(
     <VariableReferenceResults
       state={{
@@ -80,7 +80,6 @@ it('shows version links, disabled publications and incomplete results without cl
             { flowId: 'both', flowName: 'Both', draft: true, live: { publicationId: 'p', enabled: false } },
             { flowId: 'live', flowName: 'Live only', draft: false, live: { publicationId: 'q', enabled: true } },
           ],
-          unknown: [{ flowId: 'broken', flowName: 'Broken', scope: 'draft' }],
         },
         loading: false,
         failed: false,
@@ -92,14 +91,7 @@ it('shows version links, disabled publications and incomplete results without cl
   expect(html).toContain('href="/flows/both/publications"')
   expect(html).toContain('href="/flows/live/publications"')
   expect(html).toContain('variables.referenceDisabled')
-  expect(html).toContain('variables.referencesIncomplete')
   expect(html).not.toContain('variables.referencesEmpty')
-  const unknownOnly = renderToStaticMarkup(
-    <VariableReferenceResults
-      state={{ result: { ...empty, unknown: [{ flowId: 'broken', flowName: 'Broken', scope: 'live' }] }, loading: false, failed: false, retry: vi.fn() }}
-    />,
-  )
-  expect(unknownOnly).not.toContain('variables.referencesEmpty')
 })
 
 it.each([
@@ -152,7 +144,6 @@ it.each([
     failed: false,
     message: 'variables.deleteReferencesImpact',
   },
-  { result: { ...empty, unknown: [{ flowId: 'flow', flowName: 'Flow', scope: 'draft' }] }, loading: false, failed: false, message: undefined },
   { result: undefined, loading: true, failed: false, message: undefined },
   { result: undefined, loading: false, failed: true, message: undefined },
 ])('only describes deletion impact supported by the query: %j', ({ result, loading, failed, message }) => {

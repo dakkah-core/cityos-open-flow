@@ -3,6 +3,7 @@ import type { Database } from './database.ts'
 
 import { ConnectorTeamStore } from './connector-team-store.ts'
 import { EventSourceStore } from './event-source-store.ts'
+import { FlowResourceReferenceStore } from './flow-resource-reference-store.ts'
 import { FlowStore } from './flow-store.ts'
 import { IntegrationStore } from './integration-store.ts'
 import { PollStore } from './poll-store.ts'
@@ -34,6 +35,7 @@ export class Store {
   readonly polls: PollStore
   readonly publications: PublicationStore
   readonly results: ResultStore
+  readonly resourceReferences: FlowResourceReferenceStore
   readonly revisions: RevisionStore
   readonly runs: RunStore
   readonly runViews: RunViewStore
@@ -56,13 +58,24 @@ export class Store {
     this.variables = new VariableStore(connection, transaction, clock)
     this.connectorTeams = new ConnectorTeamStore(connection)
     this.revisions = new RevisionStore(connection)
+    this.resourceReferences = new FlowResourceReferenceStore(connection)
     this.results = new ResultStore(connection, transaction)
     // Trigger admission is resolved lazily because Runs are assembled after the
     // stores that report occurrences into them.
     this.integrations = new IntegrationStore(connection, this.eventSources, transaction, (input) => this.runs.acceptTriggerOccurrence(input))
     this.polls = new PollStore(connection, transaction, (input) => this.runs.acceptTriggerOccurrence(input))
-    this.flows = new FlowStore(connection, transaction, this.revisions)
-    this.publications = new PublicationStore(connection, clock, transaction, this.integrations, this.polls, this.revisions, this.variables, this.flows)
+    this.flows = new FlowStore(connection, transaction, this.revisions, this.resourceReferences)
+    this.publications = new PublicationStore(
+      connection,
+      clock,
+      transaction,
+      this.integrations,
+      this.polls,
+      this.revisions,
+      this.variables,
+      this.flows,
+      this.resourceReferences,
+    )
     this.runViews = new RunViewStore(connection)
     this.runs = new RunStore(
       connection,

@@ -1,4 +1,4 @@
-import type { ControlClient, Variable } from '@oomol-lab/open-flow/control-api'
+import type { ControlClient, VariableListItem } from '@oomol-lab/open-flow/control-api'
 import type { FormEvent, ReactElement, ReactNode } from 'react'
 
 import { Input } from '@oomol-lab/open-flow/ui'
@@ -72,12 +72,12 @@ beforeEach(() => {
 })
 
 it('ignores an older Variable response that finishes last', async () => {
-  const older = Promise.withResolvers<{ readonly variables: readonly Variable[] }>()
-  const newer = Promise.withResolvers<{ readonly variables: readonly Variable[] }>()
+  const older = Promise.withResolvers<{ readonly variables: readonly VariableListItem[] }>()
+  const newer = Promise.withResolvers<{ readonly variables: readonly VariableListItem[] }>()
   const listVariables = vi.fn().mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise)
   const client = { listVariables } as unknown as ControlClient
-  const fresh = [{ name: 'FRESH', updatedAt: '2026-08-27T00:00:00.000Z', value: 'new', version: 1 }] as const
-  const stale = [{ name: 'STALE', updatedAt: '2026-08-26T00:00:00.000Z', value: 'old', version: 1 }] as const
+  const fresh = [{ name: 'FRESH', updatedAt: '2026-08-27T00:00:00.000Z', value: 'new', version: 1, referenceCount: 0 }] as const
+  const stale = [{ name: 'STALE', updatedAt: '2026-08-26T00:00:00.000Z', value: 'old', version: 1, referenceCount: 0 }] as const
 
   VariablesPage({ client, language: 'en' })
   hooks.focus?.()
@@ -104,7 +104,7 @@ it.each([
   { editing: '', name: 'NEW', loading: true, failed: false, accepted: false },
   { editing: '', name: 'NEW', loading: false, failed: true, accepted: false },
 ])('protects Variable writes: %j', async ({ editing, name, loading, failed, accepted }) => {
-  const variables = [{ name: 'TOKEN', value: 'original', updatedAt: '2026-08-27T00:00:00.000Z', version: 1 }] as const
+  const variables = [{ name: 'TOKEN', value: 'original', updatedAt: '2026-08-27T00:00:00.000Z', version: 1, referenceCount: 0 }] as const
   const editor = { kind: editing == '' ? 'create' : 'edit', name, value: 'replacement' }
   hooks.states = [variables, loading, failed, false, '', editor, undefined]
   const putVariable = vi.fn().mockResolvedValue(undefined)

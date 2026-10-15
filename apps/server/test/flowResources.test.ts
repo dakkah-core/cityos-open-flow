@@ -9,6 +9,7 @@ import path from 'node:path'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { flow as flowView } from '../node/application/control-views.ts'
 import { Database } from '../node/storage/database.ts'
+import { revisionResourceReferences } from '../node/storage/flow-resources.ts'
 import { migrateFlowResources } from '../node/storage/migrate-flow-resources.ts'
 import { Store } from '../node/storage/store.ts'
 
@@ -40,10 +41,10 @@ function body(revision: RevisionContent) {
   return { content: new TextDecoder().decode(bytes), digest: `sha256:${createHash('sha256').update(bytes).digest('hex')}` }
 }
 
-function create(store: Store, flowId = 'flow', revision = content()) {
+function create(store: Store, flowId = 'flow', revision = content(), actorId = 'operator') {
   return store.flows.createFlow({
     ...body(revision),
-    actorId: 'operator',
+    actorId,
     createdAt: 1,
     flowId,
     idempotencyKey: flowId,
@@ -172,7 +173,7 @@ it('backfills delta heads on upgrade and preserves unavailable summaries for dam
   expect(upgraded.connection.prepare("SELECT 1 FROM revision_deltas WHERE revision_id = 'next'").get()).toBeDefined()
 })
 
-function publishFixture(database: Database, flowId: string, revisionId: string, publicationId: string, enabled = 1) {
+function publishFixture(database: Database, store: Store, flowId: string, revisionId: string, publicationId: string, enabled = 1) {
   database.connection
     .prepare(`INSERT INTO publications (publication_id, flow_id, revision_id, revision_digest, closure_digest, engine_contract,
     idempotency_key, request_digest, actor_id, operation, model_version, created_at)
@@ -182,65 +183,59 @@ function publishFixture(database: Database, flowId: string, revisionId: string, 
     .prepare(`INSERT INTO flow_live (flow_id, publication_id, revision, updated_at, enabled) VALUES (?, ?, 1, 1, ?)
     ON CONFLICT(flow_id) DO UPDATE SET publication_id = excluded.publication_id, enabled = excluded.enabled`)
     .run(flowId, publicationId, enabled)
+  const revision = store.revisions.read(revisionId)
+  const owner = database.connection.prepare('SELECT owner_id AS ownerId FROM flows WHERE flow_id = ?').get(flowId) as { ownerId: string }
+  store.resourceReferences.replaceVariables(
+    owner.ownerId,
+    flowId,
+    'live',
+    revision == null ? [] : (revisionResourceReferences(revision.content)?.variableNames ?? []),
+  )
 }
 
 it('combines draft and current publication references and follows publication replacement and rollback', () => {
   const { database, store } = setup()
   create(store)
-  publishFixture(database, 'flow', 'flow-initial', 'original', 0)
+  publishFixture(database, store, 'flow', 'flow-initial', 'original', 0)
   const reference = { flowId: 'flow', flowName: 'flow', draft: true, live: { publicationId: 'original', enabled: false } }
-  expect(store.flows.variableReferences('operator', 'TOKEN')).toEqual({ version: 1, references: [reference], unknown: [] })
+  expect(store.resourceReferences.variableReferences('operator', 'TOKEN')).toEqual({ version: 1, references: [reference] })
   expect(commit(store, content('OTHER')).kind).toBe('committed')
-  expect(store.flows.variableReferences('operator', 'TOKEN').references).toEqual([{ ...reference, draft: false }])
-  expect(store.flows.variableReferences('operator', 'OTHER').references).toEqual([{ ...reference, live: null }])
-  publishFixture(database, 'flow', 'next', 'replacement')
-  expect(store.flows.variableReferences('operator', 'TOKEN').references).toEqual([])
-  publishFixture(database, 'flow', 'flow-initial', 'rollback')
-  expect(store.flows.variableReferences('operator', 'TOKEN').references).toEqual([
+  expect(store.resourceReferences.variableReferences('operator', 'TOKEN').references).toEqual([{ ...reference, draft: false }])
+  expect(store.resourceReferences.variableReferences('operator', 'OTHER').references).toEqual([{ ...reference, live: null }])
+  publishFixture(database, store, 'flow', 'next', 'replacement')
+  expect(store.resourceReferences.variableReferences('operator', 'TOKEN').references).toEqual([])
+  publishFixture(database, store, 'flow', 'flow-initial', 'rollback')
+  expect(store.resourceReferences.variableReferences('operator', 'TOKEN').references).toEqual([
     { ...reference, draft: false, live: { publicationId: 'rollback', enabled: true } },
   ])
-  expect(store.flows.variableReferences('operator', 'token').references).toEqual([])
+  expect(store.resourceReferences.variableReferences('operator', 'token').references).toEqual([])
 })
 
 it('isolates owners, excludes retiring flows, and returns all matches beyond catalog page sizes', () => {
   const { database, store } = setup()
   for (let index = 0; index < 105; index++) create(store, `flow-${String(index).padStart(3, '0')}`)
-  create(store, 'foreign')
-  database.connection.prepare("UPDATE flows SET owner_id = 'someone-else' WHERE flow_id = 'foreign'").run()
+  create(store, 'foreign', content(), 'someone-else')
   create(store, 'retiring')
   database.connection.prepare("UPDATE flows SET status = 'retiring' WHERE flow_id = 'retiring'").run()
-  const result = store.flows.variableReferences('operator', 'TOKEN')
+  const result = store.resourceReferences.variableReferences('operator', 'TOKEN')
   expect(result.references).toHaveLength(105)
   expect(result.references.map((item) => item.flowId)).toEqual(Array.from({ length: 105 }, (_, i) => `flow-${String(i).padStart(3, '0')}`))
-  expect(store.flows.variableReferences('someone-else', 'TOKEN').references.map((item) => item.flowId)).toEqual(['foreign'])
+  expect(store.resourceReferences.variableReferences('someone-else', 'TOKEN').references.map((item) => item.flowId)).toEqual(['foreign'])
 })
 
-it('reports unknown versions separately and reuses a shared publication revision within one query', () => {
+it('reads references without revisions and treats an unparseable Draft independently of Live', () => {
   const { database, store } = setup()
-  create(store, 'a')
-  create(store, 'b')
-  publishFixture(database, 'a', 'a-initial', 'a-live')
-  publishFixture(database, 'b', 'a-initial', 'b-live')
-  database.connection.prepare("UPDATE flows SET draft_resource_references = NULL WHERE flow_id = 'a'").run()
-  const read = vi.spyOn(store.revisions, 'read')
-  expect(store.flows.variableReferences('operator', 'TOKEN')).toMatchObject({
-    references: [
-      { flowId: 'a', draft: false },
-      { flowId: 'b', draft: true },
-    ],
-    unknown: [{ flowId: 'a', flowName: 'a', scope: 'draft' }],
+  create(store)
+  publishFixture(database, store, 'flow', 'flow-initial', 'live')
+  expect(commit(store, { ...content(), modelVersion: 0 } as unknown as RevisionContent).kind).toBe('committed')
+  const read = vi.spyOn(store.revisions, 'read').mockImplementation(() => {
+    throw new Error('Reference queries must not read revisions')
   })
-  expect(read).toHaveBeenCalledTimes(1)
-  database.connection.prepare("UPDATE revisions SET content = '{}' WHERE revision_id = 'a-initial'").run()
-  expect(store.flows.variableReferences('operator', 'MISSING')).toEqual({
+  expect(store.resourceReferences.variableReferences('operator', 'TOKEN')).toEqual({
     version: 1,
-    references: [],
-    unknown: [
-      { flowId: 'a', flowName: 'a', scope: 'draft' },
-      { flowId: 'a', flowName: 'a', scope: 'live' },
-      { flowId: 'b', flowName: 'b', scope: 'live' },
-    ],
+    references: [{ flowId: 'flow', flowName: 'flow', draft: false, live: { publicationId: 'live', enabled: true } }],
   })
-  expect(read).toHaveBeenCalledTimes(2)
+  expect(store.resourceReferences.variableReferences('operator', 'MISSING')).toEqual({ version: 1, references: [] })
+  expect(read).not.toHaveBeenCalled()
   read.mockRestore()
 })

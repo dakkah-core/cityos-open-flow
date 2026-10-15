@@ -374,7 +374,7 @@ describe('ControlClient Variable API', () => {
 
   it('lists, reads, writes, and deletes Variables with encoded names', async () => {
     const request = vi.fn(async (path: string, init?: RequestInit) => {
-      if (path == '/v1/variables') return Response.json({ variables: [variable], version: 1 })
+      if (path == '/v1/variables') return Response.json({ variables: [{ ...variable, referenceCount: 2 }], version: 1 })
       if (path == '/v1/variables/Token%2FName' && init?.method == null) return Response.json(variable)
       if (path == '/v1/variables/Token%2FName' && init?.method == 'PUT') return Response.json({ ...variable, value: 'next' })
       if (path == '/v1/variables/Token%2FName' && init?.method == 'DELETE') return Response.json({ version: 1 })
@@ -382,7 +382,7 @@ describe('ControlClient Variable API', () => {
     })
     const client = new ControlClient(request)
 
-    await expect(client.listVariables()).resolves.toEqual({ variables: [variable], version: 1 })
+    await expect(client.listVariables()).resolves.toEqual({ variables: [{ ...variable, referenceCount: 2 }], version: 1 })
     await expect(client.getVariable('Token/Name')).resolves.toEqual(variable)
     await expect(client.putVariable('Token/Name', 'next')).resolves.toEqual({ ...variable, value: 'next' })
     await expect(client.deleteVariable('Token/Name')).resolves.toBeUndefined()
@@ -402,6 +402,11 @@ describe('ControlClient Variable API', () => {
   ])('rejects a Variable response with an %s', async (_name, response) => {
     const client = new ControlClient(async () => Response.json(response))
     await expect(client.getVariable('TOKEN')).rejects.toMatchObject({ code: 'response.invalid', status: 502 })
+  })
+
+  it.each([undefined, -1, 1.5, '2', null])('rejects an invalid reference count: %j', async (referenceCount) => {
+    const client = new ControlClient(async () => Response.json({ variables: [{ ...variable, referenceCount }], version: 1 }))
+    await expect(client.listVariables()).rejects.toMatchObject({ code: 'response.invalid' })
   })
 
   it('rejects malformed Variable list and delete responses', async () => {
@@ -774,7 +779,6 @@ it('decodes Variable references and forwards cancellation', async () => {
   const result = {
     version: 1,
     references: [{ flowId: 'f', flowName: 'Flow', draft: true, live: { publicationId: 'p', enabled: false } }],
-    unknown: [{ flowId: 'g', flowName: 'Other', scope: 'draft' }],
   }
   const request = vi.fn(async () => Response.json(result))
   const client = new ControlClient(request)
@@ -784,7 +788,6 @@ it('decodes Variable references and forwards cancellation', async () => {
   for (const invalid of [
     { ...result, version: 2 },
     { ...result, references: null },
-    { ...result, unknown: [{ flowId: 'f', flowName: 'Flow', scope: 'history' }] },
     { ...result, references: [{ ...result.references[0], draft: 'yes' }] },
     { ...result, references: [{ ...result.references[0], live: { publicationId: 'p', enabled: 1 } }] },
   ]) {

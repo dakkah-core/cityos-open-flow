@@ -24,6 +24,7 @@ import type {
   TriggerBinding,
   TriggerKeySummary,
   Variable,
+  VariableListItem,
 } from '@oomol-lab/open-flow/control-api'
 import type { AuthoringRead, AuthoringSearch, AuthoringRequest, AuthoringType } from '@oomol-lab/open-flow/control-requests'
 import type { DraftOperation } from '@oomol-lab/open-flow/control-requests'
@@ -59,6 +60,7 @@ import { actionAccountDiagnostics } from './action-account-diagnostics.ts'
 import {
   flow,
   variable,
+  variableListItem,
   revisionContent,
   revisionMetadata,
   readRevisionOrRepair,
@@ -227,13 +229,16 @@ export class ControlService {
     return this.triggerDefinitions
   }
 
-  listVariables(actorId: string): { readonly variables: readonly Variable[]; readonly version: 1 } {
-    return { variables: this.store.variables.list(actorId).map(variable), version: 1 }
+  listVariables(actorId: string): { readonly variables: readonly VariableListItem[]; readonly version: 1 } {
+    return {
+      variables: this.store.variables.list(actorId).map(variableListItem),
+      version: 1,
+    }
   }
 
   getVariableReferences(actorId: string, name: string) {
     this.getVariable(actorId, name)
-    return this.store.flows.variableReferences(actorId, name)
+    return this.store.resourceReferences.variableReferences(actorId, name)
   }
 
   getVariable(actorId: string, name: string): Variable {

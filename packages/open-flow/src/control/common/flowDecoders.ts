@@ -1,4 +1,4 @@
-import type { ErrorListener, Flow, FlowPage, FlowResources, Variable, VariableReferences } from './api.ts'
+import type { ErrorListener, Flow, FlowPage, FlowResources, Variable, VariableListItem, VariableReferences } from './api.ts'
 
 import { exact, integer, invalidResponse, record, string } from './decoding.ts'
 
@@ -92,6 +92,14 @@ export function variable(value: unknown): Variable {
   return { name: string(source.name), updatedAt, value: source.value, version: 1 }
 }
 
+export function variableListItem(value: unknown): VariableListItem {
+  const source = record(value)
+  const { referenceCount, ...fields } = source
+  const count = integer(referenceCount)
+  if (count < 0) return invalidResponse()
+  return { ...variable(fields), referenceCount: count }
+}
+
 export function errorListener(value: unknown): ErrorListener {
   const source = record(value)
   if (typeof source.enabled != 'boolean') return invalidResponse()
@@ -106,8 +114,8 @@ export function errorListener(value: unknown): ErrorListener {
 
 export function variableReferences(input: unknown): VariableReferences {
   const source = record(input)
-  exact(source, ['version', 'references', 'unknown'])
-  if (source.version != 1 || !Array.isArray(source.references) || !Array.isArray(source.unknown)) return invalidResponse()
+  exact(source, ['version', 'references'])
+  if (source.version != 1 || !Array.isArray(source.references)) return invalidResponse()
   return {
     version: 1,
     references: source.references.map((value) => {
@@ -125,12 +133,6 @@ export function variableReferences(input: unknown): VariableReferences {
         draft: item.draft,
         live: live == null ? null : { publicationId: string(live.publicationId), enabled: live.enabled as boolean },
       }
-    }),
-    unknown: source.unknown.map((value) => {
-      const item = record(value)
-      exact(item, ['flowId', 'flowName', 'scope'])
-      if (item.scope !== 'draft' && item.scope !== 'live') return invalidResponse()
-      return { flowId: string(item.flowId), flowName: string(item.flowName), scope: item.scope }
     }),
   }
 }

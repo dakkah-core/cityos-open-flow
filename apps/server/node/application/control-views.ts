@@ -1,8 +1,9 @@
-import type { Draft, Flow, Presentation, Publication, TriggerActivity, TriggerBinding, Variable } from '@oomol-lab/open-flow/control-api'
+import type { Draft, Flow, Presentation, Publication, TriggerActivity, TriggerBinding, Variable, VariableListItem } from '@oomol-lab/open-flow/control-api'
 import type { RevisionContent } from '@oomol-lab/open-flow/flow-change'
 import type { StoredChangeRevision, StoredFlow, StoredFlowRevision, StoredPresentation } from '../storage/flow-store.ts'
 import type { StoredPublication } from '../storage/publication-store.ts'
 import type { StoredTriggerActivity, StoredTriggerBinding } from '../storage/trigger-store.ts'
+import type { StoredVariableListItem } from '../storage/variable-store.ts'
 
 import { controlErrorCode } from '@oomol-lab/open-flow/control-api'
 import { decodeRevision, revisionRepairKind } from '@oomol-lab/open-flow/flow-encoding'
@@ -48,6 +49,10 @@ export function flow(stored: StoredFlow): Flow {
 
 export function variable(stored: { readonly name: string; readonly updatedAt: number; readonly value: string }): Variable {
   return { name: stored.name, updatedAt: timestamp(stored.updatedAt), value: stored.value, version: 1 }
+}
+
+export function variableListItem(stored: StoredVariableListItem): VariableListItem {
+  return { ...variable(stored), referenceCount: stored.referenceCount }
 }
 
 export function readRevisionOrRepair(read: () => StoredFlowRevision | undefined): StoredFlowRevision | undefined {

@@ -1,4 +1,4 @@
-import type { Variable } from '@oomol-lab/open-flow/control-api'
+import type { Variable, VariableListItem } from '@oomol-lab/open-flow/control-api'
 import type { WorkbenchLanguage } from '@oomol-lab/open-flow/workbench'
 import type { FormEvent, ReactElement } from 'react'
 
@@ -43,7 +43,7 @@ interface VariableEditor {
 
 export function VariablesPage({ client, language }: { readonly client: ControlClient; readonly language: WorkbenchLanguage }): ReactElement {
   const t = useTranslate()
-  const [variables, setVariables] = useState<readonly Variable[]>([])
+  const [variables, setVariables] = useState<readonly VariableListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
   const [pending, setPending] = useState(false)
@@ -234,7 +234,13 @@ export function VariablesPage({ client, language }: { readonly client: ControlCl
                 <code>{variable.value}</code>
                 <time dateTime={variable.updatedAt}>{new Date(variable.updatedAt).toLocaleString(language)}</time>
                 <div>
-                  <VariableReferencesButton client={client} name={variable.name} container={portal.current} disabled={pending} />
+                  <VariableReferencesButton
+                    client={client}
+                    name={variable.name}
+                    referenceCount={variable.referenceCount}
+                    container={portal.current}
+                    disabled={pending}
+                  />
                   <VariableActionsMenu
                     container={portal.current}
                     disabled={pending}

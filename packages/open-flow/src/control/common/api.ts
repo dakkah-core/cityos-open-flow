@@ -60,7 +60,7 @@ import { flowCheck } from './checkDecoders.ts'
 import { connection, connectorAccess, connectorAccessSnapshot, connectorAccessCandidatesBatch, connectorAction, leinaBots } from './connectorDecoders.ts'
 import { allConnectorConnectionsQuery, connectorActionQuery, connectorConnectionsQuery, connectorProvidersQuery } from './connectorQueries.ts'
 import { exact, integer, invalidResponse, jsonValue, record, string } from './decoding.ts'
-import { errorListener, flow, flowPage, variable, variableReferences } from './flowDecoders.ts'
+import { errorListener, flow, flowPage, variable, variableListItem, variableReferences } from './flowDecoders.ts'
 import { live, publication, publicationPage, publishOperation } from './publicationDecoders.ts'
 import { draft, draftChange, draftSync, presentation } from './revisionDecoders.ts'
 import { runCancellation, runDetails, runPage, runResult, waitResolution } from './runDecoders.ts'
@@ -143,7 +143,10 @@ export interface VariableReference {
 export interface VariableReferences {
   readonly version: 1
   readonly references: readonly VariableReference[]
-  readonly unknown: readonly { readonly flowId: string; readonly flowName: string; readonly scope: 'draft' | 'live' }[]
+}
+
+export interface VariableListItem extends Variable {
+  readonly referenceCount: number
 }
 
 export interface Variable {
@@ -777,11 +780,11 @@ export class ControlClient {
     await this.request(`/v1/event-sources/${segment(sourceId)}`, { method: 'DELETE', body: JSON.stringify({ version: 1, expectedRevision }) })
   }
 
-  async listVariables(): Promise<{ readonly variables: readonly Variable[]; readonly version: 1 }> {
+  async listVariables(): Promise<{ readonly variables: readonly VariableListItem[]; readonly version: 1 }> {
     const source = record(await this.request('/v1/variables'))
     exact(source, ['variables', 'version'])
     if (source.version != 1 || !Array.isArray(source.variables)) return invalidResponse()
-    return { variables: source.variables.map(variable), version: 1 }
+    return { variables: source.variables.map(variableListItem), version: 1 }
   }
 
   async getVariableReferences(name: string, signal?: AbortSignal): Promise<VariableReferences> {

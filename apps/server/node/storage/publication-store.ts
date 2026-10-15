@@ -1,5 +1,6 @@
 import type { Presentation, PublishOperation } from '@oomol-lab/open-flow/control-api'
 import type { ConnectorAccess, ConnectorAccessSnapshot } from '@oomol-lab/open-flow/control-api'
+import type { FlowResourceReferenceStore } from './flow-resource-reference-store.ts'
 import type { FlowStore, StoredFlow, StoredFlowRevision } from './flow-store.ts'
 import type { IntegrationPublication } from './integration-store.ts'
 import type { PollPublication } from './poll-store.ts'
@@ -10,6 +11,7 @@ import { randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import { z } from 'zod'
 import { AcceptanceError } from '../error.ts'
+import { revisionResourceReferences } from './flow-resources.ts'
 import { presentationView } from './flow-store.ts'
 import { insert } from './insert.ts'
 import { IntegrationStore } from './integration-store.ts'
@@ -129,6 +131,7 @@ export class PublicationStore {
   readonly #database: DatabaseSync
   readonly #integrations: IntegrationStore
   readonly #polls: PollStore
+  readonly #references: FlowResourceReferenceStore
   readonly #revisions: RevisionStore
   readonly #transaction: <Value>(operation: () => Value) => Value
   readonly #variables: VariableStore
@@ -142,7 +145,9 @@ export class PublicationStore {
     revisions: RevisionStore,
     variables: VariableStore,
     flows: FlowStore,
+    references: FlowResourceReferenceStore,
   ) {
+    this.#references = references
     this.#flows = flows
     this.#clock = clock
     this.#database = database
@@ -600,8 +605,8 @@ export class PublicationStore {
           }
         }
 
+        const flow = this.#flow(input.flowId)
         if (input.metadata != null) {
-          const flow = this.#flow(input.flowId)
           if (flow == null) return { kind: 'not-found' }
           if (flow.status != 'active') return { kind: 'busy' }
           const revision = this.#revision(input.flowId, input.revisionId)
@@ -680,6 +685,8 @@ export class PublicationStore {
           )
           .run(input.flowId, publicationId, input.publishedAt)
 
+        if (flow?.status == 'active')
+          this.#references.replaceVariables(flow.ownerId, input.flowId, 'live', revisionResourceReferences(content)?.variableNames ?? [])
         this.#installWebhooks(input, publicationId)
         this.#installCrons(input, publicationId)
         const errors = input.errorTriggers ?? []
@@ -825,7 +832,7 @@ export class PublicationStore {
     return this.#database
       .prepare(
         `SELECT create_request_digest AS createRequestDigest, created_at AS createdAt, draft_revision_id AS draftRevisionId,
-                flow_id AS flowId, name, status, updated_at AS updatedAt
+                flow_id AS flowId, owner_id AS ownerId, name, status, updated_at AS updatedAt
          FROM flows WHERE flow_id = ?`,
       )
       .get(flowId) as StoredFlow | undefined

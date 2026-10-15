@@ -2,6 +2,7 @@ import type { Database } from './database.ts'
 
 import { readFileSync } from 'node:fs'
 import { migrateConnectorAccess } from './migrate-connector-access.ts'
+import { migrateFlowResourceReferences } from './migrate-flow-resource-references.ts'
 import { migrateFlowResources } from './migrate-flow-resources.ts'
 
 const migrations = [
@@ -51,6 +52,7 @@ const migrations = [
   '0044_service_profiles.sql',
   '0045_connector_team_names.sql',
   '0046_flow_trigger_control.sql',
+  migrateFlowResourceReferences,
 ] as const
 const migrationsDirectory = new URL(import.meta.url.endsWith('.ts') ? '../../migrations/' : '../migrations/', import.meta.url)
 
