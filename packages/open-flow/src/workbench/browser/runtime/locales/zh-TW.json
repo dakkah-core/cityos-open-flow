@@ -45,7 +45,7 @@
     "integrationTriggers": "應用觸發器",
     "start": "開始",
     "startDescription": "透過啟動參數開始工作流程，支援手動執行和 API 呼叫。",
-    "outputs": "輸出",
+    "outputs": "工作流程輸出",
     "outputsDescription": "定義工作流程輸出及其取值，在上游執行相依完成後計算。"
   },
   "connectorAccess": {

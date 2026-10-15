@@ -45,7 +45,7 @@
     "integrationTriggers": "应用触发器",
     "start": "开始",
     "startDescription": "通过启动参数开始工作流，支持手动运行和 API 调用。",
-    "outputs": "输出",
+    "outputs": "工作流输出",
     "outputsDescription": "定义工作流输出及其取值，在上游执行依赖完成后计算。"
   },
   "connectorAccess": {

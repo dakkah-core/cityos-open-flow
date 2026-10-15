@@ -53,7 +53,7 @@ export type LlmInputHandle = 'input' | 'messages' | 'model' | 'template'
 export function defaultNodeName(_content: RevisionContent, node: GraphNode): string {
   switch (node.kind) {
     case 'outputs':
-      return 'Outputs'
+      return 'Workflow Outputs'
     case 'condition':
       return 'Condition'
     case 'value':

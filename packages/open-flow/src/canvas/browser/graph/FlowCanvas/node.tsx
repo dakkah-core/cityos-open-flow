@@ -83,7 +83,10 @@ export function createNodeEntry(node: FlowCanvasViewSemanticNode, contentKey: st
     onIgnore: (ignored) => canvasStore.ignoreNodes([node.id], ignored),
     content$,
     position: node.position,
-    duplicateNode: node.kind === 'trigger' && (node.presentation?.kind === 'manual' || node.presentation?.kind === 'start') ? undefined : duplicateNode,
+    duplicateNode:
+      node.kind === 'outputs' || (node.kind === 'trigger' && (node.presentation?.kind === 'manual' || node.presentation?.kind === 'start'))
+        ? undefined
+        : duplicateNode,
   })
   return {
     contentKey,

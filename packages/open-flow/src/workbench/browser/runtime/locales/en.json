@@ -45,7 +45,7 @@
     "integrationTriggers": "App triggers",
     "start": "Start",
     "startDescription": "Start the workflow manually or through an API call with startup parameters.",
-    "outputs": "Outputs",
+    "outputs": "Workflow Outputs",
     "outputsDescription": "Define the workflow outputs and their values. Runs after its upstream dependencies settle."
   },
   "connectorAccess": {

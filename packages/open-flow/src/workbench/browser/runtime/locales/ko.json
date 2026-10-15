@@ -45,7 +45,7 @@
     "integrationTriggers": "앱 트리거",
     "start": "시작",
     "startDescription": "시작 매개변수를 사용해 수동으로 또는 API 호출로 워크플로를 시작합니다.",
-    "outputs": "출력",
+    "outputs": "워크플로 출력",
     "outputsDescription": "워크플로 출력과 값을 정의합니다. 상위 실행이 확정되면 계산합니다."
   },
   "connectorAccess": {

@@ -45,7 +45,7 @@
     "integrationTriggers": "アプリのトリガー",
     "start": "開始",
     "startDescription": "開始パラメーターを指定して、手動または API 呼び出しでワークフローを開始します。",
-    "outputs": "出力",
+    "outputs": "ワークフロー出力",
     "outputsDescription": "ワークフローの出力と値を定義します。上流の実行が確定すると計算します。"
   },
   "connectorAccess": {

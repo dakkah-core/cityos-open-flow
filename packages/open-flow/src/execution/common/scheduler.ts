@@ -282,7 +282,7 @@ function nodeTitle(node: ExecutableNode): string | undefined {
     case 'condition':
       return
     case 'outputs':
-      return 'Outputs'
+      return 'Workflow Outputs'
     case 'value':
       return 'Fixed Values'
     case 'task':

@@ -608,7 +608,7 @@
       "value": "Valeurs fixes",
       "input": "Entrée",
       "output": "Sortie",
-      "outputs": "Sorties"
+      "outputs": "Sorties du workflow"
     },
     "units": {
       "minute": "minutes",

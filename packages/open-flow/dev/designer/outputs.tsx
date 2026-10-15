@@ -32,7 +32,7 @@ const content: RevisionContent = {
       missing: { kind: 'sources', sources: [{ kind: 'node', nodeId: 'start', output: 'removed' }] },
     },
     graph: {
-      nodes: { start: { kind: 'start', name: 'Start' }, outputs: { kind: 'outputs', name: 'Outputs' } },
+      nodes: { start: { kind: 'start', name: 'Start' }, outputs: { kind: 'outputs' } },
       edges: [{ source: 'start', target: 'outputs' }],
     },
   },
@@ -100,9 +100,9 @@ function OutputsStory({ log, dark, language }: { log: LogAction; dark: boolean; 
 export const outputsStory: FrontendStory = {
   id: 'node-outputs',
   group: 'Node Outputs',
-  title: 'Outputs',
+  title: 'Workflow Outputs',
   standalone: true,
   description:
-    'Workflow output definitions and mappings share production editing and history. Compare constants, upstream sources, nullable fields, missing sources and empty outputs; undo, redo and reload preserve saved configuration.',
+    'Workflow output definitions and mappings share production editing and history. Select Start or Workflow Outputs to verify that their node menus omit Clone. Compare constants, upstream sources, nullable fields, missing sources and empty outputs; undo, redo and reload preserve saved configuration.',
   render: (log, dark, language) => <OutputsStory log={log} dark={dark} language={language} />,
 }

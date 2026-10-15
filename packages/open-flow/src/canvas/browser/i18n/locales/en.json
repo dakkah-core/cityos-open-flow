@@ -608,7 +608,7 @@
       "value": "Fixed Values",
       "input": "Flow input",
       "output": "Flow output",
-      "outputs": "Outputs"
+      "outputs": "Workflow Outputs"
     },
     "units": {
       "minute": "minutes",

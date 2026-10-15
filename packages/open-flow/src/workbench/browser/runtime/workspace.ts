@@ -84,7 +84,7 @@ function nodeTitle(node: ResolvedNode, t?: TFunction): string {
   if (node.node.name != null) return node.node.name
   switch (node.kind) {
     case 'outputs':
-      return t?.('addNode.outputs') ?? 'Outputs'
+      return t?.('addNode.outputs') ?? 'Workflow Outputs'
     case 'condition':
       return t?.('addNode.condition') ?? 'Condition'
     case 'value':
