@@ -126,10 +126,21 @@ export function VariableReferencesButton({
 }) {
   const t = useTranslate()
   const [open, setOpen] = useState(false)
+  if (referenceCount == 0) return null
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <HostTooltip label={t('variables.referenceCount', { count: referenceCount })}>
-        <PopoverTrigger render={<Button aria-label={t('variables.referenceCount', { count: referenceCount })} variant="ghost" size="sm" disabled={disabled} />}>
+        <PopoverTrigger
+          render={
+            <Button
+              aria-label={t('variables.referenceCount', { count: referenceCount })}
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              disabled={disabled}
+            />
+          }
+        >
           <i aria-hidden="true" className="i-lucide-light:link" />
           <span>{referenceCount}</span>
         </PopoverTrigger>

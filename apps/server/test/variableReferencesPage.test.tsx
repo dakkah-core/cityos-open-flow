@@ -47,7 +47,8 @@ it('only requests references once opened and ignores responses after cleanup', a
   const next = Promise.withResolvers<VariableReferences>()
   const getVariableReferences = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(next.promise)
   const client = { getVariableReferences } as unknown as ControlClient
-  VariableReferencesButton({ client, name: 'TOKEN', container: null, disabled: false, referenceCount: 0 })
+  expect(VariableReferencesButton({ client, name: 'TOKEN', container: null, disabled: false, referenceCount: 0 })).toBeNull()
+  VariableReferencesButton({ client, name: 'TOKEN', container: null, disabled: false, referenceCount: 1 })
   expect(getVariableReferences).not.toHaveBeenCalled()
   hooks.values = []
   hooks.index = 0
