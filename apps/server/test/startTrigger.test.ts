@@ -108,6 +108,62 @@ it('upgrades a readable legacy Draft once while preserving historical Runs, Live
   await expect(api.upgradeDraft(flow.flowId, next.revisionId, { idempotencyKey: 'already-upgraded' })).rejects.toMatchObject({ code: 'flow.revision-conflict' })
 })
 
+it.each([7, 8])('opens and edits a model %s legacy Start through HTTP while retaining stored history', async (modelVersion) => {
+  const { api, file, service } = await fixture()
+  const flow = await api.createFlow('Legacy Start parameters', 'legacy-start-parameters')
+  const parameters = [
+    { handle: 'message', jsonSchema: { type: 'string', minLength: 1 }, nullable: false, description: 'Required message' },
+    { handle: 'note', jsonSchema: { type: 'string', default: 'unused' }, nullable: true },
+  ]
+  const node = { kind: 'start' as const, name: 'Original entry', description: 'Preserve this description', icon: 'mdi:play' }
+  const content = JSON.stringify({
+    ...legacy,
+    modelVersion,
+    kind: 'open-flow-flow-revision',
+    version: 1,
+    document: { ...legacy.document, graph: { ...legacy.document.graph, nodes: { ...legacy.document.graph.nodes, start: { ...node, parameters } } } },
+  })
+  const digest = await digestBytes(new TextEncoder().encode(content))
+  const database = new DatabaseSync(file)
+  try {
+    database.prepare('UPDATE revisions SET content = ?, digest = ? WHERE revision_id = ?').run(content, digest, flow.draftRevisionId)
+    database.prepare('UPDATE flow_revisions SET digest = ?, model_version = ? WHERE revision_id = ?').run(digest, modelVersion, flow.draftRevisionId)
+    const presentation = service.control.updatePresentation(flow.flowId, 1, { nodes: { start: { x: 100, y: 200 } } })
+    const editor = await api.getEditor(flow.flowId)
+    expect(editor.draft).toMatchObject({ revisionId: flow.draftRevisionId, digest, content: { document: { inputDefs: parameters } } })
+    expect(editor.draft.content.document.graph).toEqual({ ...legacy.document.graph, nodes: { ...legacy.document.graph.nodes, start: node } })
+    expect((await api.getFlow(flow.flowId)).draftRevisionId).toBe(flow.draftRevisionId)
+    expect(database.prepare('SELECT content, digest FROM revisions WHERE revision_id = ?').get(flow.draftRevisionId)).toEqual({ content, digest })
+    await expect(api.createDraftRun(flow.flowId, flow.draftRevisionId, { trigger: { nodeId: 'start', outputs: {} } })).rejects.toMatchObject({
+      code: 'run.invalid',
+    })
+    const run = await api.createDraftRun(flow.flowId, flow.draftRevisionId, { trigger: { nodeId: 'start', outputs: { message: 'Preserved' } } })
+    const stored = database.prepare('SELECT trigger_outputs AS outputs FROM runs WHERE run_id = ?').get(run.runId) as { outputs: string }
+    expect(JSON.parse(stored.outputs)).toEqual({ message: 'Preserved', note: null })
+    const changed = await api.changeDraft(
+      flow.flowId,
+      flow.draftRevisionId,
+      [{ kind: 'graph.node.field.set', nodeId: 'start', field: 'name', before: 'Original entry', value: 'Renamed entry' }],
+      'rename-legacy-start',
+    )
+    const next = await api.getEditor(flow.flowId)
+    expect(next.draft.revisionId).toBe(changed.revision.revisionId)
+    expect(next.draft.content).toEqual({
+      ...editor.draft.content,
+      modelVersion: currentFlowModelVersion,
+      document: {
+        ...editor.draft.content.document,
+        graph: { ...editor.draft.content.document.graph, nodes: { ...editor.draft.content.document.graph.nodes, start: { ...node, name: 'Renamed entry' } } },
+      },
+    })
+    expect(await api.getRevision(flow.flowId, flow.draftRevisionId)).toEqual(editor.draft)
+    expect(await api.getPresentation(flow.flowId)).toEqual(presentation)
+    expect(database.prepare('SELECT content, digest FROM revisions WHERE revision_id = ?').get(flow.draftRevisionId)).toEqual({ content, digest })
+  } finally {
+    database.close()
+  }
+})
+
 it.each(['unreadable', 'retired Subflow', 'digest mismatch'])('rejects %s upgrade without repairing or changing the stored Draft', async (failure) => {
   const { api, file } = await fixture()
   const flow = await api.createFlow('Rejected upgrade', 'rejected')

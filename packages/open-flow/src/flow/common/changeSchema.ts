@@ -1,5 +1,6 @@
 import type { ChangeOperation, FlowDocument, JsonValue, RevisionContent } from './change.ts'
 
+import { dequal } from 'dequal/lite'
 import { z } from 'zod'
 import { limitDecisionTask } from '../../decision/common/decision.ts'
 import { assertOpenApiAuthBindings } from '../../openapi/common/authBindings.ts'
@@ -12,6 +13,7 @@ const text = z.string()
 const json = z.json()
 const strings = z.array(text)
 const port = z.object({ description: text.optional(), jsonSchema: json, nullable: z.boolean(), handle: text })
+const workflowInputDefs = z.array(port.strict())
 const input = port.extend({ value: json.optional() })
 const group = z.object({ collapsed: z.boolean().optional(), group: text })
 const nodeSource = z.object({ kind: z.literal('node'), nodeId: text, output: text, field: text.optional() })
@@ -241,9 +243,9 @@ const graph = z.object({ nodes: z.record(text, node), edges: z.array(edge).defau
 const binding = z.object({ kind: z.literal('variable'), target: text })
 const module = z.object({ name: text, imports: strings, source: text })
 const document = z.preprocess(
-  rejectRetiredDefinitions,
+  normalizeDocument,
   z.object({
-    inputDefs: z.array(port.strict()).optional(),
+    inputDefs: workflowInputDefs.optional(),
     outputDefs: z.array(port.strict()).optional(),
     outputMappings: inputs.optional(),
     bindings: z.record(text, binding),
@@ -257,7 +259,7 @@ const revision = z.object({
 })
 const envelope = revision.extend({ kind: z.literal('open-flow-flow-revision'), version: z.literal(1) })
 
-function rejectRetiredDefinitions(value: unknown): unknown {
+function normalizeDocument(value: unknown): unknown {
   const candidate = record(value)
   if (
     candidate.tasks !== undefined &&
@@ -266,23 +268,37 @@ function rejectRetiredDefinitions(value: unknown): unknown {
     throw new TypeError('Independent Task definitions are no longer supported.')
   if (Object.values(record(record(candidate.graph).nodes)).some((candidateNode) => Object.hasOwn(record(candidateNode), 'taskId')))
     throw new TypeError('Task references are no longer supported.')
-  if (
-    Object.values(record(record(candidate.graph).nodes)).some((candidateNode) => {
-      const entry = record(candidateNode)
-      return entry.kind == 'start' && Object.hasOwn(entry, 'parameters')
-    })
-  )
-    throw new TypeError('Start.parameters is no longer supported; declare workflow inputDefs.')
   const subflows = candidate.subflows
   if (subflows !== undefined && (subflows === null || typeof subflows !== 'object' || Array.isArray(subflows) || Object.keys(subflows).length > 0))
     throw new TypeError('Subflows are no longer supported.')
   if (Object.values(record(record(candidate.graph).nodes)).some((candidateNode) => record(candidateNode).kind === 'subflow'))
     throw new TypeError('Subflow nodes are no longer supported.')
-  return value
+  return upgradeStartParameters(value)
 }
 
 function record(value: unknown): Record<string, unknown> {
   return value != null && typeof value == 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
+}
+
+/** Read the legacy Start contract without discarding or overwriting definitions. */
+function upgradeStartParameters(value: unknown): unknown {
+  const candidate = record(value)
+  const sourceGraph = record(candidate.graph)
+  const sourceNodes = record(sourceGraph.nodes)
+  let inputDefs = candidate.inputDefs
+  let nodes: Record<string, unknown> | undefined
+  for (const [id, nodeValue] of Object.entries(sourceNodes)) {
+    const candidateNode = record(nodeValue)
+    if (candidateNode.kind != 'start' || !Object.hasOwn(candidateNode, 'parameters')) continue
+    const parameters = workflowInputDefs.parse(candidateNode.parameters)
+    if (inputDefs !== undefined && !dequal(inputDefs, parameters))
+      throw new TypeError('Legacy Start.parameters conflicts with workflow inputDefs or another Start node.')
+    inputDefs = parameters
+    const { parameters: _, ...upgradedNode } = candidateNode
+    nodes ??= { ...sourceNodes }
+    nodes[id] = upgradedNode
+  }
+  return nodes == null ? value : { ...candidate, inputDefs, graph: { ...sourceGraph, nodes } }
 }
 
 function upgradeLegacySources(value: unknown, resolutionIds: ReadonlySet<string>): unknown {
@@ -451,7 +467,7 @@ export function repairRevisionEnvelope(value: unknown): RevisionContent {
     envelopeSource.modelVersion == 1 || envelopeSource.modelVersion == 2 ? upgradeLegacyDocument(envelopeSource.document) : envelopeSource.document,
   )
   if (typeof envelopeSource.modelVersion == 'number' && envelopeSource.modelVersion < 6) sourceDocument = upgradeTaskNodes(sourceDocument)
-  rejectRetiredDefinitions(sourceDocument)
+  sourceDocument = record(normalizeDocument(sourceDocument))
   const bindings = record(sourceDocument.bindings)
   const sourceGraph = repairGraph(sourceDocument.graph, bindings)
   return decodeRevisionContent({
@@ -493,7 +509,7 @@ export function decodeRevisionEnvelope(value: unknown): RevisionContent {
 const shapes = {
   'flow.output-defs.set': { before: z.array(port.strict()).optional(), value: z.array(port.strict()).optional() },
   'flow.output-mappings.set': { before: inputs.optional(), value: inputs.optional() },
-  'flow.input-defs.set': { before: z.array(port.strict()), value: z.array(port.strict()) },
+  'flow.input-defs.set': { before: workflowInputDefs, value: workflowInputDefs },
   'graph.trigger.sources.set': { nodeId: text, before: sourceFlowIds.optional(), value: sourceFlowIds.optional() },
   'binding.create': { bindingId: text, binding },
   'binding.delete': { bindingId: text },

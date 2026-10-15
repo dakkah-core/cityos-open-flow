@@ -5,10 +5,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { currentEngineContract } from '../src/execution/common/runtime.ts'
 import { runFlow } from '../src/execution/common/scheduler.ts'
 import { applyFlowChanges, currentFlowModelVersion } from '../src/flow/common/change.ts'
+import { decodeFlowDocument, decodeRevisionContent } from '../src/flow/common/changeSchema.ts'
 import { decodeRevision, digestBytes, encodeRevision, upgradeRevisionContent, repairRevision, revisionRepairKind } from '../src/flow/common/encoding.ts'
 import { inverseFlowChanges } from '../src/flow/common/inverseChanges.ts'
 import { updateFlowInputDefs } from '../src/flow/common/nodeChanges.ts'
 import { normalizeRunTrigger, prepareFlow } from '../src/flow/common/semantics.ts'
+import { decodeWorkflowFile } from '../src/flow/common/workflowFile.ts'
 import { matchesTriggerOutputs, normalizeTriggerOutputs } from '../src/trigger/common/contract.ts'
 
 const start: Extract<TriggerNode, { kind: 'start' }> = {
@@ -271,15 +273,117 @@ it('changes revision and Start closure identities when workflow input definition
   expect(() => applyFlowChanges(changed, [{ kind: 'flow.input-defs.set', before: [], value: inputDefs }])).toThrow(/changed/)
 })
 
-it('rejects retired Start parameters and accepts omitted workflow definitions', () => {
+function legacyStartContent(modelVersion = 7) {
   const source = content()
-  const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify({ ...source, kind: 'open-flow-flow-revision', version: 1, document: value }))
-  expect(() => decodeRevision(bytes({ ...source.document, graph: { nodes: { start: { ...start, parameters: inputDefs } }, edges: [] } }))).toThrow(/parameters/)
-  const retired = bytes({ ...source.document, graph: { nodes: { start: { ...start, parameters: inputDefs } }, edges: [] } })
-  expect(revisionRepairKind(retired)).toBeUndefined()
-  expect(() => repairRevision(retired)).toThrow(/Start.parameters/)
-  const { inputDefs: _defs, ...missing } = source.document
-  expect(decodeRevision(bytes(missing)).document).not.toHaveProperty('inputDefs')
+  const { inputDefs: parameters, ...document } = source.document
+  return {
+    ...source,
+    modelVersion,
+    document: {
+      ...document,
+      graph: {
+        ...document.graph,
+        nodes: { ...document.graph.nodes, start: { ...start, description: 'Original entry', icon: 'mdi:play', parameters } },
+      },
+    },
+  }
+}
+
+function revisionBytes(value: object): Uint8Array {
+  return new TextEncoder().encode(JSON.stringify({ kind: 'open-flow-flow-revision', version: 1, ...value }))
+}
+
+it.each([7, 8])('reads legacy Start parameters through shared boundaries and preserves edits in model %s', (modelVersion) => {
+  const legacy = legacyStartContent(modelVersion)
+  const before = structuredClone(legacy)
+  const bytes = revisionBytes(legacy)
+  const decoded = decodeRevision(bytes)
+  const source = content()
+  const expected = {
+    ...source,
+    modelVersion,
+    document: {
+      ...source.document,
+      graph: {
+        ...source.document.graph,
+        nodes: { ...source.document.graph.nodes, start: { ...start, description: 'Original entry', icon: 'mdi:play' } },
+      },
+    },
+  }
+  expect(decoded).toEqual(expected)
+  expect(decodeFlowDocument(legacy.document)).toEqual(expected.document)
+  expect(decodeRevisionContent(legacy)).toEqual(expected)
+  expect(decodeWorkflowFile({ kind: 'open-flow-workflow', version: 1, content: legacy }).content).toEqual(expected)
+  expect(revisionRepairKind(bytes)).toBeUndefined()
+  expect(repairRevision(bytes)).toEqual({ ...expected, modelVersion: currentFlowModelVersion })
+  expect(decodeRevision(encodeRevision(decoded))).toEqual(expected)
+  const changed = applyFlowChanges(decoded, [{ kind: 'graph.node.field.set', nodeId: 'start', field: 'name', before: 'Start', value: 'Renamed' }])
+  expect(changed).toEqual({
+    ...expected,
+    modelVersion: currentFlowModelVersion,
+    document: {
+      ...expected.document,
+      graph: { ...expected.document.graph, nodes: { ...expected.document.graph.nodes, start: { ...expected.document.graph.nodes.start, name: 'Renamed' } } },
+    },
+  })
+  expect(legacy).toEqual(before)
+  expect(revisionBytes(legacy)).toEqual(bytes)
+})
+
+it('executes legacy Start arguments with their schemas, nullability and downstream bindings intact', async () => {
+  const decoded = decodeRevision(revisionBytes(legacyStartContent()))
+  expect(normalizeRunTrigger(decoded, { nodeId: 'start', outputs: {} })).toBeUndefined()
+  expect(normalizeRunTrigger(decoded, { nodeId: 'start', outputs: { message: 1 } })).toBeUndefined()
+  const prepared = await prepareFlow(decoded, currentEngineContract, 'start')
+  if (prepared.kind != 'prepared') throw new Error(JSON.stringify(prepared))
+  const inputs: unknown[] = []
+  await Effect.runPromise(
+    runFlow(prepared.flow, {
+      createId: () => crypto.randomUUID(),
+      flowId: 'flow',
+      runId: 'run',
+      trigger: { nodeId: 'start', outputs: { message: 'Preserved' } },
+      invokeTask: (invocation) =>
+        Effect.sync(() => {
+          inputs.push(invocation.input)
+          return { result: invocation.input }
+        }),
+    }),
+  )
+  expect(inputs).toEqual([{ message: 'Preserved', note: null }])
+})
+
+it('accepts identical definitions and empty legacy parameters without inserting omitted current definitions', () => {
+  const legacy = legacyStartContent()
+  expect(decodeRevisionContent({ ...legacy, document: { ...legacy.document, inputDefs: structuredClone(inputDefs) } }).document.inputDefs).toEqual(inputDefs)
+  const empty = { bindings: {}, graph: { nodes: { start: { ...start, parameters: [] } }, edges: [] } }
+  expect(decodeFlowDocument(empty)).toEqual({ ...empty, inputDefs: [], graph: { ...empty.graph, nodes: { start } } })
+  const { inputDefs: _defs, ...missing } = content().document
+  expect(decodeFlowDocument(missing)).not.toHaveProperty('inputDefs')
+})
+
+it.each([null, {}, [{ ...inputDefs[0], value: 'would be lost' }], [{ handle: 'missing-schema' }]])(
+  'rejects invalid legacy parameters without silently repairing them: %j',
+  (parameters) => {
+    const legacy = legacyStartContent()
+    const invalid = { ...legacy, document: { ...legacy.document, graph: { ...legacy.document.graph, nodes: { start: { ...start, parameters } } } } }
+    const bytes = revisionBytes(invalid)
+    expect(() => decodeRevision(bytes)).toThrow()
+    expect(() => repairRevision(bytes)).toThrow()
+    expect(revisionRepairKind(bytes)).toBeUndefined()
+  },
+)
+
+it.each(['workflow', 'another Start'])('rejects conflicting %s definitions without discarding either contract', (conflict) => {
+  const legacy = legacyStartContent()
+  const document =
+    conflict == 'workflow'
+      ? { ...legacy.document, inputDefs: [] }
+      : { ...legacy.document, graph: { ...legacy.document.graph, nodes: { ...legacy.document.graph.nodes, other: { ...start, parameters: [] } } } }
+  const bytes = revisionBytes({ ...legacy, document })
+  expect(() => decodeRevision(bytes)).toThrow(/conflicts/)
+  expect(() => repairRevision(bytes)).toThrow(/conflicts/)
+  expect(revisionRepairKind(bytes)).toBeUndefined()
 })
 
 it('validates workflow definitions independently and keeps unrelated draft trigger scopes independent', async () => {
