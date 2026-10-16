@@ -1,6 +1,6 @@
 import type { ErrorListener, Flow, FlowPage, FlowResources, Variable, VariableListItem, VariableReferences } from './api.ts'
 
-import { exact, integer, invalidResponse, record, string } from './decoding.ts'
+import { requiredFields, integer, invalidResponse, record, string } from './decoding.ts'
 
 function strings(value: unknown): readonly string[] {
   return Array.isArray(value) ? value.map(string) : invalidResponse()
@@ -82,7 +82,7 @@ export function flowPage(value: unknown): FlowPage {
 
 export function variable(value: unknown): Variable {
   const source = record(value)
-  exact(source, ['name', 'updatedAt', 'value', 'version'])
+  requiredFields(source, ['name', 'updatedAt', 'value', 'version'])
   if (source.version != 1 || typeof source.value != 'string') return invalidResponse()
   const updatedAt = string(source.updatedAt)
   try {
@@ -115,17 +115,17 @@ export function errorListener(value: unknown): ErrorListener {
 
 export function variableReferences(input: unknown): VariableReferences {
   const source = record(input)
-  exact(source, ['version', 'references'])
+  requiredFields(source, ['version', 'references'])
   if (source.version != 1 || !Array.isArray(source.references)) return invalidResponse()
   return {
     version: 1,
     references: source.references.map((value) => {
       const item = record(value)
-      exact(item, ['flowId', 'flowName', 'draft', 'live'])
+      requiredFields(item, ['flowId', 'flowName', 'draft', 'live'])
       if (typeof item.draft != 'boolean') return invalidResponse()
       const live = item.live === null ? null : record(item.live)
       if (live != null) {
-        exact(live, ['publicationId', 'enabled'])
+        requiredFields(live, ['publicationId', 'enabled'])
         if (typeof live.enabled != 'boolean') return invalidResponse()
       }
       return {

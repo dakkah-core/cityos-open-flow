@@ -3,7 +3,7 @@ import type { UiLanguage } from '../../localization/common/languages.ts'
 import type { TriggerKeySummary } from './api.ts'
 
 import { isUiLanguage } from '../../localization/common/languages.ts'
-import { exact, invalidResponse, record, string } from './decoding.ts'
+import { exact, requiredFields, invalidResponse, record, string } from './decoding.ts'
 import { triggerKey } from './triggerDecoders.ts'
 
 export interface TriggerDisplay {
@@ -28,7 +28,7 @@ export interface TriggerCatalogCache {
 
 export function decodeTriggerCatalog(value: unknown): TriggerCatalog {
   const source = record(value)
-  exact(source, ['version', 'locale', 'definitions', 'display'])
+  requiredFields(source, ['version', 'locale', 'definitions', 'display'])
   if (source.version != 3 || !isUiLanguage(source.locale) || !Array.isArray(source.definitions)) return invalidResponse()
   const definitions = source.definitions.map(triggerKey)
   const entries = record(source.display)
@@ -38,7 +38,7 @@ export function decodeTriggerCatalog(value: unknown): TriggerCatalog {
     definitions.map((definition) => {
       const { key } = definition
       const copy = record(entries[key])
-      exact(copy, ['configInputs', 'configInputLabels', 'displayName', 'description', 'outputs'])
+      requiredFields(copy, ['configInputs', 'configInputLabels', 'displayName', 'description', 'outputs'])
       return [
         key,
         {

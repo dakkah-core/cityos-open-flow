@@ -3,7 +3,7 @@ import type { JsonValue, WaitAction } from '../../flow/common/change.ts'
 import type { Run, RunCancellation, RunDetails, RunPage, RunResult } from './api.ts'
 
 import { runStatuses } from '../../execution/common/runLifecycle.ts'
-import { exact, integer, invalidResponse, record, string } from './decoding.ts'
+import { requiredFields, integer, invalidResponse, record, string } from './decoding.ts'
 
 const runStatusSet: ReadonlySet<RunStatus> = new Set(runStatuses)
 
@@ -34,7 +34,7 @@ function run(value: unknown): Run {
 
 function runWaiting(value: unknown) {
   const source = record(value)
-  exact(source, ['actions', 'expiresAt', 'nodeId', 'prompt', 'waitId', 'waitingSince'])
+  requiredFields(source, ['actions', 'expiresAt', 'nodeId', 'prompt', 'waitId', 'waitingSince'])
   const actions = source.actions
   if (
     !Array.isArray(actions) ||
@@ -138,7 +138,7 @@ export function runCancellation(value: unknown): RunCancellation {
 
 export function waitResolution(value: unknown) {
   const source = record(value)
-  exact(source, ['action', 'comment', 'resolutionAccepted', 'resolvedAt', 'runId', 'status', 'version', 'waitId'])
+  requiredFields(source, ['action', 'comment', 'resolutionAccepted', 'resolvedAt', 'runId', 'status', 'version', 'waitId'])
   const action = source.action
   const resolvedAt = source.resolvedAt
   if (

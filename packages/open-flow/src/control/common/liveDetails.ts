@@ -13,19 +13,16 @@ const metadata = { nodeId: z.string().min(1), name: z.string(), description: z.s
 const binding = z.unknown().transform(triggerBinding)
 const provider = {
   provider: z.string().min(1),
-  inputs: z.record(
-    z.string(),
-    z.discriminatedUnion('kind', [z.strictObject({ kind: z.literal('value'), value: z.json() }), z.strictObject({ kind: z.literal('unset') })]),
-  ),
+  inputs: z.record(z.string(), z.discriminatedUnion('kind', [z.object({ kind: z.literal('value'), value: z.json() }), z.object({ kind: z.literal('unset') })])),
 }
 const entrySchema = z.discriminatedUnion('type', [
-  z.strictObject({ ...metadata, type: z.literal('start'), config: authoringConfigurations.start }),
-  z.strictObject({ ...metadata, type: z.literal('manual'), config: z.strictObject({}) }),
-  z.strictObject({ ...metadata, type: z.literal('webhook'), config: authoringConfigurations.webhook, binding }),
-  z.strictObject({ ...metadata, type: z.literal('cron'), config: authoringConfigurations.cron, binding }),
-  z.strictObject({ ...metadata, type: z.literal('error'), config: authoringConfigurations.error, binding }),
-  z.strictObject({ ...metadata, ...provider, type: z.literal('poll'), config: authoringConfigurations.poll, binding }),
-  z.strictObject({ ...metadata, ...provider, type: z.literal('integration'), config: authoringConfigurations.integration, binding }),
+  z.object({ ...metadata, type: z.literal('start'), config: authoringConfigurations.start }),
+  z.object({ ...metadata, type: z.literal('manual'), config: z.object({}) }),
+  z.object({ ...metadata, type: z.literal('webhook'), config: authoringConfigurations.webhook, binding }),
+  z.object({ ...metadata, type: z.literal('cron'), config: authoringConfigurations.cron, binding }),
+  z.object({ ...metadata, type: z.literal('error'), config: authoringConfigurations.error, binding }),
+  z.object({ ...metadata, ...provider, type: z.literal('poll'), config: authoringConfigurations.poll, binding }),
+  z.object({ ...metadata, ...provider, type: z.literal('integration'), config: authoringConfigurations.integration, binding }),
 ])
 
 export type LiveEntry = z.infer<typeof entrySchema>

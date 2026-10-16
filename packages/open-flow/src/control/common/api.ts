@@ -61,7 +61,7 @@ import type { FlowResourceReferences } from '../../flow/common/semantics.ts'
 import { flowCheck } from './checkDecoders.ts'
 import { connection, connectorAccess, connectorAccessSnapshot, connectorAccessCandidatesBatch, connectorAction, leinaBots } from './connectorDecoders.ts'
 import { allConnectorConnectionsQuery, connectorActionQuery, connectorConnectionsQuery, connectorProvidersQuery } from './connectorQueries.ts'
-import { exact, integer, invalidResponse, jsonValue, record, string } from './decoding.ts'
+import { requiredFields, integer, invalidResponse, jsonValue, record, string } from './decoding.ts'
 import { errorListener, flow, flowPage, variable, variableListItem, variableReferences } from './flowDecoders.ts'
 import { live, publication, publicationPage, publishOperation } from './publicationDecoders.ts'
 import { draft, draftChange, draftSync, presentation } from './revisionDecoders.ts'
@@ -781,7 +781,7 @@ export class ControlClient {
 
   async listEventSourceConnections(teamId: string | null, signal?: AbortSignal): Promise<readonly ConnectorConnection[]> {
     const source = record(await this.request(`/v1/event-sources/connections${teamId == null ? '' : `?teamId=${segment(teamId)}`}`, { signal }))
-    exact(source, ['version', 'connections'])
+    requiredFields(source, ['version', 'connections'])
     if (source.version != 1 || !Array.isArray(source.connections)) return invalidResponse()
     return source.connections.map(connection)
   }
@@ -800,7 +800,7 @@ export class ControlClient {
 
   async listVariables(): Promise<{ readonly variables: readonly VariableListItem[]; readonly version: 1 }> {
     const source = record(await this.request('/v1/variables'))
-    exact(source, ['variables', 'version'])
+    requiredFields(source, ['variables', 'version'])
     if (source.version != 1 || !Array.isArray(source.variables)) return invalidResponse()
     return { variables: source.variables.map(variableListItem), version: 1 }
   }
@@ -833,7 +833,7 @@ export class ControlClient {
 
   async deleteVariable(name: string): Promise<void> {
     const source = record(await this.request(`/v1/variables/${segment(name)}`, { method: 'DELETE' }))
-    exact(source, ['version'])
+    requiredFields(source, ['version'])
     if (source.version != 1) return invalidResponse()
   }
 
@@ -873,7 +873,7 @@ export class ControlClient {
         body: JSON.stringify({ version: 1, command }),
       }),
     )
-    exact(source, ['version', 'flowId', 'broadcast'])
+    requiredFields(source, ['version', 'flowId', 'broadcast'])
     if (source.version != 1 || source.broadcast !== true || source.flowId !== flowId) return invalidResponse()
     return { version: 1, flowId: string(source.flowId), broadcast: true }
   }
@@ -1017,11 +1017,11 @@ export class ControlClient {
 
   async listTriggerConfigOptions(flowId: string, nodeId: string, field: string, signal?: AbortSignal): Promise<readonly TriggerConfigOption[]> {
     const source = record(await this.request(`/v1/flows/${segment(flowId)}/triggers/${segment(nodeId)}/options/${segment(field)}`, { signal }))
-    exact(source, ['options', 'version'])
+    requiredFields(source, ['options', 'version'])
     if (source.version != 1 || !Array.isArray(source.options) || source.options.length > 1000) return invalidResponse()
     return source.options.map((value) => {
       const item = record(value)
-      exact(item, ['value', 'label', ...(item.color == null ? [] : ['color'])])
+      requiredFields(item, ['value', 'label', ...(item.color == null ? [] : ['color'])])
       const color = item.color == null ? undefined : string(item.color)
       if (color != null && !/^#[0-9a-fA-F]{6}$/.test(color)) return invalidResponse()
       return color == null ? { value: string(item.value), label: string(item.label) } : { value: string(item.value), label: string(item.label), color }
@@ -1030,13 +1030,13 @@ export class ControlClient {
 
   async listConnectorTeams(signal?: AbortSignal) {
     const source = record(await this.request('/v1/connector/teams', { signal }))
-    exact(source, ['enabled', 'teams', 'version'])
+    requiredFields(source, ['enabled', 'teams', 'version'])
     if (source.version != 1 || typeof source.enabled != 'boolean' || !Array.isArray(source.teams)) return invalidResponse()
     return {
       enabled: source.enabled,
       teams: source.teams.map((value: unknown) => {
         const team = record(value)
-        exact(team, ['id', 'name', 'systemCreated'])
+        requiredFields(team, ['id', 'name', 'systemCreated'])
         if (typeof team.systemCreated != 'boolean') return invalidResponse()
         return { id: string(team.id), name: string(team.name), systemCreated: team.systemCreated }
       }),
@@ -1151,7 +1151,7 @@ export class ControlClient {
         method: 'POST',
       }),
     )
-    exact(source, ['url', 'version'])
+    requiredFields(source, ['url', 'version'])
     if (source.version != 1) return invalidResponse()
     try {
       const url = new URL(string(source.url))
@@ -1406,7 +1406,7 @@ export class ControlClient {
     const suffix = query == '' ? '' : `?${query}`
     return this.connectorRequest(`/v1/connector/actions${suffix}`, 'actions', signal, (value) => {
       const source = record(value)
-      exact(source, ['actions', 'version'])
+      requiredFields(source, ['actions', 'version'])
       if (source.version != 1 || !Array.isArray(source.actions)) return invalidResponse()
       return source.actions.map(connectorAction)
     })

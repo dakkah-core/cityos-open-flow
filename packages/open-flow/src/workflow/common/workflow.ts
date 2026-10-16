@@ -9,13 +9,13 @@ export interface WorkflowExecutor {
   readonly revisionId: string
 }
 
-const portSchema = z.strictObject({
+const portSchema = z.object({
   handle: z.string().min(1),
   jsonSchema: z.json() as z.ZodType<JsonValue>,
   nullable: z.boolean(),
   description: z.string().optional(),
 })
-export const workflowContractSchema = z.strictObject({
+export const workflowContractSchema = z.object({
   version: z.literal(1),
   flowId: z.string().min(1),
   name: z.string(),
@@ -123,18 +123,18 @@ export function withWorkflowTask(node: TaskNode, task: ManagedTaskDefinition): T
   }
 }
 
-export const workflowReferencesSchema = z.strictObject({
+export const workflowReferencesSchema = z.object({
   version: z.literal(1),
   direction: z.enum(['incoming', 'outgoing']),
   total: z.int().nonnegative(),
   nextOffset: z.int().nonnegative().optional(),
   references: z.array(
-    z.strictObject({
+    z.object({
       flowId: z.string(),
       name: z.string().nullable(),
       available: z.boolean(),
       draft: z.boolean(),
-      live: z.strictObject({ publicationId: z.string(), enabled: z.boolean() }).nullable(),
+      live: z.object({ publicationId: z.string(), enabled: z.boolean() }).nullable(),
     }),
   ),
 })

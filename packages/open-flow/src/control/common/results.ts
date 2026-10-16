@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { resultQuerySchema } from './resultQuery.ts'
 
 const json: z.ZodType<JsonValue> = z.json()
-const entry = z.strictObject({
+const entry = z.object({
   pointer: z.string(),
   type: z.enum(['object', 'array', 'string', 'number', 'boolean', 'null']),
   length: z.number().int().nonnegative().optional(),
@@ -16,14 +16,11 @@ const page = entry.extend({
   nextOffset: z.number().int().positive().optional(),
   entries: z.array(entry).optional(),
 })
-const result = z.strictObject({
+const result = z.object({
   resultId: z.string().min(1),
   callId: z.string().min(1),
   toolId: z.string().min(1),
-  source: z.discriminatedUnion('kind', [
-    z.strictObject({ kind: z.literal('connector'), action: z.string().min(1) }),
-    z.strictObject({ kind: z.literal('code') }),
-  ]),
+  source: z.discriminatedUnion('kind', [z.object({ kind: z.literal('connector'), action: z.string().min(1) }), z.object({ kind: z.literal('code') })]),
   bytes: z.number().int().nonnegative(),
   digest: z.string().regex(/^[a-f0-9]{64}$/),
   createdAt: z.string().datetime(),
@@ -60,8 +57,8 @@ export interface ResultQuery {
   readonly limit?: number
   readonly maxBytes?: number
 }
-const listSchema = z.strictObject({ version: z.literal(1), runId: z.string(), results: z.array(result), nextAfter: z.string().optional() })
-const readSchema = z.strictObject({ version: z.literal(1), runId: z.string(), result, page })
+const listSchema = z.object({ version: z.literal(1), runId: z.string(), results: z.array(result), nextAfter: z.string().optional() })
+const readSchema = z.object({ version: z.literal(1), runId: z.string(), result, page })
 export function parseResultQuery(value: unknown): Required<ResultQuery> {
   return resultQuerySchema.parse(value)
 }

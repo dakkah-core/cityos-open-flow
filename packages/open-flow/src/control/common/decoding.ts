@@ -24,6 +24,11 @@ export function string(value: unknown): string {
   return typeof value == 'string' && value.length > 0 ? value : invalidResponse('Expected a non-empty string.')
 }
 
+export function requiredFields(value: Readonly<Record<string, unknown>>, keys: readonly string[]): void {
+  const missing = keys.filter((key) => !Object.hasOwn(value, key))
+  if (missing.length > 0) invalidResponse(`Missing fields: ${missing.join(', ')}.`)
+}
+
 export function exact(value: Readonly<Record<string, unknown>>, keys: readonly string[]): void {
   const actual = Object.keys(value)
   if (actual.length != keys.length || actual.some((key) => !keys.includes(key))) {

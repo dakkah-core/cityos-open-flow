@@ -354,10 +354,16 @@ describe('ControlClient Publish API', () => {
     expect(request).toHaveBeenNthCalledWith(2, '/v1/flows/flow%2F1/publish-operations/publish-1', expect.anything())
   })
 
+  it('ignores additional Publish operation and issue fields', async () => {
+    const issue = { code: 'provider.failed', message: 'Failed.' }
+    const result = { ...pending, issue, status: 'failed' }
+    const client = new ControlClient(async () => Response.json({ ...result, extra: true, issue: { ...issue, response: {} } }))
+    await expect(client.getPublishOperation(flow.flowId, pending.operationId)).resolves.toEqual(result)
+  })
+
   it.each([
-    ['an extra pending field', { ...pending, extra: true }],
     ['a succeeded result without a Publication', { ...pending, status: 'succeeded' }],
-    ['a failed result with an unsafe issue shape', { ...pending, issue: { code: 'provider.failed', message: 'Failed.', response: {} }, status: 'failed' }],
+    ['a failed result without an issue message', { ...pending, issue: { code: 'provider.failed' }, status: 'failed' }],
   ])('rejects %s', async (_name, response) => {
     const client = new ControlClient(async () => Response.json(response))
     await expect(client.getPublishOperation(flow.flowId, pending.operationId)).rejects.toMatchObject({ code: 'response.invalid', status: 502 })
@@ -393,8 +399,17 @@ describe('ControlClient Variable API', () => {
     )
   })
 
+  it('ignores additional Variable list, item, and delete fields', async () => {
+    const responses = [
+      { variables: [{ ...variable, referenceCount: 2, extra: true }], version: 1, extra: true },
+      { version: 1, extra: true },
+    ]
+    const client = new ControlClient(async () => Response.json(responses.shift()))
+    await expect(client.listVariables()).resolves.toEqual({ variables: [{ ...variable, referenceCount: 2 }], version: 1 })
+    await expect(client.deleteVariable('TOKEN')).resolves.toBeUndefined()
+  })
+
   it.each([
-    ['extra field', { ...variable, extra: true }],
     ['missing field', { name: variable.name, updatedAt: variable.updatedAt, version: 1 }],
     ['invalid timestamp', { ...variable, updatedAt: 'today' }],
     ['invalid value', { ...variable, value: null }],
@@ -410,7 +425,7 @@ describe('ControlClient Variable API', () => {
   })
 
   it('rejects malformed Variable list and delete responses', async () => {
-    const responses = [Response.json({ variables: {}, version: 1 }), Response.json({ version: 1, extra: true })]
+    const responses = [Response.json({ variables: {}, version: 1 }), Response.json({ version: 2 })]
     const client = new ControlClient(async () => responses.shift()!)
 
     await expect(client.listVariables()).rejects.toMatchObject({ code: 'response.invalid', status: 502 })

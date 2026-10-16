@@ -360,7 +360,7 @@ Update bodies use `{ expectedRevision, value, version: 1 }`. Stale CAS returns `
 }
 ```
 
-Each field reuses its resource read contract. `flow.flowId`, `draft.flowId`, and `live.flowId` must match the requested Flow. `flow.draftRevisionId` must equal `draft.revisionId`; Live `hasUnpublishedChanges` refers to that Draft. This read creates no Revision, changes no Presentation revision, and runs no check. A missing Flow returns `flow.not-found`. Independent resource read/write interfaces remain available. Clients ignore extra fields at the editor response root and in Presentation responses, but validate required fields, types, versions, and resource consistency.
+Each field reuses its resource read contract. `flow.flowId`, `draft.flowId`, and `live.flowId` must match the requested Flow. `flow.draftRevisionId` must equal `draft.revisionId`; Live `hasUnpublishedChanges` refers to that Draft. This read creates no Revision, changes no Presentation revision, and runs no check. A missing Flow returns `flow.not-found`. Independent resource read/write interfaces remain available. Clients ignore and strip undeclared fields in ordinary response objects, including nested objects, while validating required fields, types, versions, and resource consistency. Request schemas, permission identities, access configuration, candidates and snapshots, embedded execution/authoring definitions, and dynamic field-map consistency retain their explicit validation contracts.
 
 ### Execution graphs and input sources
 
