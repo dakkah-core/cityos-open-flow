@@ -10,6 +10,7 @@
   --open-flow-card: #ffffff;
   --open-flow-node-surface: #f6f6f6;
   --open-flow-node-content: #ffffff;
+  --open-flow-node-running-beam: oklch(72.3% 0.219 149.579);
   --open-flow-comment-surface: #f3eddc;
   --open-flow-comment-content: color-mix(in srgb, var(--open-flow-comment-surface) 55%, var(--open-flow-node-content));
   --open-flow-comment-border: #e3d8ba;

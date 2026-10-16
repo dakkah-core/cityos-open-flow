@@ -3,11 +3,12 @@
   --card-stroke: var(--node-border-color);
   --card-selection-stroke: var(--node-selected-border-color);
   --card-shadow: 0 1px 2px rgb(0 0 0 / 3%), 0 4px 12px rgb(0 0 0 / 3%);
+  --card-radius: 20px;
   position: relative;
   width: 100%;
   padding: 8px;
   border: 1px solid var(--card-stroke);
-  border-radius: 20px;
+  border-radius: var(--card-radius);
   background: var(--open-flow-node-surface);
   color: var(--text-4);
   box-shadow: var(--card-shadow);
@@ -15,7 +16,7 @@
 
 .value {
   --card-shadow: 0 1px 2px rgb(0 0 0 / 3%);
-  border-radius: 12px;
+  --card-radius: 12px;
 
   .preview {
     border-radius: 6px;
@@ -42,6 +43,39 @@
 
 .problem {
   --card-stroke: var(--accent-red-1);
+}
+
+.runningBeam {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  fill: none;
+  stroke: var(--open-flow-node-running-beam);
+  stroke-width: 1px;
+  animation: running-beam 4s linear infinite;
+
+  rect {
+    width: calc(100% - 1px);
+    height: calc(100% - 1px);
+    rx: calc(var(--card-radius) - 1px);
+  }
+}
+
+@keyframes running-beam {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -1000px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .runningBeam {
+    animation: none;
+  }
 }
 
 .header {
@@ -253,7 +287,7 @@
   }
 }
 
-.compactContent > :not(.header) {
+.compactContent > :not(.header, .runningBeam) {
   visibility: hidden;
 }
 

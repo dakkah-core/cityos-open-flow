@@ -79,12 +79,6 @@ const workflowPositions = {
   value: { x: 0, y: 440 },
 }
 const stateViewport = { x: 45, y: 100, zoom: 0.9 }
-const statePositions = Object.fromEntries(
-  ['idle', 'selected', 'waiting', 'running', 'success', 'error', 'account', 'deferred'].map((id, index) => [
-    id,
-    { x: (index % 3) * 400, y: Math.floor(index / 3) * 240 },
-  ]),
-)
 
 const workflow: FlowCanvasViewModel = {
   viewport: workflowViewport,
@@ -227,6 +221,13 @@ const states: FlowCanvasViewModel = {
         run: { status: 'running', progress: 42 },
       },
       {
+        id: 'running-content',
+        title: 'Summarize customer feedback',
+        description:
+          'Review recent customer conversations, group recurring issues, and draft a concise summary with examples and suggested follow-ups for the product team.',
+        run: { status: 'running', progress: 26 },
+      },
+      {
         id: 'success',
         title: 'Build the weekly report',
         run: { status: 'success', progress: 100, successCount: 3 },
@@ -235,37 +236,45 @@ const states: FlowCanvasViewModel = {
       { id: 'account', title: 'Code · Missing account', run: { status: 'idle' } },
       { id: 'deferred', title: 'Provider · Account deferred', run: { status: 'idle' } },
     ] as const
-  ).map((node) => ({
-    id: node.id,
-    title: node.title,
-    run: { ...node.run, runId: 'lab-run-042' },
-    executorName: node.id == 'deferred' ? 'Connector · Gmail' : 'JavaScript',
-    actionSummary:
-      node.id === 'idle' || node.id === 'deferred'
-        ? undefined
-        : {
-            count: node.id === 'selected' ? 3 : 9,
-            providers: (node.id === 'selected' ? ['slack'] : ['slack', 'github', 'notion', 'google-drive', 'feishu', 'airtable']).map((id) => ({
-              id,
-              icon: providerIcon({ serviceId: id, serviceName: id }),
-              label: id,
-            })),
-          },
-    diagnostics: node.id == 'error' || node.id == 'account' ? 1 : undefined,
-    connectionRequired: node.id == 'account',
-    connectionDeferred: node.id == 'deferred',
-    kind: 'task',
-    reference: 'lab/status',
-    position: statePositions[node.id],
-    inputs: [
-      {
-        handle: 'message',
-        jsonSchema: { type: 'string' },
-        value: 'Sample input',
-      },
-    ],
-    outputs: [{ handle: 'result', jsonSchema: { type: 'string' } }],
-  })),
+  ).map((node, index) =>
+    Object.assign(node, {
+      run: { ...node.run, runId: 'lab-run-042' },
+      executorName: node.id == 'deferred' ? 'Connector · Gmail' : 'JavaScript',
+      actionSummary:
+        node.id === 'idle' || node.id === 'deferred'
+          ? undefined
+          : {
+              count: node.id === 'selected' ? 3 : 9,
+              providers: (node.id === 'selected' ? ['slack'] : ['slack', 'github', 'notion', 'google-drive', 'feishu', 'airtable']).map((id) => ({
+                id,
+                icon: providerIcon({ serviceId: id, serviceName: id }),
+                label: id,
+              })),
+            },
+      diagnostics: node.id == 'error' || node.id == 'account' ? 1 : undefined,
+      connectionRequired: node.id == 'account',
+      connectionDeferred: node.id == 'deferred',
+      kind: 'task' as const,
+      reference: 'lab/status',
+      position: { x: (index % 3) * 400, y: Math.floor(index / 3) * 240 },
+      inputs: [
+        {
+          handle: 'message',
+          jsonSchema: { type: 'string' as const },
+          value: 'Sample input',
+        },
+      ],
+      outputs: [{ handle: 'result', jsonSchema: { type: 'string' as const } }],
+    }),
+  ),
+}
+
+const completedStates: FlowCanvasViewModel = {
+  ...states,
+  runStatus: 'idle',
+  nodes: states.nodes.map((node) =>
+    node.kind !== 'comment' && node.run?.status === 'running' ? { ...node, run: { ...node.run, status: 'success', progress: 100 } } : node,
+  ),
 }
 
 function WorkflowStory({
@@ -276,6 +285,7 @@ function WorkflowStory({
   initialSelectedNodeId = 'task',
   picker = false,
   remoteCommands = false,
+  completedModel,
 }: {
   readonly dark: boolean
   readonly language: UiLanguage
@@ -283,6 +293,7 @@ function WorkflowStory({
   readonly model: FlowCanvasViewModel
   readonly initialSelectedNodeId?: string
   readonly remoteCommands?: boolean
+  readonly completedModel?: FlowCanvasViewModel
   readonly picker?: boolean
 }) {
   const remote = useMemo(() => {
@@ -305,6 +316,7 @@ function WorkflowStory({
   const [selectedTriggerId, setSelectedTriggerId] = useState(triggers[0]?.id ?? '')
   const [version, setVersion] = useState(0)
   const [editable, setEditable] = useState(true)
+  const [runCompleted, setRunCompleted] = useState(false)
   const [pickerRequest, setPickerRequest] = useState<CanvasNodePickerRequest>()
   const [addNodeRequest, setAddNodeRequest] = useState<FlowCanvasViewProps['addNodeRequest']>(
     picker ? { position: { x: 140, y: 80 }, onComplete: () => setAddNodeRequest(undefined) } : undefined,
@@ -312,6 +324,7 @@ function WorkflowStory({
   const { ignoredNodeIds, onIgnoreNodes } = useIgnoredNodes(String(version))
   const [selected, setSelected] = useState<readonly string[]>([initialSelectedNodeId])
   useStoryActions([
+    ...(completedModel ? [{ label: runCompleted ? 'Restart running nodes' : 'Finish running nodes', onClick: () => setRunCompleted((value) => !value) }] : []),
     ...(remoteCommands
       ? [
           { label: 'Focus last node', onClick: () => remote.send({ type: 'focus', nodeId: model.nodes.at(-1)!.id }) },
@@ -333,6 +346,7 @@ function WorkflowStory({
       onClick: () => {
         setSelected([initialSelectedNodeId])
         setEditable(true)
+        setRunCompleted(false)
         setVersion((value) => value + 1)
         log('samples.reset')
       },
@@ -373,7 +387,7 @@ function WorkflowStory({
             language={language}
             layoutMotion={false}
             editable={editable}
-            model={model}
+            model={runCompleted && completedModel ? completedModel : model}
             toolbar={
               <WorkbenchCanvasActions
                 pickerOpen={addNodeRequest != null}
@@ -497,9 +511,11 @@ export const workflowStories: readonly FrontendStory[] = [
     id: 'node-states',
     title: 'Node states',
     description:
-      'Compare Code nodes with no actions, one provider with multiple actions, and more than five providers. Check the stack beside JavaScript, long titles, execution states, the missing-account error icon and the deferred-account warning without an error border. Interactions appear in the status below.',
+      'Compare compact and content-filled running nodes with the other execution states, provider stacks and account warnings. Finish and restart both running nodes to check the beam lifecycle. Compare corners, selection, themes, zoom and reduced motion.',
     standalone: true,
-    render: (log, dark, language) => <WorkflowStory dark={dark} language={language} log={log} model={states} initialSelectedNodeId="selected" />,
+    render: (log, dark, language) => (
+      <WorkflowStory dark={dark} language={language} log={log} model={states} completedModel={completedStates} initialSelectedNodeId="selected" />
+    ),
   },
   {
     group: 'Workbench',

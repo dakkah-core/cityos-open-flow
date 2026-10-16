@@ -79,6 +79,7 @@ export function CanvasNode({
           ) : undefined
         }
         selected={selected}
+        running={node.run?.status === 'running'}
         problem={connectionRequired ? t('nodeStatus.connectionRequired') : (problem ?? (connectionDeferred ? t('nodeStatus.connectionDeferred') : undefined))}
         problemTone={connectionDeferred ? 'warning' : 'danger'}
         problemIcon={connectionRequired || connectionDeferred ? <i aria-hidden="true" className="i-lucide-light:unplug" /> : undefined}

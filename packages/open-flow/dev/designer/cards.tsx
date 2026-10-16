@@ -227,6 +227,7 @@ export const cardStories: readonly FrontendStory[] = [
             selected
             icon={<i className="i-carbon:search" />}
             footer={<RunChips run={{ status: 'running', progress: 42, runId: completed.runId, startedAt: completed.startedAt }} />}
+            running
           >
             <p>Gather company size, sector and recent announcements.</p>
           </CanvasCard>

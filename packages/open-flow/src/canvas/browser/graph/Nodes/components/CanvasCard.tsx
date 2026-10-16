@@ -6,6 +6,25 @@ import { Children, useLayoutEffect, useRef, useState } from 'react'
 import { isEmptyReactNode } from '../../../../../ui/browser/hooks.ts'
 import { CanvasTooltip } from '../../../components/tooltip.tsx'
 
+// Normalize every card perimeter to the same units used by the CSS animation.
+const runningBeamPathLength = 1000
+const runningBeamLength = 160
+const runningBeamLayerCount = 48
+const runningBeamPeakOpacity = 0.9
+
+// Nested strokes keep the fade on the path, including corners and the loop seam.
+const runningBeamLayers = Array.from({ length: runningBeamLayerCount }, (_, index) => {
+  const length = runningBeamLength * (1 - index / runningBeamLayerCount)
+  const gap = (runningBeamPathLength - length) / 2
+  const previousOpacity = runningBeamPeakOpacity * Math.sin((index / runningBeamLayerCount) * (Math.PI / 2)) ** 2
+  const opacity = runningBeamPeakOpacity * Math.sin(((index + 1) / runningBeamLayerCount) * (Math.PI / 2)) ** 2
+  return {
+    dash: `0 ${gap} ${length} ${gap}`,
+    // Alpha compositing: target = previous + layer * (1 - previous).
+    opacity: (opacity - previousOpacity) / (1 - previousOpacity),
+  }
+})
+
 export function CanvasCard({
   title,
   tone,
@@ -22,6 +41,7 @@ export function CanvasCard({
   problemIcon,
   problemTone = 'danger',
   selected,
+  running = false,
   fill = false,
   compact = false,
   compactContent = false,
@@ -48,6 +68,7 @@ export function CanvasCard({
   readonly problemTone?: 'danger' | 'warning'
   readonly problem?: string
   readonly selected?: boolean
+  readonly running?: boolean
 }) {
   const hasContent = Children.toArray(children).some((child) => typeof child != 'string' || child.trim().length > 0)
   const hasBranches = !isEmptyReactNode(branches)
@@ -110,6 +131,13 @@ export function CanvasCard({
           </CardCollapse>
         )}
       </div>
+      {running && (
+        <svg className={styles.runningBeam} aria-hidden="true">
+          {runningBeamLayers.map((layer, index) => (
+            <rect key={index} x="0.5" y="0.5" pathLength={runningBeamPathLength} strokeDasharray={layer.dash} strokeOpacity={layer.opacity} />
+          ))}
+        </svg>
+      )}
     </article>
   )
 }
