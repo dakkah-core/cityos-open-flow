@@ -670,7 +670,7 @@ export function designerGraph(
       const column = layout.depth.get(nodeId) ?? 0
       const row = rows.get(column) ?? 0
       rows.set(column, row + 1)
-      return { id: nodeId, column, x: 80 + column * 500, y: 80 + row * 240, height: 240 }
+      return { id: nodeId, column, x: 80 + column * 500, y: 80 + row * 240, width: 420, height: 240 }
     }),
   )
   const nodes: DesignerNode[] = []

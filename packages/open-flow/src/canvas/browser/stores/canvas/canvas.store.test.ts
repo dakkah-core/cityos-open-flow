@@ -263,8 +263,9 @@ describe('CanvasStore layout', () => {
     second.$$.rfNode.set({ ...second.$.rfNode.value, measured: { width: 200, height: 80 } })
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(setup.store.completeLayout()).toBe('relayout')
-    expect(first.$.position.value).not.toEqual(second.$.position.value)
+    expect(setup.store.completeLayout(200)).toBe('relayout')
+    expect(first.$.position.value.x).toBe(second.$.position.value.x)
+    expect(second.$.position.value.y).toBeGreaterThan(first.$.position.value.y + 80)
     expect(setup.store.completeLayout()).toBe(true)
     setup.dispose()
   })
@@ -299,14 +300,26 @@ describe('CanvasStore layout', () => {
     const positions = nodes.map((node) => node.$.position.value)
     const branchPosition = branch.$.position.value
     expect(branchPosition.x + 520 / 2).toBe(positions[3]!.x + 300 / 2)
-    expect(positions[4]!.x).toBe(positions[0]!.x)
-    expect(positions[4]!.y).toBeGreaterThan(positions[3]!.y + 120)
-    expect(positions[4]!.y).toBeGreaterThan(branchPosition.y + 360)
-    expect(positions[8]!.y).toBeGreaterThan(positions[7]!.y + 120)
+    expect(positions[6]!.x).toBe(positions[0]!.x)
+    expect(positions[6]!.y).toBeGreaterThan(positions[5]!.y + 120)
+    expect(positions[6]!.y).toBeGreaterThan(branchPosition.y + 360)
+    expect(positions[9]!.y).toBe(positions[6]!.y)
     nodes[0]!.$$.position.set({ x: 5000, y: 5000 })
     setup.store.onRelayout()
     expect(nodes.map((node) => node.$.position.value)).toEqual(positions)
     expect(branch.$.position.value).toEqual(branchPosition)
+
+    // A wider visible canvas can fit eight measured dependency columns, including the wide branch.
+    setup.store.onRelayout(3180)
+    const wide = nodes.map((node) => node.$.position.value)
+    expect(wide[7]!.x).toBeGreaterThan(wide[6]!.x)
+    expect(wide[8]!.x).toBe(wide[0]!.x)
+    expect(wide[8]!.y).toBeGreaterThan(wide[7]!.y + 120)
+    expect(branch.$.position.value.x + 520 / 2).toBe(wide[3]!.x + 300 / 2)
+    expect(wide[8]!.y).toBeGreaterThan(branch.$.position.value.y + 360)
+    // Repeating with the same width produces the same saved positions.
+    setup.store.onRelayout(3180)
+    expect(nodes.map((node) => node.$.position.value)).toEqual(wide)
     setup.dispose()
   })
 

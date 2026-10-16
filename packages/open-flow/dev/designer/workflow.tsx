@@ -462,7 +462,7 @@ export const workflowStories: readonly FrontendStory[] = [
     id: 'wrapped-layout',
     title: 'Long workflow layout',
     description:
-      'A twelve-step flow without saved positions wraps after four dependency columns. Inspect the parallel fourth step and return connections between rows. Use Re-layout to compare measured node spacing, then Reset samples to restore the default layout.',
+      'Default placement wraps after six dependency columns. Re-layout uses the current canvas width, zoom and measured node sizes. Compare at 50% and 100%, or resize the window before re-layout. Parallel steps stay together; zooming alone preserves positions. Reset samples restores default placement.',
     standalone: true,
     render: (log, dark, language) => <WorkflowStory dark={dark} language={language} log={log} model={longChainModel} initialSelectedNodeId="step-1" />,
   },

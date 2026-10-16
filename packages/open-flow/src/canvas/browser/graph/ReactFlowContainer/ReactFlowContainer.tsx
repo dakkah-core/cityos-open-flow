@@ -108,6 +108,12 @@ const GET_SIZE = (s: ReactFlowState): Dimensions => ({
   height: s.height,
 })
 
+// Read the actual canvas pane at layout time, leaving 32 screen pixels on each side.
+// Resizing and zooming alone must never rearrange nodes.
+function getLayoutWidth(state: ReactFlowState): number | undefined {
+  return state.width > 0 ? Math.max(1, state.width - 64) / state.transform[2] : undefined
+}
+
 const isSizeEqual = (a: Dimensions, b: Dimensions) => a.width === b.width && a.height === b.height
 
 const isRectEqual = (a: Rect, b: Rect) => isSizeEqual(a, b) && a.x === b.x && a.y === b.y
@@ -165,8 +171,8 @@ export interface ReactFlowContainerProps {
     connection?: (nodeId: NodeId) => RFConnection,
   ) => Promise<NodeId | undefined>
   onDropAddItem?: (itemId: string, position: XYPosition) => Promise<string | undefined> | string | undefined
-  onRelayout?: () => void
-  onLayoutMeasured?: () => boolean | 'relayout'
+  onRelayout?: (availableWidth?: number) => void
+  onLayoutMeasured?: (availableWidth?: number) => boolean | 'relayout'
   onFitView?: () => void
   onInstance?: (rf: ReactFlowInstance) => () => void
   onInit?: OnInit<RFNode<any>, RFEdge<any>>
@@ -238,6 +244,7 @@ const selector = (s: ReactFlowState) => ({
 
 const FlowControls = /*#__PURE__*/ memo((props: FlowControlsProps) => {
   const rf = useReactFlow()
+  const flowState = useStoreApi()
   const { minZoomReached, maxZoomReached, zoom } = useStore(selector, shallowPlainObjectEqual)
   const nodes = useNodes()
 
@@ -254,7 +261,7 @@ const FlowControls = /*#__PURE__*/ memo((props: FlowControlsProps) => {
     props.onRelayout == null
       ? undefined
       : () => {
-          props.onRelayout?.()
+          props.onRelayout?.(getLayoutWidth(flowState.getState()))
           props.onBeforeFitView?.()
           // Wait for the node description height before fitting the view to avoid overlap.
           setTimeout(() => rf.fitView(fitViewOptions), 100)
@@ -469,7 +476,7 @@ const ReactFlowContainerInner = (props: ReactFlowContainerProps) => {
     let fitTimer: ReturnType<typeof setTimeout> | undefined
     let attempts = 0
     const completeLayout = () => {
-      const result = props.onLayoutMeasured?.()
+      const result = props.onLayoutMeasured?.(getLayoutWidth(flowState.getState()))
       if (result === false && attempts++ < 5) {
         measurementFrame = requestAnimationFrame(completeLayout)
       } else if (result === 'relayout') {
@@ -507,7 +514,7 @@ const ReactFlowContainerInner = (props: ReactFlowContainerProps) => {
       if (fitTimer) clearTimeout(fitTimer)
       if (transitionTimer) clearTimeout(transitionTimer)
     }
-  }, [onBeforeFitView, props.layoutMotion, props.onLayoutMeasured, rf, updateNodeInternals])
+  }, [flowState, onBeforeFitView, props.layoutMotion, props.onLayoutMeasured, rf, updateNodeInternals])
 
   const viewport = useVal(props.viewport$)
   const nonEmptyViewport = useRef(viewport)

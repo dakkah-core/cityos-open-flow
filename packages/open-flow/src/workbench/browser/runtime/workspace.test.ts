@@ -38,9 +38,9 @@ it('wraps CLI-created chains without replacing saved node positions or execution
   }
   const graph = designerGraph(draft)
   const positions = Object.fromEntries(graph.nodes.map((node) => [node.id, node.position]))
-  expect(positions['step-4']!.x).toBe(positions['step-0']!.x)
-  expect(positions['step-4']!.y).toBeGreaterThan(positions['step-3']!.y)
-  expect(positions['step-8']!.y).toBeGreaterThan(positions['step-7']!.y)
+  expect(positions['step-6']!.x).toBe(positions['step-0']!.x)
+  expect(positions['step-6']!.y).toBeGreaterThan(positions['step-5']!.y)
+  expect(positions['step-9']!.y).toBe(positions['step-6']!.y)
   expect(graph.edges.map(({ source, target }) => ({ source, target }))).toEqual(edges)
   const saved = { x: 2500, y: -100 }
   const reopened = designerGraph(draft, setNodePositions({}, { 'step-4': saved }))

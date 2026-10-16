@@ -184,7 +184,7 @@ export class CanvasStore {
   }
 
   /** Initializes the shared layout after React Flow has measured the nodes. */
-  public completeLayout = (): boolean | 'relayout' => {
+  public completeLayout = (availableWidth?: number): boolean | 'relayout' => {
     if (this.layoutComplete) return true
     const nodes = this.allLayoutNodes()
     if (nodes.length === 0) return true
@@ -197,7 +197,7 @@ export class CanvasStore {
         return true
       }
     }
-    this.doRelayout()
+    this.doRelayout(availableWidth)
     this.layoutMeasurementAttempts = 0
     this.layoutComplete = true
     return 'relayout'
@@ -285,16 +285,16 @@ export class CanvasStore {
     }
   }
 
-  public onRelayout = (): void => {
+  public onRelayout = (availableWidth?: number): void => {
     try {
-      this.doRelayout()
+      this.doRelayout(availableWidth)
     } catch (e) {
       console.error(e)
     }
   }
 
   // https://reactflow.dev/learn/layouting/layouting#dagre
-  private doRelayout() {
+  private doRelayout(availableWidth?: number) {
     const nodes = this.allLayoutNodes()
     const g = new graphlib.Graph().setDefaultEdgeLabel(() => ({}))
     // Leave enough room for both ends of a smooth-step edge and a short middle segment.
@@ -335,9 +335,11 @@ export class CanvasStore {
           column: rank,
           x: x - width / 2,
           y: y - height / 2,
+          width,
           height,
         }
       }),
+      availableWidth,
     )
     for (const node of nodes) node.$$.position.set(positions[node.nodeId]!)
     this.#callbacks.onMoveNodes(positions)
