@@ -345,6 +345,7 @@
     "hide": "隐藏内容"
   },
   "nodeStatus": {
+    "connectionDeferred": "暂未设置账号，执行此节点时需要配置账号",
     "connectionRequired": "尚未连接或连接已失效。请在节点设置中重新连接或选择可用连接。",
     "error": "错误",
     "hasError": "存在错误",

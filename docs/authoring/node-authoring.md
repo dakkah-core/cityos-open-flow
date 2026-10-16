@@ -109,3 +109,5 @@ Report script results and real Agent trials separately.
 
 Leina notification nodes require a nonblank robot identifier (`leinaId`) or an input source binding.
 Drafts may retain an unselected robot for editing, but `flow_check` reports `leina.robot-required` until configured.
+
+Action account selections use an omitted `connectionId` for unconfigured, a nonempty ID for selected, and `""` for explicitly deferred. Deferral is supported by Connector Tasks, independent Code Actions, Agent tools and notifications, but not Provider Triggers. It bypasses only account readiness checks. A deferred Action fails if called; deferred Agent tools are excluded from the callable tool set. Preserve this distinction in public reads, edits and exports.

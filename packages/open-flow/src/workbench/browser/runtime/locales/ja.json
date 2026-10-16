@@ -237,6 +237,8 @@
       "manage": "管理",
       "authorizationPending": "Connection ページで認証を完了してください。ここに戻ると、このアカウントが更新されます。",
       "chooseAccount": "アカウントを選択",
+      "deferred": "今は設定しない",
+      "clearDeferred": "選択をクリア",
       "noAccounts": "利用可能なアカウントがありません",
       "connectBeforeRun": "このノードを実行または公開するには、先に {{service}} を接続してください。",
       "connectService": "{{service}} を接続",

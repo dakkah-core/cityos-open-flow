@@ -80,7 +80,10 @@ const workflowPositions = {
 }
 const stateViewport = { x: 45, y: 100, zoom: 0.9 }
 const statePositions = Object.fromEntries(
-  ['idle', 'selected', 'waiting', 'running', 'success', 'error', 'account'].map((id, index) => [id, { x: (index % 3) * 400, y: Math.floor(index / 3) * 240 }]),
+  ['idle', 'selected', 'waiting', 'running', 'success', 'error', 'account', 'deferred'].map((id, index) => [
+    id,
+    { x: (index % 3) * 400, y: Math.floor(index / 3) * 240 },
+  ]),
 )
 
 const workflow: FlowCanvasViewModel = {
@@ -230,14 +233,15 @@ const states: FlowCanvasViewModel = {
       },
       { id: 'error', title: 'Send the campaign', run: { status: 'error' } },
       { id: 'account', title: 'Code · Missing account', run: { status: 'idle' } },
+      { id: 'deferred', title: 'Provider · Account deferred', run: { status: 'idle' } },
     ] as const
   ).map((node) => ({
     id: node.id,
     title: node.title,
     run: { ...node.run, runId: 'lab-run-042' },
-    executorName: 'JavaScript',
+    executorName: node.id == 'deferred' ? 'Connector · Gmail' : 'JavaScript',
     actionSummary:
-      node.id === 'idle'
+      node.id === 'idle' || node.id === 'deferred'
         ? undefined
         : {
             count: node.id === 'selected' ? 3 : 9,
@@ -249,6 +253,7 @@ const states: FlowCanvasViewModel = {
           },
     diagnostics: node.id == 'error' || node.id == 'account' ? 1 : undefined,
     connectionRequired: node.id == 'account',
+    connectionDeferred: node.id == 'deferred',
     kind: 'task',
     reference: 'lab/status',
     position: statePositions[node.id],
@@ -492,7 +497,7 @@ export const workflowStories: readonly FrontendStory[] = [
     id: 'node-states',
     title: 'Node states',
     description:
-      'Compare Code nodes with no actions, one provider with multiple actions, and more than five providers. Check the stack beside JavaScript, long titles, execution states and the missing-account icon. Interactions appear in the status below.',
+      'Compare Code nodes with no actions, one provider with multiple actions, and more than five providers. Check the stack beside JavaScript, long titles, execution states, the missing-account error icon and the deferred-account warning without an error border. Interactions appear in the status below.',
     standalone: true,
     render: (log, dark, language) => <WorkflowStory dark={dark} language={language} log={log} model={states} initialSelectedNodeId="selected" />,
   },

@@ -6,7 +6,7 @@ import type { Store } from '../storage/store.ts'
 import type { Publisher } from './publication.ts'
 
 import * as Effect from 'effect/Effect'
-import { ConnectorTaskError } from '../deployment/connector.ts'
+import { assertConnectionNotDeferred, ConnectorTaskError } from '../deployment/connector.ts'
 import { errorKind } from '../logger.ts'
 
 const maintenanceBatchSize = 100
@@ -98,7 +98,7 @@ export class Maintenance {
         const notification = runs.notification
         if (notification != null) {
           const connector = this.#resolveConnector()
-          if (connector == null) {
+          if (connector == null && notification.connectionId !== '') {
             this.#store.runs.releaseWaitNotification(
               notification.runId,
               notification.waitId,
@@ -108,8 +108,9 @@ export class Maintenance {
             )
           } else {
             yield* Effect.tryPromise({
-              try: (signal) =>
-                connector.execute(notification.action, notification.connectionId, notification.input, notification.invocationId, signal, {
+              try: async (signal) => {
+                assertConnectionNotDeferred(notification.connectionId)
+                return connector!.execute(notification.action, notification.connectionId, notification.input, notification.invocationId, signal, {
                   flowId: notification.flowId,
                   providerAccess: notification.providerAccess,
                   providerId: notification.action.split('.')[0],
@@ -119,7 +120,8 @@ export class Maintenance {
                   purpose: 'execute',
                   source: 'run',
                   ...(notification.teamId == null ? {} : { teamId: notification.teamId }),
-                } satisfies ConnectorAccessContext),
+                } satisfies ConnectorAccessContext)
+              },
               catch: (error) => error,
             }).pipe(
               Effect.matchEffect({

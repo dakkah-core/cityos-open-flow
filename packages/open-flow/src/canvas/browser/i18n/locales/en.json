@@ -345,6 +345,7 @@
     "hide": "Hide content"
   },
   "nodeStatus": {
+    "connectionDeferred": "No account is configured for now. Configure an account before executing this node.",
     "connectionRequired": "A connection is missing or unavailable. Reconnect or select an available connection in the node settings.",
     "error": "Error",
     "hasError": "Has errors",

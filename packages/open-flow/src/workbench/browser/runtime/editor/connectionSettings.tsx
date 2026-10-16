@@ -93,6 +93,7 @@ export function AccountSelect({
   invalid,
   warning,
   addWhenEmpty,
+  allowDeferred = false,
   label,
   selectedConnection,
   selectedId,
@@ -105,6 +106,7 @@ export function AccountSelect({
   readonly id?: string
   readonly warning?: boolean
   readonly addWhenEmpty?: boolean
+  readonly allowDeferred?: boolean
   readonly invalid?: boolean
   readonly label?: string
   readonly selectedConnection?: ConnectorConnection
@@ -115,18 +117,21 @@ export function AccountSelect({
   const t = useTranslate()
   const [container, setContainer] = useState<HTMLDivElement | null>(null)
   const selected = selectedConnection ?? connections.find((candidate) => candidate.connectionId == selectedId)
-  const showLoading = loading && selected == null
+  const showLoading = loading && selected == null && selectedId !== ''
   const builtInName = t('inspector.account.oomolBuiltIn')
   const displayName = (connection: ConnectorConnection) => accountDisplayName(connection, connection.displayName, builtInName)
   const selectedLabel =
-    selected == null
-      ? selectedId == null
-        ? undefined
-        : `${selectedId} (${t('inspector.account.unavailable')})`
-      : `${displayName(selected)}${selected.isDefault ? ` (${t('inspector.account.teamDefault')})` : ''}`
-  const missingSelected = selectedId != null && !connections.some((candidate) => candidate.connectionId == selectedId)
+    selectedId === ''
+      ? t('inspector.account.deferred')
+      : selected == null
+        ? selectedId == null
+          ? undefined
+          : `${selectedId} (${t('inspector.account.unavailable')})`
+        : `${displayName(selected)}${selected.isDefault ? ` (${t('inspector.account.teamDefault')})` : ''}`
+  const missingSelected = selectedId != null && selectedId !== '' && !connections.some((candidate) => candidate.connectionId == selectedId)
   const empty = !loading && connections.length == 0
   const items = [
+    ...(allowDeferred || selectedId === '' ? [{ value: '', label: t('inspector.account.deferred'), disabled: !allowDeferred }] : []),
     ...(missingSelected ? [{ value: selectedId, label: selectedLabel!, disabled: true }] : []),
     ...(empty ? [{ value: noAccountsOption, label: t('inspector.account.noAccounts'), disabled: true }] : []),
     ...connections.map((candidate) => ({
@@ -135,7 +140,7 @@ export function AccountSelect({
     })),
     ...(onManage == null ? [] : [{ value: manageAccountOption, label: t('inspector.account.addAccount') }]),
   ]
-  if (!loading && addWhenEmpty && connections.length === 0 && selectedId == null) {
+  if (!allowDeferred && !loading && addWhenEmpty && connections.length === 0 && selectedId == null) {
     return <AccountControlButton disabled={disabled} status="warning" onClick={onManage} label={t('inspector.account.addAccount')} />
   }
   return (
@@ -178,6 +183,11 @@ export function AccountSelect({
           alignItemWithTrigger={false}
           className={`${selectionMenuContentClass} w-max min-w-[max(9rem,var(--anchor-width))] max-w-(--available-width)`}
         >
+          {(allowDeferred || selectedId === '') && (
+            <SelectItem value="" disabled={!allowDeferred} className={selectionMenuItemClass}>
+              {t('inspector.account.deferred')}
+            </SelectItem>
+          )}
           {missingSelected && (
             <SelectItem value={selectedId} disabled className={selectionMenuItemClass}>
               {selectedLabel}
@@ -205,23 +215,29 @@ export function AccountSelect({
         </SelectContent>
       </Select>
       {!loading && selectedId != null && (
-        <Button
-          className="account-select-clear absolute top-1/2 right-7 -translate-y-1/2 text-muted-foreground"
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          aria-label={t('connectionUsage.stopUsing')}
-          title={t('connectionUsage.stopUsing')}
-          disabled={disabled}
-          onPointerDown={(event) => {
-            if (event.button == 0) onChange(undefined)
-          }}
-          onClick={(event) => {
-            if (event.detail == 0) onChange(undefined)
-          }}
-        >
-          <i aria-hidden="true" className="i-lucide-light:x" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                className="account-select-clear absolute top-1/2 right-7 -translate-y-1/2 text-muted-foreground"
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label={t(selectedId === '' ? 'inspector.account.clearDeferred' : 'connectionUsage.stopUsing')}
+                disabled={disabled}
+                onPointerDown={(event) => {
+                  if (event.button == 0) onChange(undefined)
+                }}
+                onClick={(event) => {
+                  if (event.detail == 0) onChange(undefined)
+                }}
+              >
+                <i aria-hidden="true" className="i-lucide-light:x" />
+              </Button>
+            }
+          />
+          <TooltipContent container={container}>{t(selectedId === '' ? 'inspector.account.clearDeferred' : 'connectionUsage.stopUsing')}</TooltipContent>
+        </Tooltip>
       )}
     </div>
   )
@@ -267,7 +283,8 @@ export function ConnectorAccount({
   const pending = loading || (accessIssue == null && actionError == null && (action == null || (activeConnections == null && connectionError == null)))
   const required =
     !pending &&
-    (accessIssue != null || (action?.authenticated == true && (connectionId == null || (activeConnections != null && connection?.status != 'active'))))
+    (accessIssue != null ||
+      (connectionId !== '' && action?.authenticated == true && (connectionId == null || (activeConnections != null && connection?.status != 'active'))))
   let onManage: (() => void) | undefined
   let content: ReactElement
   if (pending) {
@@ -296,23 +313,10 @@ export function ConnectorAccount({
         onRetry={() => void connectors.refresh(true)}
       />
     )
-  } else if (connectionId == null && available.length == 0) {
-    content = (
-      <>
-        {authorizationPending && <p>{t('inspector.account.authorizationPending')}</p>}
-        <div className="inspector-status-prompt">
-          <p>{t('inspector.account.connectBeforeRun', { service: action.serviceName })}</p>
-          <Button disabled={disabled || onConfigureAccess == null} onClick={onConfigureAccess} size="sm" type="button">
-            <Icon data-icon="inline-start" name="plus" />
-            {t('inspector.account.manageAccount')}
-          </Button>
-        </div>
-      </>
-    )
   } else {
     onManage = onConfigureAccess
     let status: string | undefined
-    if (connectionId != null) {
+    if (connectionId != null && connectionId !== '') {
       if (connection == null) status = t('inspector.account.missing')
       else if (connection.status != 'active') status = t(`inspector.account.status.${connection.status}`)
     }
@@ -324,6 +328,7 @@ export function ConnectorAccount({
             {t('inspector.account.connection')}
           </FieldLabel>
           <AccountSelect
+            allowDeferred
             connections={available}
             disabled={disabled}
             id={`${fieldIdPrefix}-connection`}

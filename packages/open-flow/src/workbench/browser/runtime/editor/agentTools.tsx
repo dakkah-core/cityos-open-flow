@@ -131,7 +131,7 @@ export function AgentTools(
               <summary>{tool.name || tool.action}</summary>
               <p className="reference-value">
                 {tool.action}
-                {tool.connectionId == null ? '' : ` · ${tool.connectionId}`}
+                {tool.connectionId == null ? '' : ` · ${tool.connectionId === '' ? t('inspector.account.deferred') : tool.connectionId}`}
               </p>
               <AgentToolSettings entry={tool} disabled inputs={props.inputs} />
             </details>

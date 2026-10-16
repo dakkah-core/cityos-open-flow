@@ -713,3 +713,44 @@ it('opens hosted connection pages in the Flow team or explicitly selected team',
   await expect(service.control.connectorConnectionPage('feishu_app_bot', undefined, 'unknown-team')).rejects.toThrow('Team')
   await expect(service.control.connectorConnectionPage('feishu_app_bot', flow.flowId, 'team-b-id')).rejects.toThrow('either a Flow or a Team')
 })
+
+it.each(['connector', 'code-call', 'code-unused'] as const)('admits and publishes deferred accounts but fails only on actual invocation: %s', async (kind) => {
+  const execute = vi.fn<ConnectorHost['execute']>(async () => ({ message: 'unexpected' }))
+  const service = await open(createConnectorHost({ execute }))
+  let revision: RevisionContent
+  if (kind == 'connector') {
+    revision = connectorFlow()
+    const node = revision.document.graph.nodes.connector!
+    if (node.kind != 'task' || !('executor' in node.task) || node.task.executor.kind != 'connector') throw new Error('Expected Connector')
+    revision = {
+      ...revision,
+      document: {
+        ...revision.document,
+        graph: {
+          ...revision.document.graph,
+          nodes: {
+            connector: { ...node, task: { ...node.task, executor: { ...node.task.executor, connectionId: '' } } },
+          },
+        },
+      },
+    }
+  } else {
+    revision = capabilityFlow(true, kind == 'code-call' ? 'capability.actions.example.echo(input)' : 'Promise.resolve(input)', [
+      { kind: 'connector', mode: 'independent', actions: [{ action: 'example.echo', connectionId: '' }] },
+    ])
+  }
+  const stored = await storeRevision(service, revision, `deferred-${kind}`)
+  expect(await service.control.checkFlow(stored.flowId, stored.revisionId, 'open-flow-engine/v5')).toMatchObject({ valid: true })
+  await expect(service.control.publishFlow('test', stored.flowId, stored.revisionId, 'open-flow-engine/v5', null, 'publish-deferred')).resolves.toBeDefined()
+  const accepted = await service.control.runs.createDraftRun(stored.flowId, stored.revisionId, 'open-flow-engine/v5', {}, 'run-deferred', {
+    nodeId: 'start',
+    outputs: {},
+  })
+  await service.waitForIdle()
+  expect(execute).not.toHaveBeenCalled()
+  expect(service.run(accepted.run.runId)).toMatchObject({ status: kind == 'code-unused' ? 'completed' : 'failed' })
+  if (kind != 'code-unused')
+    expect(service.events(accepted.run.runId).find((event) => event.kind == 'node.failed')).toMatchObject({
+      payload: { error: { code: 'connector.connection-required' } },
+    })
+})

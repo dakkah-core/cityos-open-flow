@@ -138,7 +138,7 @@ export interface FlowResourceReferences {
 export function flowResourceReferences(content: RevisionContent): FlowResourceReferences {
   const connections = new Map<string, { readonly providerId: string; readonly connectionId: string }>()
   for (const use of connectionUsage(content.document)) {
-    if (use.connectionId == null) continue
+    if (use.connectionId == null || use.connectionId === '') continue
     connections.set(JSON.stringify([use.providerId, use.connectionId]), { providerId: use.providerId, connectionId: use.connectionId })
   }
   return {
@@ -445,11 +445,13 @@ export function agentActions(flow: Pick<PreparedFlow, 'graph'>): readonly Connec
     const task = node.task
     if (task.executor.kind != 'agent') return []
     const notice = task.executor.notification
-    return [...task.executor.tools, ...(notice != null ? [notice] : [])].map((tool) => ({
-      kind: 'connector' as const,
-      action: tool.action,
-      connections: tool.connectionId == null ? [] : [{ connectionId: tool.connectionId }],
-    }))
+    return [...task.executor.tools, ...(notice != null ? [notice] : [])]
+      .filter((tool) => tool.connectionId !== '')
+      .map((tool) => ({
+        kind: 'connector' as const,
+        action: tool.action,
+        connections: tool.connectionId == null ? [] : [{ connectionId: tool.connectionId }],
+      }))
   })
 }
 

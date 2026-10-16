@@ -108,6 +108,10 @@
 }
 
 .warning {
+  color: var(--widget-warn-color);
+}
+
+.danger {
   color: var(--accent-red-1);
 }
 

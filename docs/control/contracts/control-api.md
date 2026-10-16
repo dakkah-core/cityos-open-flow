@@ -895,6 +895,8 @@ Monotonic `expectedAccessRevision` prevents concurrent overwrites; conflicts use
 
 Open-source Server selects mode by Connector endpoint. OpenConnector uses `implicit`, revision `0`, empty bindings, digest `implicit`, and empty candidates. PUT/DELETE return `connector.access-unsupported`. `connector.oomol.com` and `connector.oomol.dev` use `selectable`. Hosted mode obtains the current UID from `api.oomol.{com|dev}/v1/users/profile` with the configured OOMOL user token, reads Flow Team app-access from relation-control, verifies assignable candidates, and stores only opaque bindings. App-access projections cache for five minutes. Action, Connection, catalog, execute, and proxy all fail closed under the same binding.
 
+Action account selection distinguishes an omitted `connectionId` (unconfigured) from `connectionId: ""` (explicitly deferred). Connector Tasks, independent Code Actions, Agent tools, and Agent notifications preserve this value through authoring, reads, exports and history. Explicitly deferred references do not block account eligibility checks and are excluded from real account resource references and access snapshots. Calling a deferred Action fails with `connector.connection-required` before external execution, without selecting a default account. Agent tools with this value are omitted from the callable tool set. Other validation remains in force. Provider Triggers require a nonempty account ID and do not support deferral. Clearing `config.connectionId` restores the unconfigured state; omitted update fields preserve the current value.
+
 Connection catalogs retain visible non-active accounts and health for display and reauthorization; assignable candidates and execution still require active accounts. Without `role::connector-app:<connectionId>`, Team defaults permit all Actions with `source: { kind: 'policy', ruleId: null }`. Configured accounts strictly follow their rules. Empty Action lists disable access; malformed rules must not fall back to full access. Later execution resolves current rules again; deleted named groups cannot fall back to Team defaults.
 
 Open-source Server uses user tokens for hosted Connector and must not forge Team-token-only `accessGrant`. Bindings with `appAccessConfig` require a hosted Flow runtime with Team token transport; open-source Server returns `connector.access-invalid` for such execution.
@@ -1148,7 +1150,7 @@ The script contract is `open-flow-engine/v5`, with dependency joins, repeated lo
 
 ### Revision and edit operations
 
-New Inline Code Tasks save this declaration by default. Shared mode directly uses all Actions authorized by Flow shared accounts without a node list. Independent mode stores `actions`; each may specify `connectionId`, which may remain absent in Draft:
+New Inline Code Tasks save this declaration by default. Shared mode directly uses all Actions authorized by Flow shared accounts without a node list. Independent mode stores `actions`; each may specify `connectionId`, which may remain absent in Draft or be `""` to explicitly defer account configuration:
 
 ```json
 { "kind": "connector", "mode": "shared" }

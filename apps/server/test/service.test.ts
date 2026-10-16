@@ -1298,9 +1298,11 @@ describe('Server application service', () => {
     ['code', true, undefined, true],
     ['code', false, undefined, false],
     ['code', true, 'work', false],
+    ['code', true, '', false],
     ['agent', true, undefined, true],
     ['agent', false, undefined, false],
     ['agent', true, 'work', false],
+    ['agent', true, '', false],
   ] as const)('checks missing action accounts for %s (authenticated=%s, account=%s)', async (kind, authenticated, connectionId, missing) => {
     const getAction = vi.fn(async () => ({
       actionId: 'mail.send',

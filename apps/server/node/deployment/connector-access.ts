@@ -269,7 +269,7 @@ export async function captureConnectorAccess(
     selectedBindings: [],
   }
   if (access.mode == 'implicit') return snapshot
-  const uses = connectionUsage(document).filter((use) => use.connectionId != null)
+  const uses = connectionUsage(document).filter((use) => use.connectionId != null && use.connectionId !== '')
   const providerIds = [...new Set(uses.map((use) => use.providerId))]
   if (providerIds.length == 0) return snapshot
   const response = await host.listCandidates('', flowId, providerIds)

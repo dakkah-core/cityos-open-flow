@@ -345,6 +345,7 @@
     "hide": "Masquer le contenu"
   },
   "nodeStatus": {
+    "connectionDeferred": "Aucun compte configuré pour le moment. Configurez un compte avant d’exécuter ce nœud.",
     "connectionRequired": "La connexion est manquante ou indisponible. Reconnectez-vous ou sélectionnez une connexion disponible dans les paramètres du nœud.",
     "error": "Erreur",
     "hasError": "Contient des erreurs",

@@ -50,7 +50,7 @@ function hasConnectionUsageIssue(
   if (access?.version == 1 && access.bindings.some((binding) => binding.connectionId == null || binding.status != 'active')) return true
   if (connections == null) return false
 
-  const connectionIds = new Set(uses.flatMap((use) => (use.connectionId == null ? [] : [use.connectionId])))
+  const connectionIds = new Set(uses.flatMap((use) => (use.connectionId == null || use.connectionId === '' ? [] : [use.connectionId])))
   for (const binding of access == null ? [] : access.version == 2 ? access.sharedBindings : access.bindings) {
     if (binding.connectionId != null) connectionIds.add(binding.connectionId)
   }
@@ -164,7 +164,7 @@ export function ConnectorAccessSettings({
   const uses = displayed?.connectorReferences.accounts ?? []
   const accounts = new Map<string, { name: string; providerId: string; code: boolean; nodes: readonly ConnectorAccountReference[] }>()
   for (const use of uses) {
-    if (use.connectionId == null || accounts.has(use.connectionId)) continue
+    if (use.connectionId == null || use.connectionId === '' || accounts.has(use.connectionId)) continue
     const connection = connections.find((item) => item.connectionId == use.connectionId)
     accounts.set(use.connectionId, {
       name:
@@ -182,6 +182,8 @@ export function ConnectorAccessSettings({
     accounts.set(binding.connectionId, { name: binding.connectionDisplayName, providerId: binding.providerId, code: true, nodes: account?.nodes ?? [] })
   }
   const pendingUses = pendingConnectionUses(uses, providers.data)
+  const deferredUses = uses.filter((use) => use.connectionId === '' && use.kind != 'trigger')
+  const hasAccountUses = accounts.size > 0 || pendingUses.length > 0 || deferredUses.length > 0
   const providerMetadata = Object.fromEntries((providers.data ?? []).map((provider) => [provider.serviceId, provider]))
   const referenceIcon = (reference: ConnectorAccountReference): string | undefined => {
     const node = displayed?.node(reference.nodeId)
@@ -211,56 +213,75 @@ export function ConnectorAccessSettings({
         </p>
       ) : (!published && (state.loading || revision == null)) || (published && fixedSnapshot == null) ? (
         <p className="text-xs">{t('connectionUsage.loading')}</p>
-      ) : accounts.size == 0 && pendingUses.length == 0 ? (
+      ) : !hasAccountUses ? (
         <p className="text-xs text-muted-foreground">{t(published ? 'connectionUsage.publishedEmpty' : 'connectionUsage.empty')}</p>
       ) : (
         <div className="flex flex-col gap-4">
-          {pendingUses.length > 0 && (
-            <section className="flex flex-col gap-3" aria-label={t('connectionUsage.needsConnection')}>
-              <h3 className="m-0 text-xs font-medium text-[var(--warning-foreground)]">{t('connectionUsage.needsConnection')}</h3>
-              {[...new Set(pendingUses.map((use) => use.providerId))].map((providerId) => {
-                const provider = providers.data?.find((item) => item.serviceId == providerId) ?? { serviceId: providerId, serviceName: providerId }
-                return (
-                  <section
-                    key={providerId}
-                    aria-label={provider.serviceName}
-                    className="flex min-w-0 flex-col gap-3 rounded-md bg-[var(--warning-subtle-surface)] p-3 [--ui-control-hover-background:var(--warning-subtle-hover)]"
-                  >
-                    <div className="flex min-w-0 items-center gap-2 text-[13px] font-medium">
-                      <ContentIcon src={providerIcon(provider)} className="size-4 shrink-0 data-[icon-kind=initials]:text-[20px]" />
-                      <span className="min-w-0 truncate" title={provider.serviceName}>
-                        {provider.serviceName}
-                      </span>
-                    </div>
-                    {!published && (
-                      <AccountSelect
-                        connections={connections.filter((connection) => connection.serviceId == providerId && connection.status == 'active')}
-                        disabled={selectingAccount || connectionState.error != null}
-                        loading={connectionState.data == null && connectionState.error == null}
-                        warning
-                        label={t('actionPicker.accountFor', { action: provider.serviceName })}
-                        onChange={(connectionId) => {
-                          if (connectionId == null) return
-                          setSelectingAccount(true)
-                          void store.workspace.setMissingConnections(providerId, connectionId).then((saved) => {
-                            setSelectingAccount(false)
-                            if (saved) panel.current?.focus()
-                          })
-                        }}
-                        onManage={() => void store.connectors.connect(providerId)}
-                      />
-                    )}
-                    <AccountReferences
-                      showLabel={false}
-                      icon={referenceIcon}
-                      references={pendingUses.filter((use) => use.providerId == providerId)}
-                      label={t('connectionUsage.needsConnection')}
-                      onSelect={published ? undefined : onSelectReference}
-                    />
-                  </section>
-                )
-              })}
-            </section>
+          {[
+            { deferred: false, references: pendingUses },
+            { deferred: true, references: deferredUses },
+          ].map(
+            ({ deferred, references }) =>
+              references.length > 0 && (
+                <section
+                  key={String(deferred)}
+                  className="flex flex-col gap-3"
+                  aria-label={t(deferred ? 'inspector.account.deferred' : 'connectionUsage.needsConnection')}
+                >
+                  <h3 className={cn('m-0 text-xs font-medium', deferred ? 'text-muted-foreground' : 'text-[var(--warning-foreground)]')}>
+                    {t(deferred ? 'inspector.account.deferred' : 'connectionUsage.needsConnection')}
+                  </h3>
+                  {[...new Set(references.map((use) => use.providerId))].map((providerId) => {
+                    const provider = providers.data?.find((item) => item.serviceId == providerId) ?? { serviceId: providerId, serviceName: providerId }
+                    const providerReferences = references.filter((use) => use.providerId == providerId)
+                    return (
+                      <section
+                        key={providerId}
+                        aria-label={provider.serviceName}
+                        className={cn(
+                          'flex min-w-0 flex-col gap-3 rounded-md p-3',
+                          deferred
+                            ? 'border border-border/50'
+                            : 'bg-[var(--warning-subtle-surface)] [--ui-control-hover-background:var(--warning-subtle-hover)]',
+                        )}
+                      >
+                        <div className="flex min-w-0 items-center gap-2 text-[13px] font-medium">
+                          <ContentIcon src={providerIcon(provider)} className="size-4 shrink-0 data-[icon-kind=initials]:text-[20px]" />
+                          <span className="min-w-0 truncate" title={provider.serviceName}>
+                            {provider.serviceName}
+                          </span>
+                        </div>
+                        {!published && (
+                          <AccountSelect
+                            connections={connections.filter((connection) => connection.serviceId == providerId && connection.status == 'active')}
+                            disabled={selectingAccount || connectionState.error != null}
+                            loading={connectionState.data == null && connectionState.error == null}
+                            warning={!deferred}
+                            selectedId={deferred ? '' : undefined}
+                            allowDeferred={!providerReferences.some((use) => use.kind == 'trigger')}
+                            label={t('actionPicker.accountFor', { action: provider.serviceName })}
+                            onChange={(connectionId) => {
+                              setSelectingAccount(true)
+                              void store.workspace.setServiceConnections(providerId, connectionId, deferred ? '' : undefined).then((saved) => {
+                                setSelectingAccount(false)
+                                if (saved) panel.current?.focus()
+                              })
+                            }}
+                            onManage={() => void store.connectors.connect(providerId)}
+                          />
+                        )}
+                        <AccountReferences
+                          showLabel={false}
+                          icon={referenceIcon}
+                          references={providerReferences}
+                          label={t(deferred ? 'inspector.account.deferred' : 'connectionUsage.needsConnection')}
+                          onSelect={published ? undefined : onSelectReference}
+                        />
+                      </section>
+                    )
+                  })}
+                </section>
+              ),
           )}
           <div className="flex flex-col gap-4">
             {[...new Set([...accounts.values()].map((account) => account.providerId))].map((providerId) => {
@@ -332,7 +353,7 @@ export function ConnectorAccessSettings({
           </div>
         </div>
       )}
-      {(accounts.size > 0 || pendingUses.length > 0) && (connectionState.error != null || connectionState.data == null) && (
+      {hasAccountUses && (connectionState.error != null || connectionState.data == null) && (
         <p className="text-xs text-muted-foreground" role="status">
           {t(connectionState.error != null ? 'connectorAccess.accountsFailed' : 'inspector.account.loading')}
           {connectionState.error != null && (

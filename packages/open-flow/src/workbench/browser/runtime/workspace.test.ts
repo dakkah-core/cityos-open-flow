@@ -745,3 +745,34 @@ it('keeps node content visibility independent and preserves unrelated presentati
   expect(shown.custom).toBe('preserved')
   expect(setNodeContentHidden(initial, 'value', false)).toBe(initial)
 })
+
+it('projects a deferred Provider connection as a reminder without creating an error, even before catalogs load', () => {
+  const draft: NonNullable<Parameters<typeof designerGraph>[0]> = {
+    actorId: 'actor',
+    createdAt: '2026-10-16T00:00:00Z',
+    digest: 'digest',
+    flowId: 'flow',
+    modelVersion: currentFlowModelVersion,
+    parentRevisionId: null,
+    revisionId: 'revision',
+    version: 1,
+    content: {
+      modelVersion: currentFlowModelVersion,
+      modules: {},
+      document: {
+        bindings: {},
+        graph: {
+          edges: [],
+          nodes: {
+            provider: {
+              kind: 'task',
+              inputs: {},
+              task: { name: 'Send', inputs: [], outputs: [], executor: { kind: 'connector', action: 'mail.send', connectionId: '' } },
+            },
+          },
+        },
+      },
+    },
+  }
+  expect(designerGraph(draft, {}, []).nodes[0]).toMatchObject({ connectionDeferred: true, connectionRequired: false, diagnostics: 0 })
+})

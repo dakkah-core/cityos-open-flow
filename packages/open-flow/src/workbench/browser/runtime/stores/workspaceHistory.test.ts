@@ -100,9 +100,19 @@ describe('Workspace canvas history', () => {
           actions: [{ action: 'mail.send' }, { action: 'mail.read' }, { action: 'mail.archive', connectionId: 'personal' }, { action: 'github.create_issue' }],
         },
       ])
+      const unconfigured = saved().draft.content
+      await store.setServiceConnections('mail', '')
+      const deferred = saved().draft.content
+      expect(deferred).not.toEqual(unconfigured)
+      await store.undo()
+      expect(saved().draft.content).toEqual(unconfigured)
+      await store.redo()
+      expect(saved().draft.content).toEqual(deferred)
+      await store.setServiceConnections('mail', undefined, '')
+      expect(saved().draft.content).toEqual(unconfigured)
       const before = saved().draft.content
       change.mockClear()
-      expect(await store.setMissingConnections('mail', 'work')).toBe(true)
+      expect(await store.setServiceConnections('mail', 'work')).toBe(true)
       expect(change).toHaveBeenCalledTimes(1)
       const after = saved().draft.content
       expect(after.document.graph.nodes.code).toMatchObject({
@@ -125,7 +135,7 @@ describe('Workspace canvas history', () => {
       await store.redo()
       expect(saved().draft.content).toEqual(after)
       await store.undo()
-      await store.setMissingConnections('mail', 'other')
+      await store.setServiceConnections('mail', 'other')
       expect(store.history$.value.canRedo).toBe(false)
     } finally {
       store.dispose()

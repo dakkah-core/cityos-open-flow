@@ -237,6 +237,8 @@
       "manage": "管理",
       "authorizationPending": "請在 Connection 頁面完成授權，再回到這裡重新整理這個帳號。",
       "chooseAccount": "選擇帳號",
+      "deferred": "暫不設定",
+      "clearDeferred": "清除選擇",
       "noAccounts": "暫無可用帳號",
       "connectBeforeRun": "請先連接 {{service}}，這個節點才能執行或發布。",
       "connectService": "連接 {{service}}",

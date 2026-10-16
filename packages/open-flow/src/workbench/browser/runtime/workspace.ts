@@ -558,7 +558,9 @@ function semanticDesignerNode(nodeId: string, resolved: ResolvedNode, ports: Nod
   const connectionId = connector?.connectionId
   const selectedConnection = connectionId == null ? undefined : connections?.byId.get(connectionId)
   const connectionRequired =
-    (connectorAction?.authenticated == true && (connector?.connectionId == null || (connections != null && selectedConnection?.status != 'active'))) ||
+    (connectionId !== '' &&
+      connectorAction?.authenticated == true &&
+      (connector?.connectionId == null || (connections != null && selectedConnection?.status != 'active'))) ||
     nodeDiagnosticCount(
       resolved,
       context.diagnostics.filter((diagnostic) => diagnostic.code === 'task.action-connection-required'),
@@ -616,6 +618,7 @@ function semanticDesignerNode(nodeId: string, resolved: ResolvedNode, ports: Nod
           ? { actionSummary: actionSummary(task.executor.tools, context.connectorActions, Object.values(context.providers)) }
           : {}),
         connectionRequired,
+        connectionDeferred: connector?.connectionId === '',
         reference: 'moduleId' in node.task ? node.task.moduleId : nodeId,
       }
     case 'value':

@@ -237,6 +237,8 @@
       "manage": "Gérer",
       "authorizationPending": "Terminez l'autorisation sur la page Connection, puis revenez ici pour actualiser ce compte.",
       "chooseAccount": "Choisir un compte",
+      "deferred": "Ne pas configurer maintenant",
+      "clearDeferred": "Effacer la sélection",
       "noAccounts": "Aucun compte disponible",
       "connectBeforeRun": "Connectez {{service}} pour que ce bloc puisse être exécuté ou publié.",
       "connectService": "Connecter {{service}}",

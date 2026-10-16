@@ -237,6 +237,8 @@
       "manage": "Manage",
       "authorizationPending": "Finish authorization in the Connection page, then return here to refresh this account.",
       "chooseAccount": "Choose an account",
+      "deferred": "Not configured for now",
+      "clearDeferred": "Clear selection",
       "noAccounts": "No accounts available",
       "connectBeforeRun": "Connect {{service}} before this block can run or be published.",
       "connectService": "Connect {{service}}",

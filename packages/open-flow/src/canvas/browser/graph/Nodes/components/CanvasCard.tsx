@@ -20,6 +20,7 @@ export function CanvasCard({
   actions,
   problem,
   problemIcon,
+  problemTone = 'danger',
   selected,
   fill = false,
   compact = false,
@@ -44,6 +45,7 @@ export function CanvasCard({
   readonly footer?: ReactNode
   readonly actions?: ReactNode
   readonly problemIcon?: ReactNode
+  readonly problemTone?: 'danger' | 'warning'
   readonly problem?: string
   readonly selected?: boolean
 }) {
@@ -52,7 +54,12 @@ export function CanvasCard({
   const hasBody = (!contentHidden && (hasContent || !isEmptyReactNode(preview))) || hasBranches || (!footerHidden && !isEmptyReactNode(footer))
   const statusIndicator = problem && (
     <CanvasTooltip title={problem} placement="top">
-      <span className={clsx(styles.icon, styles.indicator, styles.warning)} aria-label={problem} role="img" tabIndex={0}>
+      <span
+        className={clsx(styles.icon, styles.indicator, problemTone == 'warning' ? styles.warning : styles.danger)}
+        aria-label={problem}
+        role="img"
+        tabIndex={0}
+      >
         {problemIcon ?? <i aria-hidden="true" className="i-lucide-light:triangle-alert" />}
       </span>
     </CanvasTooltip>
@@ -66,7 +73,7 @@ export function CanvasCard({
         compactContent && styles.compactContent,
         tone && styles[tone],
         selected && styles.selected,
-        problem && styles.problem,
+        problem && problemTone == 'danger' && styles.problem,
       )}
     >
       <header className={clsx(styles.header, hasBody && styles.withBody)}>

@@ -10,6 +10,9 @@ import { webhookMethods } from './webhookMethod.ts'
 
 export const currentFlowModelVersion = 8
 const text = z.string()
+const actionConnection = text.describe(
+  'Account selection: omit while unconfigured; use an account ID to select it; use "" to explicitly defer configuration. Deferred Actions fail if called; deferred Agent tools are excluded from the callable tool set. Not supported by Triggers.',
+)
 const json = z.json()
 const strings = z.array(text)
 const port = z.object({ description: text.optional(), jsonSchema: json, nullable: z.boolean(), handle: text })
@@ -34,7 +37,7 @@ const capability = z.union([
   z.strictObject({
     kind: z.literal('connector'),
     mode: z.literal('independent'),
-    actions: z.array(z.strictObject({ action: text, connectionId: text.optional() })),
+    actions: z.array(z.strictObject({ action: text, connectionId: actionConnection.optional() })),
   }),
   z.strictObject({
     kind: z.literal('connector'),
@@ -59,7 +62,7 @@ const managedFields = z.object({
   ...ports,
   name: text,
   executor: z.union([
-    z.object({ kind: z.literal('connector'), action: text, connectionId: text.optional(), outputMode: z.literal('value').optional() }),
+    z.object({ kind: z.literal('connector'), action: text, connectionId: actionConnection.optional(), outputMode: z.literal('value').optional() }),
     z.object({
       kind: z.literal('openapi'),
       sourceUrl: text,
@@ -83,13 +86,19 @@ const managedFields = z.object({
           name: text,
           description: text,
           action: text,
-          connectionId: text.optional(),
+          connectionId: actionConnection.optional(),
           approval: z.boolean(),
           inputs: z.array(input.extend({ source: agentInput })),
         }),
       ),
       notification: z
-        .object({ action: text, connectionId: text.optional(), inputDefinitions: z.array(input), messageHandle: text, inputs: z.record(text, agentValue) })
+        .object({
+          action: text,
+          connectionId: actionConnection.optional(),
+          inputDefinitions: z.array(input),
+          messageHandle: text,
+          inputs: z.record(text, agentValue),
+        })
         .optional(),
     }),
     z.strictObject({ kind: z.literal('workflow'), flowId: text, revisionId: text }),

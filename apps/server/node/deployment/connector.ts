@@ -465,6 +465,7 @@ export class ConnectorClient implements ConnectorHost {
     signal: AbortSignal,
     access?: ConnectorClientAccess,
   ): Promise<JsonValue> {
+    assertConnectionNotDeferred(connectionId)
     if (typeof access == 'object' && access.scope != 'shared' && (access.scope != 'action' || access.action != action || access.connectionId != connectionId))
       throw accessInvalid('The Action or Connection is outside this invocation’s access scope.')
     const teamId = connectorTeamId(access)
@@ -1140,6 +1141,11 @@ function unavailable(message = 'The Connector request could not be completed.'):
   return new ConnectorTaskError('connector.unavailable', message)
 }
 
+/** An explicitly deferred account must never resolve to a default account. */
+export function assertConnectionNotDeferred(connectionId: string | undefined): void {
+  if (connectionId === '') throw new ConnectorTaskError('connector.connection-required', 'Configure an account before calling this Action.')
+}
+
 export async function checkCodeActions(
   declarations: readonly ConnectorActionCapability[],
   connector: ConnectorHost | undefined,
@@ -1182,18 +1188,18 @@ export async function checkCodePermissions(
   access: ConnectorAccessContext,
   signal?: AbortSignal,
 ): Promise<void> {
-  const permissions = declarations.filter((declaration) => 'mode' in declaration && declaration.mode == 'independent')
-  if (permissions.every((declaration) => declaration.actions.length == 0)) return
+  const actions = declarations.flatMap((declaration) =>
+    'mode' in declaration && declaration.mode == 'independent' ? declaration.actions.filter((entry) => entry.connectionId !== '') : [],
+  )
+  if (actions.length == 0) return
   if (connector == null) throw new ConnectorTaskError('connector.unconfigured', 'Connector is not configured for this deployment.')
-  for (const permission of permissions) {
-    for (const entry of permission.actions) {
-      if (access.scope == 'catalog') throw accessInvalid('Code permissions require a fixed access snapshot.')
-      const scoped: ConnectorAccessContext = { ...access, scope: 'action', action: entry.action, connectionId: entry.connectionId }
-      const action = await connector.getAction(entry.action, signal, { ...scoped, providerId: entry.action.split('.')[0] })
-      if (!action.authenticated && entry.connectionId == null) continue
-      if (entry.connectionId == null) throw connectionRequired()
-      const connections = await connector.listConnections(action.serviceId, signal, scoped)
-      if (!connections.some((connection) => connection.status == 'active' && connection.connectionId == entry.connectionId)) throw connectionRequired()
-    }
+  for (const entry of actions) {
+    if (access.scope == 'catalog') throw accessInvalid('Code permissions require a fixed access snapshot.')
+    const scoped: ConnectorAccessContext = { ...access, scope: 'action', action: entry.action, connectionId: entry.connectionId }
+    const action = await connector.getAction(entry.action, signal, { ...scoped, providerId: entry.action.split('.')[0] })
+    if (!action.authenticated && entry.connectionId == null) continue
+    if (entry.connectionId == null) throw connectionRequired()
+    const connections = await connector.listConnections(action.serviceId, signal, scoped)
+    if (!connections.some((connection) => connection.status == 'active' && connection.connectionId == entry.connectionId)) throw connectionRequired()
   }
 }

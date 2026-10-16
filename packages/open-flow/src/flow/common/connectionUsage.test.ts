@@ -4,7 +4,9 @@ import { expect, it } from 'vitest'
 import { applyFlowChanges, currentFlowModelVersion } from './change.ts'
 import { connectionUsage } from './connectionUsage.ts'
 import { inverseFlowChanges } from './inverseChanges.ts'
-import { setMissingConnections } from './nodeChanges.ts'
+import { setServiceConnections } from './nodeChanges.ts'
+import { flowResourceReferences } from './semantics.ts'
+import { encodeWorkflowFile, parseWorkflowFile } from './workflowFile.ts'
 
 it('fills only the selected service’s missing accounts across node types, preserving definitions and undo', () => {
   const content: RevisionContent = {
@@ -80,7 +82,24 @@ it('fills only the selected service’s missing accounts across node types, pres
       },
     },
   }
-  const operations = setMissingConnections(content, 'mail', 'work')
+  const deferred = applyFlowChanges(content, setServiceConnections(content, 'mail', ''))
+  expect(
+    connectionUsage(deferred.document)
+      .filter((use) => use.connectionId === '')
+      .map((use) => use.kind),
+  ).toEqual(['connector', 'code', 'agent', 'notification'])
+  expect(deferred.document.graph.nodes.trigger).toEqual(content.document.graph.nodes.trigger)
+  expect(flowResourceReferences(deferred).connections).toEqual([{ providerId: 'mail', connectionId: 'personal' }])
+  const exported = parseWorkflowFile(encodeWorkflowFile({ kind: 'open-flow-workflow', version: 1, content: deferred }))
+  expect(connectionUsage(exported.content.document).filter((use) => use.connectionId === '')).toEqual(
+    connectionUsage(deferred.document).filter((use) => use.connectionId === ''),
+  )
+  const cleared = applyFlowChanges(deferred, setServiceConnections(deferred, 'mail', undefined, ''))
+  expect(cleared).toEqual(content)
+  const reconnected = applyFlowChanges(deferred, setServiceConnections(deferred, 'mail', 'work', ''))
+  expect(reconnected.document.graph.nodes.trigger).toEqual(content.document.graph.nodes.trigger)
+  expect(connectionUsage(reconnected.document).filter((use) => use.connectionId === '')).toEqual([])
+  const operations = setServiceConnections(content, 'mail', 'work')
   const after = applyFlowChanges(content, operations)
   expect(connectionUsage(after.document)).toEqual(
     connectionUsage(content.document).map((use) =>
@@ -99,8 +118,8 @@ it('fills only the selected service’s missing accounts across node types, pres
     },
   })
   expect(after.document.graph.nodes.trigger).toMatchObject({ config: { folder: { kind: 'value', value: 'Inbox' } } })
-  expect(setMissingConnections(after, 'mail', 'different')).toEqual([])
-  expect(setMissingConnections(content, 'unrelated', 'work')).toEqual([])
+  expect(setServiceConnections(after, 'mail', 'different')).toEqual([])
+  expect(setServiceConnections(content, 'unrelated', 'work')).toEqual([])
   const restored = applyFlowChanges(after, inverseFlowChanges(content, operations))
   expect(restored).toEqual(content)
   expect(applyFlowChanges(restored, operations)).toEqual(after)

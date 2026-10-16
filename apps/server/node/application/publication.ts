@@ -192,7 +192,7 @@ export class Publisher {
     const integrations = this.#integration.bindings(fixed.prepared, publishedAt)
     const connectorTasks = Object.values(fixed.prepared.graph.nodes)
       .flatMap((node) => (node.kind == 'task' && 'executor' in node.task ? [node.task] : []))
-      .flatMap((task) => ('executor' in task && task.executor.kind == 'connector' ? [task.executor] : []))
+      .flatMap((task) => ('executor' in task && task.executor.kind == 'connector' && task.executor.connectionId !== '' ? [task.executor] : []))
     const providerTriggers = Object.values(fixed.prepared.graph.nodes).filter(
       (trigger): trigger is Extract<TriggerNode, { readonly kind: 'integration' | 'poll' }> => trigger.kind == 'integration' || trigger.kind == 'poll',
     )

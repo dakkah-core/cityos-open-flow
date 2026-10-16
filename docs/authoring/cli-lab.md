@@ -140,7 +140,7 @@ bun run lab test start-parameters --mcp
 `connector-responses` creates a workflow through the public authoring interface, consumes a dynamic
 object response and spreadsheet rows containing string, number, boolean and null cells, and archives
 both through a downstream Code node. Acceptance checks empty and mixed rows and preserves an
-`output` property inside the dynamic response. The Connector and accounts are deterministic mocks;
+`output` property inside the dynamic response. The reference first creates the dynamic-response node with `connectionId: ""`, confirms the public read and check, and restores its real account before the final run. The Connector and accounts are deterministic mocks;
 this does not verify production Marketplace authorization.
 
 ```bash

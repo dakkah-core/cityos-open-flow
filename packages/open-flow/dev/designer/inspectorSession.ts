@@ -28,6 +28,7 @@ export function createInspectorTransport(
     readonly published?: boolean
     readonly access?: ConnectorAccess
     readonly accessError?: boolean
+    readonly connectionError?: () => boolean
     readonly accessSaveDelay?: number
     readonly actionDelay?: number
     readonly actions?: readonly ConnectorActionMetadata[]
@@ -248,6 +249,8 @@ export function createInspectorTransport(
           })),
       })
     }
+    if (url.pathname.endsWith('/connector/connections') && options.connectionError?.())
+      return Response.json({ error: { code: 'connector.unavailable', message: 'Unavailable.' }, version: 1 }, { status: 503 })
     if (url.pathname.endsWith('/connector/connections'))
       return Response.json({
         version: 1,

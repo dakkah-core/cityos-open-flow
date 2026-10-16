@@ -22,7 +22,8 @@ const descriptions = {
   'integration': 'Telegram webhook integration by key; replace CONNECTION_ID with an active Telegram connection.',
   'decision': 'AI Decision evaluates named questions against target and returns a complete answer object per output. Configure target before running.',
   'openapi': 'A fixed JSON API operation. Replace the example document and URL before running.',
-  'connector': 'A Connector Task and its node. Replace ACTION_ID, CONNECTION_ID and port definitions using connector_get / connector show.',
+  'connector':
+    'A Connector Task and its node. Replace ACTION_ID, CONNECTION_ID and port definitions using connector_get / connector show. Set connectionId to an empty string to defer account configuration; execution will require an account.',
   'code': 'A JavaScript module and its node. Use Code for custom computation; use Connector Tasks for existing actions.',
   'condition': 'A condition with true and false execution branches.',
   'value': 'A fixed value node.',

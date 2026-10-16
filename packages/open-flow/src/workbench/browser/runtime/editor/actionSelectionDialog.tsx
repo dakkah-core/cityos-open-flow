@@ -241,6 +241,7 @@ function ActionSelectionEditor<T extends SelectedAction>({
       if (preparationErrors[entry.action] != null) return 0
       const resolved = prepared[entry.action]
       if (!resolved?.action.authenticated) return 2
+      if (entry.connectionId === '') return 2
       if (entry.connectionId == null) return 1
       return resolved.connections.some((account) => account.connectionId === entry.connectionId && account.status === 'active') ? 2 : 0
     }
@@ -347,6 +348,7 @@ function ActionSelectionEditor<T extends SelectedAction>({
                     resolved != null &&
                     action?.authenticated &&
                     entry.connectionId != null &&
+                    entry.connectionId !== '' &&
                     !accounts.some((account) => account.connectionId == entry.connectionId && account.status == 'active')
                   return (
                     <section
@@ -449,7 +451,7 @@ function ActionSelectionEditor<T extends SelectedAction>({
                             selectedId={entry.connectionId}
                             invalid={accountInvalid === true}
                             warning={entry.connectionId == null}
-                            addWhenEmpty
+                            allowDeferred
                             label={t('actionPicker.accountFor', { action: action?.name ?? entry.action })}
                             disabled={disabled}
                             onChange={(connectionId) => {

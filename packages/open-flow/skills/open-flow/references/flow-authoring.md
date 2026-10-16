@@ -289,6 +289,8 @@ unavailable action and an action lacking an active Connection are different
 problems. Actions marked `authenticated: false` need no account. Connection
 selection rules come from the selected node contract.
 
+For Connector Tasks, independent Code Actions, Agent tools and notifications, an omitted `connectionId` means unconfigured; `connectionId: ""` explicitly defers account configuration. Deferred selections pass account readiness checks but fail with `connector.connection-required` if invoked. Deferred Agent tools are excluded from the callable tool set. Provider Triggers still require a nonempty account ID. Public edits and portable exports preserve the empty string; clear the field to return to the unconfigured state.
+
 | Capability                      | Relevant schema and configuration                                                                                                  |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Provider read or write          | `connector`: discovered `action`, optional `connectionId`, named input bindings.                                                   |

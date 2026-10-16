@@ -4,6 +4,7 @@ import type { FlowCatalogEvent } from '../contract.ts'
 import { currentFlowModelVersion } from '@oomol-lab/open-flow/flow-change'
 import { val } from 'value-enhancer'
 import { describe, expect, it, vi } from 'vitest'
+import { createInspectorSession } from '../../../../../dev/designer/inspectorSession.ts'
 import { WorkbenchClient } from '../api.ts'
 import { createI18n } from '../i18n.ts'
 import { NavigationStore } from '../navigation.ts'
@@ -1214,5 +1215,46 @@ it.each([false, true])('opens an imported draft and reports resource reconfigura
   } finally {
     navigation.dispose()
     store.dispose()
+  }
+})
+
+it('retains a deferred Provider account across catalog refresh, reconnection and undo', async () => {
+  const session = createInspectorSession(
+    'en',
+    vi.fn(),
+    {
+      modelVersion: currentFlowModelVersion,
+      modules: {},
+      document: {
+        bindings: {},
+        graph: {
+          edges: [],
+          nodes: {
+            send: {
+              kind: 'task',
+              inputs: {},
+              task: { name: 'Send', inputs: [], outputs: [], executor: { kind: 'connector', action: 'mail.send', connectionId: '' } },
+            },
+          },
+        },
+      },
+    },
+    {
+      providers: [{ service: 'mail', displayName: 'Mail', authTypes: ['oauth2'] }],
+      connections: [{ id: 'work', service: 'mail', displayName: 'Work', isDefault: true, status: 'active' }],
+    },
+  )
+  try {
+    await session.start()
+    session.store.selectNodes(['send'])
+    await session.connectors.refresh(true)
+    expect(session.store.$.draft.value?.content.document.graph.nodes.send).toMatchObject({ task: { executor: { connectionId: '' } } })
+    expect(session.connectors.$.diagnostics.value).toEqual([])
+    await session.connectors.setConnection('send', 'work')
+    await session.store.undo()
+    await session.connectors.refresh(true)
+    expect(session.store.$.draft.value?.content.document.graph.nodes.send).toMatchObject({ task: { executor: { connectionId: '' } } })
+  } finally {
+    session.dispose()
   }
 })

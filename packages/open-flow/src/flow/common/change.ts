@@ -282,7 +282,7 @@ export function decodeConnectorCapabilities(value: unknown): readonly ConnectorC
         Object.keys(action).some((key) => !['action', 'connectionId'].includes(key)) ||
         typeof action.action != 'string' ||
         !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_.-]+$/.test(action.action) ||
-        (Object.hasOwn(action, 'connectionId') && (typeof action.connectionId != 'string' || action.connectionId.length == 0))
+        (Object.hasOwn(action, 'connectionId') && typeof action.connectionId != 'string')
       )
         throw new TypeError('Invalid Connector Action permission.')
       return action.connectionId == null ? { action: action.action } : { action: action.action, connectionId: action.connectionId as string }

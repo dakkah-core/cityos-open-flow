@@ -345,6 +345,7 @@
     "hide": "内容を非表示"
   },
   "nodeStatus": {
+    "connectionDeferred": "アカウントは未設定です。このノードを実行する前に設定してください。",
     "connectionRequired": "接続が未設定、または無効です。ノード設定で再接続するか、利用可能な接続を選択してください。",
     "error": "エラー",
     "hasError": "エラーあり",

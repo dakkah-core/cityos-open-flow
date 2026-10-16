@@ -399,3 +399,35 @@ it('rejects caller-supplied Connector output mapping on creation and update', as
   const created = await edit(empty, [{ op: 'node.add', type: 'connector', as: 'source', name: 'Source', config: { action: 'test.read' } }])
   await expect(edit(created.content, [{ op: 'node.update', node: created.nodes.source!, set: { config: { outputMode: 'value' } } }])).rejects.toThrow()
 })
+
+it('preserves explicit deferred accounts in public creation, reads, local updates and clearing', async () => {
+  const created = await edit(empty, [
+    { op: 'node.add', type: 'connector', as: 'send', name: 'Send', config: { action: 'test.send', connectionId: '' } },
+    {
+      op: 'node.add',
+      type: 'code',
+      as: 'code',
+      name: 'Code',
+      config: { capabilities: [{ kind: 'connector', mode: 'independent', actions: [{ action: 'test.send', connectionId: '' }] }] },
+      code: 'export default () => ({})',
+    },
+    {
+      op: 'node.add',
+      type: 'agent',
+      as: 'agent',
+      name: 'Agent',
+      config: { model: 'fixture', tools: [{ name: 'send', description: 'Send message', action: 'test.send', connectionId: '', approval: false }] },
+    },
+  ])
+  for (const nodeId of Object.values(created.nodes)) await roundTrip(created.content, nodeId)
+  expect(authoringNode(created.content, created.nodes.send!).config).toMatchObject({ connectionId: '' })
+  expect(authoringNode(created.content, created.nodes.code!).config).toMatchObject({ capabilities: [{ actions: [{ connectionId: '' }] }] })
+  expect(authoringNode(created.content, created.nodes.agent!).config).toMatchObject({ tools: [{ connectionId: '' }] })
+  const reconnected = await edit(created.content, [{ op: 'node.update', node: created.nodes.send!, set: { config: { connectionId: 'work' } } }])
+  expect(authoringNode(reconnected.content, created.nodes.send!).config).toMatchObject({ connectionId: 'work' })
+  const cleared = await edit(reconnected.content, [{ op: 'node.update', node: created.nodes.send!, clear: [['config', 'connectionId']] }])
+  expect(authoringNode(cleared.content, created.nodes.send!).config).not.toHaveProperty('connectionId')
+  for (const type of ['poll', 'integration'] as const) {
+    await expect(edit(empty, [{ op: 'node.add', as: 'trigger', type, name: 'Trigger', config: { key: type, connectionId: '' } }])).rejects.toThrow()
+  }
+})

@@ -171,6 +171,7 @@ function EditableCodeTaskSection({
     selectedActions.some((entry) => {
       const action = hintedCatalog[entry.action]
       if (action == null || !action.authenticated) return false
+      if (entry.connectionId === '') return false
       if (entry.connectionId == null) return true
       const catalog = accountCatalogs[action.serviceId]
       return catalog != null && catalog.byId.get(entry.connectionId)?.status !== 'active'

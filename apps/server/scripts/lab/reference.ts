@@ -198,7 +198,7 @@ export async function reference(call: ToolCall, id: string, flowId: string, stag
         as: 'dynamic',
         type: 'connector',
         name: 'Dynamic response',
-        config: { action: dynamic.actionId, connectionId: account(dataAccounts, 'Data test account') },
+        config: { action: dynamic.actionId, connectionId: '' },
       },
       {
         op: 'node.add',
@@ -229,6 +229,13 @@ export async function reference(call: ToolCall, id: string, flowId: string, stag
       { op: 'edge.connect', source: '$cells', target: '$combine' },
       { op: 'edge.connect', source: '$combine', target: '$archive' },
     ])
+    const dynamicNode = await find('Dynamic response')
+    const deferred = await read([dynamicNode])
+    const detail = (deferred.data as { nodes: { config: { connectionId?: string } }[] }).nodes[0]!
+    if (detail.config.connectionId !== '') throw new Error('Deferred account selection was not preserved.')
+    const checked = await call('flow_check', { flowId, revisionId: savedRevision })
+    if (!checked.valid) throw new Error('Explicitly deferred accounts must pass readiness checks.')
+    await submit(deferred.revision, [{ op: 'node.update', node: dynamicNode, set: { config: { connectionId: account(dataAccounts, 'Data test account') } } }])
   } else if (id == 'order-alert') {
     const catalog = await call('connector_search', { flowId, query: 'orders' }),
       notifyCatalog = await call('connector_search', { flowId, query: 'Send notification' })

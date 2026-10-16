@@ -237,6 +237,8 @@
       "manage": "관리",
       "authorizationPending": "Connection 페이지에서 인증을 마친 뒤 여기로 돌아와 이 계정을 새로 고치세요.",
       "chooseAccount": "계정 선택",
+      "deferred": "지금은 설정하지 않음",
+      "clearDeferred": "선택 지우기",
       "noAccounts": "사용 가능한 계정이 없습니다",
       "connectBeforeRun": "이 블록을 실행하거나 게시하려면 먼저 {{service}}에 연결하세요.",
       "connectService": "{{service}} 연결",

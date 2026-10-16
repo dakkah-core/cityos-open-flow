@@ -170,3 +170,24 @@ it.each([
   expect(markup).toContain('i-lucide-light:badge-check')
   expect(markup).not.toContain('OOMOL Marketplace')
 })
+
+it('keeps an explicitly deferred account visible without treating it as missing or invalid', () => {
+  const markup = renderAccount({
+    accessError: undefined,
+    connectionId: '',
+    action: {
+      actionId: 'gmail.fetch_emails',
+      authenticated: true,
+      description: '',
+      inputs: {},
+      outputs: {},
+      name: 'Read',
+      serviceId: 'gmail',
+      serviceName: 'Gmail',
+    },
+  })
+  expect(markup).toContain('暂不设置')
+  expect(markup).not.toContain(i18n.t('inspector.account.missing'))
+  expect(markup).not.toContain(i18n.t('inspector.account.required'))
+  expect(markup).not.toContain('aria-invalid="true"')
+})

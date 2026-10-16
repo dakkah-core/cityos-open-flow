@@ -500,13 +500,27 @@ export function setConnectorConnection(content: RevisionContent, nodeId: string,
   ]
 }
 
-/** Fill only missing account selections for a service as one undoable edit. */
-export function setMissingConnections(content: RevisionContent, providerId: string, connectionId: string): readonly ChangeOperation[] {
+/** Update one service’s unresolved or explicitly deferred references as one undoable edit. */
+export function setServiceConnections(
+  content: RevisionContent,
+  providerId: string,
+  connectionId: string | undefined,
+  previousConnectionId?: '',
+): readonly ChangeOperation[] {
   const operations: ChangeOperation[] = []
-  const assign = <T extends { readonly action: string; readonly connectionId?: string }>(value: T): T =>
-    value.connectionId == null && value.action.split('.')[0] == providerId ? { ...value, connectionId } : value
+  const assign = <T extends { readonly action: string; readonly connectionId?: string }>(value: T): T => {
+    if (value.connectionId !== previousConnectionId || value.action.split('.')[0] != providerId) return value
+    const { connectionId: _, ...rest } = value
+    return { ...rest, ...(connectionId == null ? {} : { connectionId }) } as T
+  }
   for (const [nodeId, node] of Object.entries(content.document.graph.nodes)) {
-    if ((node.kind == 'poll' || node.kind == 'integration') && node.definition.provider == providerId && node.connectionId == null) {
+    if (
+      (node.kind == 'poll' || node.kind == 'integration') &&
+      node.definition.provider == providerId &&
+      previousConnectionId == null &&
+      node.connectionId == null &&
+      connectionId !== ''
+    ) {
       operations.push(...(setTriggerConnection(content, nodeId, connectionId) ?? []))
     }
     if (node.kind != 'task') continue

@@ -19,7 +19,7 @@ import { resolveAction } from '@oomol-lab/open-flow/runtime-contract'
 import * as Effect from 'effect/Effect'
 import { executeCode } from '../deployment/agent-code.ts'
 import { executeAgent } from '../deployment/agent.ts'
-import { checkCodeActions, checkCodePermissions, ConnectorTaskError } from '../deployment/connector.ts'
+import { assertConnectionNotDeferred, checkCodeActions, checkCodePermissions, ConnectorTaskError } from '../deployment/connector.ts'
 import { executeOpenApi } from '../deployment/openapi.ts'
 import { errorKind } from '../logger.ts'
 import { isolatedVmEngineDigest, IsolatedVmHost } from '../runtime/isolated-vm.ts'
@@ -408,6 +408,7 @@ export class RunExecutor {
         )
       }
       case 'connector':
+        assertConnectionNotDeferred(executor.connectionId)
         const connector = this.#resolveConnector()
         if (connector == null) throw new ConnectorTaskError('connector.unconfigured', 'Connector is not configured for this deployment.')
         return await connector.execute(
@@ -475,6 +476,7 @@ export class RunExecutor {
       if (failure.code == 'capability.denied' || failure.code == 'capability.invalid') throw new TaskHostError(failure.code, failure.message)
       throw new ConnectorTaskError('connector.connection-required', failure.message)
     }
+    assertConnectionNotDeferred(payload.connectionId)
     const connector = this.#resolveConnector()
     if (connector == null) throw new ConnectorTaskError('connector.unconfigured', 'Connector is not configured for this deployment.')
     access = capabilities.some((capability) => 'mode' in capability && capability.mode == 'independent')

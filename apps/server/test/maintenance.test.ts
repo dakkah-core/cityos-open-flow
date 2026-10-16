@@ -18,7 +18,7 @@ function fixture() {
   return { database, clock, store, setTime: (at: number) => (now = at) }
 }
 
-function pause(store: Store, clock: () => number, flowId: string, notify = false) {
+function pause(store: Store, clock: () => number, flowId: string, notify = false, connectionId?: string) {
   const revisionId = `revision:${flowId}`
   store.flows.createFlow({
     actorId: 'operator',
@@ -53,7 +53,7 @@ function pause(store: Store, clock: () => number, flowId: string, notify = false
     runId,
     { ...wait, value: null, actions: ['continue'], prompt: 'Continue?', notify: false },
     'https://flows.example',
-    notify ? { action: 'send', input: {}, messageHandle: 'message' } : undefined,
+    notify ? { action: 'send', input: {}, messageHandle: 'message', ...(connectionId == null ? {} : { connectionId }) } : undefined,
   )
   expect(
     store.runs.wait(
@@ -289,4 +289,28 @@ it('preserves a maintenance wake received while a notification is being delivere
   expect(maintenance.nextAt()).toBe(clock())
   await Effect.runPromise(maintenance.run(new Date(clock()).toISOString()))
   expect(maintenance.nextAt()).toBeGreaterThan(clock())
+})
+
+it.each([false, true])('fails deferred notifications without external delivery or retry (host=%s)', async (configured) => {
+  const { clock, store, database } = fixture()
+  const execute = vi.fn(async () => ({}))
+  const waiting = pause(store, clock, 'deferred-notification', true, '')
+  const maintenance = new Maintenance(
+    store,
+    { advance: () => 'idle' },
+    clock,
+    silentLogger,
+    () => (configured ? createConnectorHost({ execute }) : undefined),
+    new ImplicitConnectorAccessHost(),
+    () => {},
+    () => false,
+    () => {},
+    () => {},
+    () => {},
+    await Effect.runPromise(Semaphore.make(1)),
+  )
+  await Effect.runPromise(maintenance.run(new Date(clock()).toISOString()))
+  expect(execute).not.toHaveBeenCalled()
+  expect(database.connection.prepare('SELECT status FROM wait_notifications WHERE run_id = ?').get(waiting.runId)).toMatchObject({ status: 'failed' })
+  expect(store.runs.maintain(clock(), 100, 60_000).notification).toBeUndefined()
 })

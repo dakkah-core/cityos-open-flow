@@ -154,7 +154,7 @@ function connectionDiagnostics(
   const diagnostics: Diagnostic[] = []
   for (const { nodeId, actionId, connectionId } of revision.connectorNodes()) {
     const action = actions[actionId]
-    if (action?.authenticated != true) continue
+    if (action?.authenticated != true || connectionId === '') continue
     const connection = connectionId == null ? undefined : catalogs[action.serviceId]?.byId.get(connectionId)
     if (connectionId != null && (catalogs[action.serviceId] == null || connection?.status == 'active')) continue
     diagnostics.push({

@@ -237,6 +237,8 @@
       "manage": "管理",
       "authorizationPending": "请在 Connection 页面完成授权，返回这里后会刷新当前账号。",
       "chooseAccount": "选择账号",
+      "deferred": "暂不设置",
+      "clearDeferred": "清除选择",
       "noAccounts": "暂无可用账号",
       "connectBeforeRun": "请先连接 {{service}}，此节点才能运行或发布。",
       "connectService": "连接 {{service}}",
