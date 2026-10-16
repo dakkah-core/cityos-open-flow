@@ -16,6 +16,7 @@ import {
   workflowCompatibility,
   workflowSelectionTask,
   workflowCandidate,
+  workflowCandidateGroup,
   workflowTask,
 } from '../src/workflow/common/workflow.ts'
 const port = { handle: 'answer', jsonSchema: { type: 'number' }, nullable: false } as const
@@ -208,6 +209,18 @@ it('classifies targets using only publication metadata', () => {
   expect(workflowCandidate({ ...flow, live: { hasStart: true, enabled: false } }).problem).toBe('disabled')
   expect(workflowCandidate({ ...flow, status: 'retiring' }).problem).toBe('retiring')
   expect(workflowCandidate(flow, 'target').problem).toBe('recursive')
+})
+
+it('separates callable, published without Start, and unavailable targets', () => {
+  const flow = { flowId: 'target', name: 'Target', status: 'active', live: { hasStart: true, enabled: true } }
+  expect(workflowCandidateGroup(workflowCandidate(flow))).toBe('published')
+  expect(workflowCandidateGroup(workflowCandidate({ ...flow, live: { hasStart: false, enabled: true } }))).toBe('missingStart')
+  for (const candidate of [
+    workflowCandidate({ ...flow, live: null }),
+    workflowCandidate({ ...flow, live: { hasStart: false, enabled: false } }),
+    workflowCandidate({ ...flow, status: 'retiring' }),
+  ])
+    expect(workflowCandidateGroup(candidate)).toBe('other')
 })
 
 it('compares named interface fields independently of ordering and descriptions while retaining null', () => {

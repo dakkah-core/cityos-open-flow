@@ -2,6 +2,7 @@ import type { ChangeOperation, OutputsNode } from '@oomol-lab/open-flow/flow-cha
 import type { ServerService } from '../node/application/service.ts'
 import type { Store } from '../node/storage/store.ts'
 
+import { digestBytes, encodeRevision } from '@oomol-lab/open-flow/flow-encoding'
 import { workflowTask } from '@oomol-lab/open-flow/workflow'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -270,20 +271,50 @@ it('supports nested calls with one slot and merges Draft and Live definition ref
   expect(service.control.runs.getRun(middleRun).calls).toHaveLength(1)
 })
 
-it('rejects recursion during check and admission', async () => {
+it('rejects self-reference on save and still rejects legacy recursion during check and admission', async () => {
   const service = await openService(':memory:', { clock: Date.now })
   const child = await target(service)
   const parent = await caller(service, child.flowId)
   const original = service.control.getRevision(parent.flowId, parent.revisionId).content.document.graph.nodes.call!
   if (original.kind != 'task') throw new Error('Expected call')
-  const recursive = await service.control.changeDraft('operator', parent.flowId, parent.revisionId, [
-    {
-      kind: 'graph.node.task.set',
-      nodeId: 'call',
-      before: original.task,
-      value: { ...original.task, executor: { kind: 'workflow', flowId: parent.flowId, revisionId: parent.revisionId } },
+  const task = { ...original.task, executor: { kind: 'workflow' as const, flowId: parent.flowId, revisionId: parent.revisionId } }
+  await expect(
+    service.control.changeDraft('operator', parent.flowId, parent.revisionId, [
+      { kind: 'graph.node.task.set', nodeId: 'call', before: original.task, value: task },
+    ]),
+  ).rejects.toMatchObject({ code: 'flow.invalid', details: { reason: 'workflow.recursive' } })
+  expect(service.control.getFlow(parent.flowId).draftRevisionId).toBe(parent.revisionId)
+
+  // Simulate a Revision saved before write-time self-reference validation existed.
+  const content = service.control.getRevision(parent.flowId, parent.revisionId).content
+  const legacy = {
+    ...content,
+    document: {
+      ...content.document,
+      graph: {
+        ...content.document.graph,
+        nodes: {
+          ...content.document.graph.nodes,
+          call: { ...original, task },
+        },
+      },
     },
-  ])
+  }
+  const bytes = encodeRevision(legacy)
+  const store = (service.control as unknown as { store: Store }).store
+  const recursive = store.flows.commitRevision({
+    actorId: 'operator',
+    flowId: parent.flowId,
+    expectedRevisionId: parent.revisionId,
+    changeId: 'legacy-recursive',
+    requestDigest: 'legacy-recursive',
+    content: new TextDecoder().decode(bytes),
+    digest: await digestBytes(bytes),
+    revisionId: 'legacy-recursive',
+    modelVersion: content.modelVersion,
+    createdAt: Date.now(),
+  })
+  if (recursive.kind != 'committed') throw new Error('Expected legacy fixture')
   expect(await service.control.checkFlow(parent.flowId, recursive.revision.revisionId, engine)).toMatchObject({
     valid: false,
     diagnostics: [{ message: 'Recursive workflow calls are not supported.' }],
@@ -291,6 +322,23 @@ it('rejects recursion during check and admission', async () => {
   await expect(
     service.control.runs.createDraftRun(parent.flowId, recursive.revision.revisionId, engine, {}, 'recursive', { nodeId: 'start', outputs: {} }),
   ).rejects.toThrow('Recursive')
+})
+
+it('rejects disconnected self-calls through public authoring without saving any part of the batch', async () => {
+  const service = await openService(':memory:')
+  const { flow } = await service.control.createFlow('operator', 'Caller', 'self-call')
+  await expect(
+    service.control.editAuthoring('operator', flow.flowId, {
+      baseRevision: flow.draftRevisionId,
+      requestId: 'self-call',
+      edits: [
+        { op: 'node.add', as: 'start', type: 'start', name: 'Start' },
+        { op: 'node.add', as: 'call', type: 'workflow', name: 'Self', config: { flowId: flow.flowId } },
+      ],
+    }),
+  ).rejects.toMatchObject({ code: 'flow.invalid', details: { reason: 'workflow.recursive' } })
+  expect(service.control.getFlow(flow.flowId).draftRevisionId).toBe(flow.draftRevisionId)
+  expect(service.control.getRevision(flow.flowId, flow.draftRevisionId).content.document.graph.nodes).toEqual({})
 })
 
 it('creates separate child runs and matching event identities for each loop invocation', async () => {

@@ -1491,7 +1491,7 @@
     "select": "Choisir un workflow",
     "refresh": "Mettre à jour l’interface",
     "loading": "Loading…",
-    "empty": "Aucun workflow.",
+    "empty": "Aucun workflow appelable disponible.",
     "parent": "Revenir à l’exécution parente",
     "viewRun": "Voir l’exécution",
     "unavailable": "Exécution indisponible",
@@ -1499,11 +1499,12 @@
     "problemTitle": "Workflow cible indisponible",
     "recheck": "Revérifier",
     "search": "Rechercher un workflow",
-    "noMatches": "Aucun workflow correspondant",
+    "noMatches": "Aucun workflow appelable correspondant",
     "retry": "Réessayer",
     "open": "Ouvrir le workflow dans une nouvelle fenêtre",
     "groups": {
-      "published": "Publiés",
+      "published": "Workflows disponibles",
+      "missingStart": "Publiés sans nœud Start",
       "other": "Non publiés ou indisponibles"
     }
   }

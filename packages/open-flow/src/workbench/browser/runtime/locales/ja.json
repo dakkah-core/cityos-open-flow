@@ -1491,7 +1491,7 @@
     "select": "ワークフローを選択",
     "refresh": "インターフェースを更新",
     "loading": "Loading…",
-    "empty": "ワークフローがありません。",
+    "empty": "呼び出し可能なワークフローはありません。",
     "parent": "呼び出し元の実行に戻る",
     "viewRun": "実行を表示",
     "unavailable": "実行を利用できません",
@@ -1499,11 +1499,12 @@
     "problemTitle": "対象ワークフローを利用できません",
     "recheck": "再確認",
     "search": "ワークフローを検索",
-    "noMatches": "一致するワークフローがありません",
+    "noMatches": "一致する呼び出し可能なワークフローはありません",
     "retry": "再試行",
     "open": "新しいウィンドウでワークフローを開く",
     "groups": {
-      "published": "公開済み",
+      "published": "利用可能なワークフロー",
+      "missingStart": "公開済み・Start ノードなし",
       "other": "未公開または利用不可"
     }
   }

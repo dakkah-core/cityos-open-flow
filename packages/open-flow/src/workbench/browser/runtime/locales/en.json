@@ -1491,7 +1491,7 @@
     "select": "Select workflow",
     "refresh": "Update interface",
     "loading": "Loading…",
-    "empty": "No workflows available.",
+    "empty": "No callable workflows available.",
     "parent": "Return to calling Run",
     "viewRun": "View Run",
     "unavailable": "Run unavailable",
@@ -1499,11 +1499,12 @@
     "problemTitle": "Target workflow unavailable",
     "recheck": "Recheck",
     "search": "Search workflows",
-    "noMatches": "No matching workflows",
+    "noMatches": "No matching callable workflows",
     "retry": "Retry",
     "open": "Open workflow in a new window",
     "groups": {
-      "published": "Published",
+      "published": "Available",
+      "missingStart": "Published without Start",
       "other": "Unpublished or unavailable"
     }
   }

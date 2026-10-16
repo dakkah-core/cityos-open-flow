@@ -837,7 +837,7 @@ export class WorkspaceStore {
     let cursor: string | undefined
     do {
       const page = await this.#client.listFlows({ cursor, limit: 100, signal })
-      candidates.push(...page.flows.map((flow) => workflowCandidate(flow, flowId)))
+      candidates.push(...page.flows.filter((flow) => flow.flowId != flowId).map((flow) => workflowCandidate(flow)))
       cursor = page.nextCursor
     } while (cursor != null)
     return candidates

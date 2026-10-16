@@ -1289,7 +1289,7 @@ it('upgrades legacy manual nodes before editing and rereads a conflicting Draft 
   }
 })
 
-it('lists all workflow targets across pages using only list metadata', async () => {
+it('lists other workflow targets across pages using only list metadata', async () => {
   const client = new WorkbenchClient(vi.fn())
   const store = new WorkspaceStore(client, vi.fn())
   vi.spyOn(client, 'getEditor').mockResolvedValue(editor)
@@ -1307,7 +1307,6 @@ it('lists all workflow targets across pages using only list metadata', async () 
   try {
     await store.selectFlow(flow.flowId)
     expect(await store.listWorkflowTargets()).toEqual([
-      { flowId: flow.flowId, name: flow.name, problem: 'recursive' },
       { flowId: 'disabled', name: flow.name, problem: 'disabled' },
       { flowId: 'ready', name: flow.name, problem: null },
     ])

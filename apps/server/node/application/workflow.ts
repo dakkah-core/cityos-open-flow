@@ -158,6 +158,14 @@ export function workflowDiagnostics(store: Store, flowId: string, content: Revis
   return diagnostics
 }
 
+/** Drafts may be incomplete, but must never directly reference their own Flow. */
+export function requireNoWorkflowSelfReference(flowId: string, content: RevisionContent) {
+  for (const node of Object.values(content.document.graph.nodes)) {
+    if (node.kind == 'task' && 'executor' in node.task && node.task.executor.kind == 'workflow' && node.task.executor.flowId == flowId)
+      throw new ControlError('flow.invalid', 'A workflow cannot call itself.', { details: { reason: 'workflow.recursive' } })
+  }
+}
+
 export function requireWorkflowCalls(store: Store, flowId: string, content: RevisionContent, triggerId?: string) {
   const diagnostics = workflowDiagnostics(store, flowId, content, triggerId)
   if (diagnostics.length) throw new ControlError('flow.invalid', diagnostics[0]!.message)

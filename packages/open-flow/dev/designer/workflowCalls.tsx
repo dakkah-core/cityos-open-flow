@@ -31,6 +31,7 @@ function WorkflowStory({ dark, language, log, empty = false }: { dark: boolean; 
     implementationChanged = useRef(false),
     saveFailure = useRef(false),
     published = useRef(false),
+    hideAvailable = useRef(false),
     logRef = useRef(log)
   logRef.current = log
   useEffect(() => {
@@ -64,17 +65,18 @@ function WorkflowStory({ dark, language, log, empty = false }: { dark: boolean; 
         : { ...contract, revisionId: implementationChanged.current ? 'r2' : 'r1' }
     const next = createInspectorSession(language, (name, value) => logRef.current(name, value), content, {
       saveError: () => saveFailure.current,
-      workflows: () => [
-        { ...contract, live: { hasStart: true, enabled: true, publicationId: 'p1', revisionId: currentContract().revisionId } },
-        {
-          flowId: 'draft-target',
-          name: 'Draft target',
-          live: published.current ? { hasStart: true, enabled: true, publicationId: 'p1', revisionId: 'r1' } : null,
-        },
-        { flowId: 'disabled-target', name: 'Disabled target', live: { hasStart: true, enabled: false, publicationId: 'p1', revisionId: 'r1' } },
-        { flowId: 'no-start-target', name: 'Published without Start', live: { hasStart: false, enabled: true, publicationId: 'p1', revisionId: 'r1' } },
-        { flowId: 'empty-target', name: 'Empty published workflow', live: { hasStart: true, enabled: true, publicationId: 'p1', revisionId: 'r1' } },
-      ],
+      workflows: () =>
+        [
+          { ...contract, live: { hasStart: true, enabled: true, publicationId: 'p1', revisionId: currentContract().revisionId } },
+          {
+            flowId: 'draft-target',
+            name: 'Draft target',
+            live: published.current ? { hasStart: true, enabled: true, publicationId: 'p1', revisionId: 'r1' } : null,
+          },
+          { flowId: 'disabled-target', name: 'Disabled target', live: { hasStart: true, enabled: false, publicationId: 'p1', revisionId: 'r1' } },
+          { flowId: 'no-start-target', name: 'Published without Start', live: { hasStart: false, enabled: true, publicationId: 'p1', revisionId: 'r1' } },
+          { flowId: 'empty-target', name: 'Empty published workflow', live: { hasStart: true, enabled: true, publicationId: 'p1', revisionId: 'r1' } },
+        ].filter((target) => !hideAvailable.current || target.live == null || !target.live.enabled || !target.live.hasStart),
       checkDiagnostics: (draft) => {
         const node = draft.document.graph.nodes.call
         if (node?.kind != 'task' || !('executor' in node.task) || node.task.executor.kind != 'workflow') return []
@@ -138,6 +140,12 @@ function WorkflowStory({ dark, language, log, empty = false }: { dark: boolean; 
     return () => next.dispose()
   }, [language, empty])
   useStoryActions([
+    {
+      label: 'Toggle available targets',
+      onClick: () => {
+        hideAvailable.current = !hideAvailable.current
+      },
+    },
     {
       label: 'Undo',
       onClick: () => {
@@ -234,7 +242,7 @@ export const workflowCallStories: FrontendStory[] = [
     group: 'Node Workflow',
     title: 'Select workflow',
     description:
-      'Search all workflows. Unavailable targets remain selected with a top status and recheck action. Open links use a new tab. Publish the draft target to test recovery.',
+      'Targets exclude the current workflow. Group status dots are green for available, amber for published without Start, and gray for unpublished or unavailable. Toggle available targets and reopen the list to inspect the persistent empty group. Search filters each group. Unavailable targets remain selectable; publish the draft target to test recovery.',
     standalone: true,
     render: (log, dark, language) => <WorkflowStory empty log={log} dark={dark} language={language} />,
   },

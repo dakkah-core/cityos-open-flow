@@ -238,18 +238,32 @@ export function WorkflowSection({
               <Combobox.Popup
                 className={`w-(--anchor-width) min-w-56 max-w-[calc(100vw-24px)] bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-none ${selectionMenuContentClass}`}
               >
-                <Combobox.List aria-label={t('workflow.target')} className="max-h-[min(50vh,360px)] overflow-y-auto overscroll-contain">
-                  {(['published', 'other'] as const).map((group) => {
+                <Combobox.List
+                  aria-label={t('workflow.target')}
+                  className="max-h-[min(50vh,360px,calc(var(--available-height)-0.5rem))] overflow-y-auto overscroll-contain"
+                >
+                  {(['published', 'missingStart', 'other'] as const).map((group) => {
                     const items = visible.filter((item) => workflowCandidateGroup(item) == group)
-                    if (!items.length) return null
+                    if (!items.length && group != 'published') return null
                     return (
                       <Combobox.Group key={group}>
-                        <Combobox.GroupLabel className="px-2 py-1.5 text-xs text-muted-foreground">{t(`workflow.groups.${group}`)}</Combobox.GroupLabel>
+                        <Combobox.GroupLabel className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
+                          <span
+                            aria-hidden="true"
+                            className={`status-dot ${group == 'published' ? 'success' : group == 'missingStart' ? 'warning' : 'neutral'}`}
+                          />
+                          {t(`workflow.groups.${group}`)}
+                        </Combobox.GroupLabel>
+                        {!items.length && !loading && !error && (
+                          <div className={`pr-2 pl-6 text-muted-foreground ${selectionMenuItemClass}`}>
+                            {t(query ? 'workflow.noMatches' : 'workflow.empty')}
+                          </div>
+                        )}
                         {items.map((item) => (
                           <Combobox.Item
                             key={item.flowId}
                             value={item.flowId}
-                            className={`flex cursor-default items-center gap-2 px-2 data-highlighted:bg-accent ${selectionMenuItemClass}`}
+                            className={`flex cursor-default items-center gap-2 pr-2 pl-6 data-highlighted:bg-accent ${selectionMenuItemClass}`}
                           >
                             <i aria-hidden="true" className="i-lucide-light:workflow shrink-0 text-sm" />
                             <span className="min-w-0 flex-1 truncate">{item.name}</span>
@@ -273,9 +287,6 @@ export function WorkflowSection({
                         {t('workflow.retry')}
                       </Button>
                     </div>
-                  )}
-                  {!loading && !error && !visible.length && (
-                    <p className="px-2 py-2 text-xs text-muted-foreground">{t(query ? 'workflow.noMatches' : 'workflow.empty')}</p>
                   )}
                 </Combobox.List>
               </Combobox.Popup>

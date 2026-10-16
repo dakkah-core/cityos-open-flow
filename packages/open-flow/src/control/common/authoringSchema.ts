@@ -261,7 +261,9 @@ export function authoringSchema(kind?: AuthoringType) {
                     ? 'Configure model settings, message templates and history as defaults. Input bindings with the same names override these defaults; named business inputs can be bound directly. Template strings interpolate {{name}}.'
                     : kind == 'openapi'
                       ? 'Select an operation; the tool resolves its ports and authentication. Read authenticationChoices from node details. authentication is replaced as a complete choice. Bind advertised credentials through inputs.'
-                      : 'Supply business configuration and input data. Fixed definitions are assembled by the tool. Existing constraints and defaults are preserved on partial updates.',
+                      : kind == 'workflow'
+                        ? 'Select another workflow with config.flowId. A workflow cannot call itself, including in a disconnected node. Owned unpublished or unavailable targets may be saved as incomplete drafts. Use node.refresh to load the current published interface.'
+                        : 'Supply business configuration and input data. Fixed definitions are assembled by the tool. Existing constraints and defaults are preserved on partial updates.',
         example: {
           op: 'node.add',
           as: 'step',

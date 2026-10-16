@@ -71,7 +71,7 @@ import {
   publication,
 } from './control-views.ts'
 import { RunControl } from './run-control.ts'
-import { workflowTarget, workflowAuthoringTarget, workflowDiagnostics } from './workflow.ts'
+import { workflowTarget, workflowAuthoringTarget, workflowDiagnostics, requireNoWorkflowSelfReference } from './workflow.ts'
 
 type PublishInput = {
   readonly control:
@@ -934,6 +934,7 @@ export class ControlService {
       if (error instanceof ControlError) throw error
       throw new ControlError(controlErrorCode.flowInvalid, 'The Draft operation has an invalid structure.', { cause: error })
     }
+    requireNoWorkflowSelfReference(flowId, content)
     let bytes: Uint8Array
     try {
       bytes = encodeRevision(content)

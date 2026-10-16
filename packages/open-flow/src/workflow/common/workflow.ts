@@ -79,8 +79,8 @@ export function workflowCandidate(
   return { flowId: flow.flowId, name: flow.name, problem }
 }
 
-export function workflowCandidateGroup(candidate: WorkflowCandidate): 'published' | 'other' {
-  return candidate.problem == null ? 'published' : 'other'
+export function workflowCandidateGroup(candidate: WorkflowCandidate): 'published' | 'missingStart' | 'other' {
+  return candidate.problem == null ? 'published' : candidate.problem == 'missing-start' ? 'missingStart' : 'other'
 }
 
 /** A selected target is durable even before its callable interface is available. */

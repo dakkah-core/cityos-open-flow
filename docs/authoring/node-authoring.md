@@ -30,6 +30,7 @@ Start owns `inputDefs`, edited through its public `config.inputDefs` named field
 
 Call Workflow has public type `workflow` and config `{ flowId }`. The platform reads the target's current published interface snapshot and stores capability-derived Task ports. Ordinary updates preserve that snapshot; `node.refresh` reloads it. A changed Revision with an equal interface remains callable without mutating the caller. Changed interfaces require refresh; named schemas and nullability determine equality, while descriptions and port ordering do not. Refresh matches fields by exact name and retains unresolved output references for diagnostics. Callers do not reconstruct executor identities or inspect another workflow's graph.
 
+A workflow cannot target itself; draft writes reject direct self-references, including disconnected calls.
 Selection may retain an owned unpublished, disabled or Start-less target as an incomplete draft. Interface reads and checks report the unavailable target; execution rechecks current Live admission. A missing saved snapshot requires explicit refresh. No Outputs node means no declared business outputs and does not prevent calling a Start entry.
 
 Model execution branches and data outputs separately. Only data outputs produced at runtime can be bound.

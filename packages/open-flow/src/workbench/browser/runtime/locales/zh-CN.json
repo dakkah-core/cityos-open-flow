@@ -808,7 +808,7 @@
         "trigger-not-allowed": "Trigger 节点只能用于工作流。",
         "variable-incompatible": "变量绑定“{{bindingId}}”与此输入不兼容。",
         "variable-source-mixed": "变量必须是一个输入的唯一来源。",
-        "start-trigger-duplicate": "一个工作流只能包含一个 Start 节点。"
+        "start-trigger-duplicate": "一个工作流只能包含一个开始节点。"
       },
       "llm": {
         "unconfigured": "当前部署尚未配置 LLM。请配置 OPEN_FLOW_LLM_ORIGIN 和 OPEN_FLOW_LLM_TOKEN。"
@@ -852,7 +852,7 @@
       "workflow": {
         "revision-stale": "目标工作流的接口已变更。",
         "snapshot-missing": "保存的工作流接口快照不可用，请刷新接口。",
-        "missing-start": "目标工作流没有 Start 节点。",
+        "missing-start": "目标工作流没有开始节点。",
         "dependency-stale": "目标工作流中的调用需要更新。",
         "target-required": "请选择目标工作流。",
         "unpublished": "目标工作流尚未发布。",
@@ -1491,7 +1491,7 @@
     "select": "选择工作流",
     "refresh": "更新接口定义",
     "loading": "加载中…",
-    "empty": "暂无工作流。",
+    "empty": "暂无可用工作流。",
     "parent": "返回父运行",
     "viewRun": "查看运行",
     "unavailable": "运行已不可用",
@@ -1499,11 +1499,12 @@
     "problemTitle": "目标工作流不可用",
     "recheck": "重新检查",
     "search": "搜索工作流",
-    "noMatches": "没有匹配的工作流",
+    "noMatches": "没有匹配的可用工作流",
     "retry": "重试",
     "open": "在新窗口打开工作流",
     "groups": {
-      "published": "已发布",
+      "published": "可用工作流",
+      "missingStart": "已发布但没有开始节点",
       "other": "未发布或不可用"
     }
   }

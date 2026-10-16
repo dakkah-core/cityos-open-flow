@@ -808,7 +808,7 @@
         "trigger-not-allowed": "Trigger 節點只能用於 Flow。",
         "variable-incompatible": "變數繫結「{{bindingId}}」與此輸入不相容。",
         "variable-source-mixed": "變數必須是輸入的唯一來源。",
-        "start-trigger-duplicate": "一個工作流程只能包含一個 Start 節點。"
+        "start-trigger-duplicate": "一個工作流程只能包含一個開始節點。"
       },
       "llm": {
         "unconfigured": "目前部署尚未設定 LLM。請設定 OPEN_FLOW_LLM_ORIGIN 和 OPEN_FLOW_LLM_TOKEN。"
@@ -852,7 +852,7 @@
       "workflow": {
         "revision-stale": "目標工作流程的介面已變更。",
         "snapshot-missing": "儲存的工作流程介面快照無法使用，請重新整理介面。",
-        "missing-start": "目標工作流程沒有 Start 節點。",
+        "missing-start": "目標工作流程沒有開始節點。",
         "dependency-stale": "目標工作流程中的呼叫需要更新。",
         "target-required": "請選擇目標工作流程。",
         "unpublished": "目標工作流程尚未發佈。",
@@ -1491,7 +1491,7 @@
     "select": "選擇工作流程",
     "refresh": "更新介面定義",
     "loading": "Loading…",
-    "empty": "目前沒有工作流程。",
+    "empty": "暫無可用工作流。",
     "parent": "返回父執行",
     "viewRun": "查看執行",
     "unavailable": "執行已無法使用",
@@ -1499,11 +1499,12 @@
     "problemTitle": "目標工作流程無法使用",
     "recheck": "重新檢查",
     "search": "搜尋工作流程",
-    "noMatches": "沒有符合的工作流程",
+    "noMatches": "沒有符合的可用工作流",
     "retry": "重試",
     "open": "在新視窗開啟工作流程",
     "groups": {
-      "published": "已發佈",
+      "published": "可用工作流",
+      "missingStart": "已發布但沒有開始節點",
       "other": "未發佈或無法使用"
     }
   }
