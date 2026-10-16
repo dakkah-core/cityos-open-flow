@@ -433,7 +433,6 @@
   "notice": {
     "connectorUnconfigured": "このデプロイには Connector が設定されていません。",
     "connectionPopupBlocked": "接続ウィンドウがブロックされました。ポップアップを許可して再試行してください。",
-    "created": "{{name}} を作成しました。",
     "createdInDraft": "ドラフトに {{name}} を作成しました。",
     "draftConflict": "ドラフトが別の場所で変更されました。最新のリビジョンを読み込んだため、今回の編集は反映されていません。",
     "draftUpdated": "ドラフトが別のクライアントで変更されました。最新のリビジョンを読み込みました。",

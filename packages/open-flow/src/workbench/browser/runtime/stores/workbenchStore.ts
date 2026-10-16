@@ -382,13 +382,13 @@ export class WorkbenchStore {
   }
 
   public async createFlow(name: string, create?: (name: string) => Promise<string>): Promise<boolean> {
-    return await this.#openNewFlow(await this.workspace.createFlow(name, create), 'notice.created')
+    return await this.#openNewFlow(await this.workspace.createFlow(name, create))
   }
 
-  async #openNewFlow(created: Flow | undefined, notice: 'notice.created' | 'notice.flowImported'): Promise<boolean> {
+  async #openNewFlow(created: Flow | undefined, notice?: 'notice.flowImported'): Promise<boolean> {
     if (this.#disposed || created == null) return false
     await this.selectFlow(created.flowId)
-    if (!this.#disposed) this.#notice.set({ kind: 'success', message: this.#i18n.t(notice, { name: created.name }) })
+    if (!this.#disposed && notice != null) this.#notice.set({ kind: 'success', message: this.#i18n.t(notice) })
     return true
   }
 

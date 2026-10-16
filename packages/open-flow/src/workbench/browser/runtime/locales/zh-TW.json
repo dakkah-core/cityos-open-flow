@@ -433,7 +433,6 @@
   "notice": {
     "connectorUnconfigured": "目前部署尚未設定 Connector。",
     "connectionPopupBlocked": "連線視窗被瀏覽器封鎖，請允許彈出式視窗後再試一次。",
-    "created": "已建立 {{name}}。",
     "createdInDraft": "已在草稿中建立 {{name}}。",
     "draftConflict": "草稿已在其他地方變更。已載入最新修訂，這次的編輯未套用。",
     "draftUpdated": "草稿已在其他用戶端變更，已載入最新修訂。",
