@@ -228,6 +228,11 @@ export function createServerApp(service: ServerService, options: ServerAppOption
     return json(200, { enabled, teams, version })
   })
   app.route('/v1', createControlApp(service.control, resolveActor))
+  app.get('/config/agent-access', async (context) => {
+    await authenticate(context.req.raw)
+    const publicOrigin = options.settings?.integration()?.publicOrigin
+    return json(200, { version: 1, mcpUrl: publicOrigin == null ? '/v1/mcp' : new URL('/v1/mcp', publicOrigin).href })
+  })
   if (options.settings != null)
     app.route(
       '/config',

@@ -10,6 +10,8 @@ The first version provides Flow authoring and execution tools. It does not dynam
 
 ## 2. Authentication and connection
 
+The MCP URL shown and copied in Agent access uses the public address configured in Settings (or `OPEN_FLOW_INTEGRATION_PUBLIC_ORIGIN` when environment-managed). Without a configured public address, it uses the browser's current origin.
+
 Operator and email users create a personal access Token in Agent access. Configure the client with the `/v1/mcp` URL and this header:
 
 ```http
