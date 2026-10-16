@@ -142,7 +142,7 @@ export function LiveTriggers({ store }: { readonly store: WorkbenchStore }): Rea
                 {detail.binding.endpointUrl != null && (
                   <div className="trigger-webhook">
                     <span>{t('publication.webhookUrl')}</span>
-                    <WebhookEndpoint key={detail.binding.endpointUrl} endpointUrl={detail.binding.endpointUrl} />
+                    <WebhookEndpoint notify={store.workspace.notify} key={detail.binding.endpointUrl} endpointUrl={detail.binding.endpointUrl} />
                   </div>
                 )}
                 <div className="trigger-binding-detail-sections">

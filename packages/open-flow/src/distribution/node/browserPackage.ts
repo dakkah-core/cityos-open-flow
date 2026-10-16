@@ -237,6 +237,7 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
     await writeFile(
       path.join(browserOutputPath, 'event-sources.d.ts'),
       (await readFile(path.join(declarationRoot, 'workbench/browser/runtime/eventSources.d.ts'), 'utf8'))
+        .replaceAll("'./contract.ts'", "'./workbench-contract.js'")
         .replaceAll("'../../../control/common/api.ts'", "'../common/control-api.js'")
         .replaceAll("'../../../localization/common/languages.ts'", "'../common/localization.js'"),
     )

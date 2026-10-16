@@ -218,7 +218,8 @@ export { createEventProjector } from '@oomol-lab/open-flow/run-events'
 export { runtimeConformanceCases } from '@oomol-lab/open-flow/runtime-contract'
 export { runFlow } from '@oomol-lab/open-flow/scheduler'
 export { webhookEndpointId } from '@oomol-lab/open-flow/webhook-trigger'
-export { EventSourcesPage } from '@oomol-lab/open-flow/workbench'
+import { EventSourcesPage } from '@oomol-lab/open-flow/workbench'
+export const eventSources = <EventSourcesPage client={new ControlClient(host.request)} language="en" teams={[]} notify={host.notify} />
 export { verifyWorkbenchHost } from '@oomol-lab/open-flow/workbench-host-conformance'
 
 const canvasCommand: CanvasCommand = { type: 'pan', dx: 200, dy: -100 }

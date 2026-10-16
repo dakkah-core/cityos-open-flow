@@ -140,6 +140,10 @@ export class WorkspaceStore {
   readonly #presentationChanges: PresentationChanges
   readonly #flows: FlowCatalog
   readonly #runChanged: (event: Extract<FlowChangeEvent, { readonly kind: 'run.changed' | 'run.created' }>) => void
+  public readonly notify: SetNotice = (notice) => {
+    if (!this.#disposed) this.#setNotice(notice)
+  }
+
   readonly #setNotice: SetNotice
   readonly #model: WorkspaceModel
   readonly #modules: ModuleEditorSession

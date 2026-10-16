@@ -1,6 +1,7 @@
 import type { ComponentProps } from 'react'
 import type { AgentTool, InputPort, ManagedTaskExecutor } from '../../../../flow/common/change.ts'
 import type { ConnectorStore } from '../stores/connectorStore.ts'
+import type { SetNotice } from '../stores/workbenchNotice.ts'
 import type { ActionSettingsProps, PrepareAction } from './actionSelectionDialog.tsx'
 
 import { useVal } from 'use-value-enhancer'
@@ -25,12 +26,14 @@ function EditableAgentTools({
   connectors,
   prepareAction,
   onSave,
+  notify,
 }: {
   readonly config: Extract<ManagedTaskExecutor, { kind: 'agent' }>
   readonly disabled: boolean
   readonly inputs: readonly InputPort[]
   readonly connectors: ConnectorStore
   readonly prepareAction?: PrepareAction
+  readonly notify: SetNotice
   readonly onSave: (tools: readonly AgentTool[]) => Promise<boolean>
 }) {
   const t = useTranslate()
@@ -38,6 +41,7 @@ function EditableAgentTools({
   const summary = actionSummary(config.tools, catalog, [])
   return (
     <ActionSelectionDialog
+      notify={notify}
       title={t('agent.tools')}
       triggerHint={summary.count > 0 ? t('actionPicker.selectionSummary', { actions: summary.count, providers: summary.providers.length }) : undefined}
       trigger={
@@ -109,9 +113,13 @@ function AgentToolSettings({
   )
 }
 
-export function AgentTools(props: Omit<ComponentProps<typeof EditableAgentTools>, 'connectors'> & { readonly connectors?: ConnectorStore }) {
+export function AgentTools(
+  props: Pick<ComponentProps<typeof EditableAgentTools>, 'config' | 'disabled' | 'inputs'> & {
+    readonly editor?: Pick<ComponentProps<typeof EditableAgentTools>, 'connectors' | 'notify' | 'prepareAction' | 'onSave'>
+  },
+) {
   const t = useTranslate()
-  if (props.connectors != null) return <EditableAgentTools {...props} connectors={props.connectors} />
+  if (props.editor != null) return <EditableAgentTools config={props.config} disabled={props.disabled} inputs={props.inputs} {...props.editor} />
   if (props.config.tools.length === 0) return null
   return (
     <Popover>

@@ -1,6 +1,7 @@
 import type { FormEvent } from 'react'
 import type { ConnectorConnection, ControlClient, EventSource } from '../../../control/common/api.ts'
 import type { UiLanguage } from '../../../localization/common/languages.ts'
+import type { WorkbenchNotification } from './contract.ts'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { I18nProvider, useTranslate } from 'val-i18n-react'
@@ -15,6 +16,8 @@ import { createI18n } from './i18n.ts'
 import { errorNotice } from './stores/workbenchNotice.ts'
 
 interface Props {
+  /** Host notification channel for operation failures; use the same handler as WorkbenchHost.notify. */
+  readonly notify: (notification: WorkbenchNotification) => void
   readonly client: Pick<
     ControlClient,
     'listEventSources' | 'createEventSource' | 'updateEventSource' | 'deleteEventSource' | 'listEventSourceConnections' | 'createConnectorConnectionPage'
@@ -33,7 +36,7 @@ export function EventSourcesPage(props: Props) {
   )
 }
 
-function EventSources({ client, teams, onSourcesChange }: Props) {
+function EventSources({ client, teams, onSourcesChange, notify }: Props) {
   const t = useTranslate()
   const [sources, setSources] = useState<readonly EventSource[]>()
   const [error, setError] = useState<string>()
@@ -73,7 +76,7 @@ function EventSources({ client, teams, onSourcesChange }: Props) {
       })
       await load()
     } catch (cause) {
-      setError(errorNotice(cause, t).message)
+      notify(errorNotice(cause, t))
     } finally {
       setPending(false)
     }
@@ -86,7 +89,7 @@ function EventSources({ client, teams, onSourcesChange }: Props) {
       setRemoving(undefined)
       await load()
     } catch (cause) {
-      setError(errorNotice(cause, t).message)
+      notify(errorNotice(cause, t))
     } finally {
       setPending(false)
     }
@@ -116,6 +119,7 @@ function EventSources({ client, teams, onSourcesChange }: Props) {
       {sources == null && error == null && <p role="status">{t('eventSources.loading')}</p>}
       {editing != null && (
         <SourceForm
+          notify={notify}
           existingNames={sources?.map((source) => source.name)}
           key={editing == 'new' ? 'new' : editing.sourceId}
           source={editing == 'new' ? undefined : editing}
@@ -162,6 +166,7 @@ function EventSources({ client, teams, onSourcesChange }: Props) {
             </div>
           </div>
           <EventSourceSetup
+            notify={notify}
             source={source}
             client={client}
             onChange={(updated) => setSources((current) => current?.map((item) => (item.sourceId == updated.sourceId ? updated : item)))}
@@ -222,6 +227,7 @@ export function SourceForm({
   teams,
   onSaved,
   onCancel,
+  notify,
 }: Omit<Props, 'language'> & {
   readonly source?: EventSource
   readonly existingNames?: readonly string[]
@@ -247,7 +253,6 @@ export function SourceForm({
   const [events, setEvents] = useState<string[]>(source?.eventTypes ?? ['im.message.receive_v1'])
   const [managed, setManaged] = useState(source?.manageSubscriptions ?? false)
   const [pending, setPending] = useState(false)
-  const [error, setError] = useState<string>()
   useEffect(() => {
     if (source != null) return
     const controller = new AbortController()
@@ -312,7 +317,6 @@ export function SourceForm({
     if (events.length == 0 || (source == null && !identified)) return
     setPending(true)
     onPendingChange?.(true)
-    setError(undefined)
     try {
       const saved =
         source == null
@@ -339,7 +343,7 @@ export function SourceForm({
       setKey('')
       onSaved(saved)
     } catch (cause) {
-      setError(errorNotice(cause, t).message)
+      notify(errorNotice(cause, t))
     } finally {
       setPending(false)
       onPendingChange?.(false)
@@ -493,11 +497,6 @@ export function SourceForm({
             </details>
           )}
         </>
-      )}
-      {error != null && (
-        <p role="alert" className="m-0 text-sm text-destructive">
-          {error}
-        </p>
       )}
       <footer className="flex justify-end gap-2 border-t border-border pt-4">
         {source == null && step == 2 && (

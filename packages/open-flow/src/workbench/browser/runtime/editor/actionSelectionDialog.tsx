@@ -2,6 +2,7 @@ import type { ReactElement, ReactNode } from 'react'
 import type { ConnectorConnection } from '../api.ts'
 import type { ConnectorActionView } from '../connectionCatalog.ts'
 import type { ConnectorStore } from '../stores/connectorStore.ts'
+import type { SetNotice } from '../stores/workbenchNotice.ts'
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useVal } from 'use-value-enhancer'
@@ -15,6 +16,7 @@ import { Spinner } from '../../../../ui/browser/spinner.tsx'
 import { Tooltip, TooltipTrigger, TooltipContent } from '../../../../ui/browser/tooltip.tsx'
 import { connectionCatalog } from '../connectionCatalog.ts'
 import { providerIcon } from '../providerIcon.ts'
+import { errorNotice } from '../stores/workbenchNotice.ts'
 import { ActionPicker } from './actionPicker.tsx'
 import { AccountControlButton, AccountSelect } from './connectionSettings.tsx'
 import { ProviderAppIcon } from './providerAppIcon.tsx'
@@ -47,6 +49,7 @@ export function ActionSelectionDialog<T extends SelectedAction>({
   disabled,
   createEntry,
   onSave,
+  notify,
   settings,
   trigger,
   triggerHint,
@@ -59,6 +62,7 @@ export function ActionSelectionDialog<T extends SelectedAction>({
   readonly prepareAction?: PrepareAction
   readonly disabled: boolean
   readonly createEntry: (action: ConnectorActionView) => T
+  readonly notify: SetNotice
   readonly onSave: (entries: readonly T[]) => Promise<boolean>
   readonly settings?: ActionSettings<T>
 }) {
@@ -103,6 +107,7 @@ export function ActionSelectionDialog<T extends SelectedAction>({
           <div className="mx-4 h-px shrink-0 bg-border/50" />
           <DialogDescription className="m-0 shrink-0 px-4 pt-3 text-[13px] leading-5">{t('actionPicker.description')}</DialogDescription>
           <ActionSelectionEditor
+            notify={notify}
             entries={entries}
             connectors={connectors}
             prepareAction={prepareAction}
@@ -134,6 +139,7 @@ function ActionSelectionEditor<T extends SelectedAction>({
   disabled,
   createEntry,
   onSave,
+  notify,
   onCancel,
   settings,
 }: {
@@ -142,6 +148,7 @@ function ActionSelectionEditor<T extends SelectedAction>({
   readonly prepareAction?: PrepareAction
   readonly disabled: boolean
   readonly createEntry: (action: ConnectorActionView) => T
+  readonly notify: SetNotice
   readonly onSave: (entries: readonly T[]) => Promise<boolean>
   readonly onCancel: () => void
   readonly settings?: ActionSettings<T>
@@ -154,7 +161,6 @@ function ActionSelectionEditor<T extends SelectedAction>({
   // Presentation only: saving always uses draft in its original selection order.
   const [displayOrder, setDisplayOrder] = useState<readonly string[] | null>(entries.length === 0 ? [] : null)
   const [prepared, setPrepared] = useState<Readonly<Record<string, PreparedAction | undefined>>>({})
-  const [error, setError] = useState<string>()
   const [attempt, setAttempt] = useState(0)
   const [preparationErrors, setPreparationErrors] = useState<Readonly<Record<string, string | undefined>>>({})
   const discovered = useRef(new Map<string, ConnectorActionView>())
@@ -254,7 +260,6 @@ function ActionSelectionEditor<T extends SelectedAction>({
   const refresh = async () => {
     setDisplayOrder((current) => current ?? draft.map((entry) => entry.action))
     setRefreshing(true)
-    setError(undefined)
     const controller = new AbortController()
     try {
       const services = new Set(
@@ -270,7 +275,7 @@ function ActionSelectionEditor<T extends SelectedAction>({
       setPrepared({})
       setAttempt((value) => value + 1)
     } catch (cause) {
-      if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause))
+      if (mounted.current) notify(errorNotice(cause, t))
     } finally {
       if (mounted.current) setRefreshing(false)
       controller.abort()
@@ -451,11 +456,7 @@ function ActionSelectionEditor<T extends SelectedAction>({
                               const { connectionId: _previous, ...rest } = entry
                               replace(index, (connectionId == null ? rest : { ...rest, connectionId }) as T)
                             }}
-                            onManage={
-                              resolved == null
-                                ? undefined
-                                : () => void connectors.connect(resolved.action.serviceId).catch((cause: unknown) => setError(String(cause)))
-                            }
+                            onManage={resolved == null ? undefined : () => void connectors.connect(resolved.action.serviceId)}
                           />
                         )}
                       </div>
@@ -467,9 +468,9 @@ function ActionSelectionEditor<T extends SelectedAction>({
           )}
         </div>
       </div>
-      {(error != null || (attempted && !valid)) && (
+      {attempted && !valid && (
         <div role="alert" className="flex items-center gap-2 px-4 pb-3 text-destructive">
-          <span>{error ?? t('agent.invalidValues')}</span>
+          <span>{t('agent.invalidValues')}</span>
         </div>
       )}
       <div className="mx-4 h-px shrink-0 bg-border/50" />
@@ -485,11 +486,10 @@ function ActionSelectionEditor<T extends SelectedAction>({
           onClick={async () => {
             setAttempted(true)
             if (!valid) return
-            setError(undefined)
             try {
-              if (!(await onSave(draft))) setError(t('actionPicker.saveFailed'))
+              await onSave(draft)
             } catch (cause) {
-              setError(cause instanceof Error ? cause.message : String(cause))
+              notify(errorNotice(cause, t))
             }
           }}
         >

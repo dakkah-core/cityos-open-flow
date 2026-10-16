@@ -208,7 +208,7 @@ function PersonalTokens({ onUnauthorized }: { readonly onUnauthorized: () => voi
   const portal = useRef<HTMLElement>(null)
   const nameInput = useRef<HTMLInputElement>(null)
   const [pending, setPending] = useState(false)
-  const [error, setError] = useState<string>()
+  const [loadFailed, setLoadFailed] = useState(false)
   const [revoking, setRevoking] = useState<string>()
 
   const load = useCallback(
@@ -223,9 +223,9 @@ function PersonalTokens({ onUnauthorized }: { readonly onUnauthorized: () => voi
         const result = listSchema.parse(await response.json())
         if (signal?.aborted) return
         setTokens(result.tokens)
-        setError(undefined)
+        setLoadFailed(false)
       } catch {
-        if (!signal?.aborted) setError('account.loadFailed')
+        if (!signal?.aborted) setLoadFailed(true)
       }
     },
     [onUnauthorized],
@@ -241,7 +241,6 @@ function PersonalTokens({ onUnauthorized }: { readonly onUnauthorized: () => voi
     event.preventDefault()
     if (pending) return
     setPending(true)
-    setError(undefined)
     try {
       const response = await fetch('/auth/tokens', {
         method: 'POST',
@@ -258,7 +257,7 @@ function PersonalTokens({ onUnauthorized }: { readonly onUnauthorized: () => voi
       setTokens((current) => [...(current ?? []), result.credential])
       setSecret(result.token)
     } catch {
-      setError('account.saveFailed')
+      toast.error(t('account.saveFailed'))
     } finally {
       setPending(false)
     }
@@ -267,7 +266,6 @@ function PersonalTokens({ onUnauthorized }: { readonly onUnauthorized: () => voi
   async function revoke(tokenId: string): Promise<void> {
     if (pending) return
     setPending(true)
-    setError(undefined)
     try {
       const response = await fetch(`/auth/tokens/${encodeURIComponent(tokenId)}`, { method: 'DELETE', credentials: 'same-origin' })
       if (response.status == 401) {
@@ -278,7 +276,7 @@ function PersonalTokens({ onUnauthorized }: { readonly onUnauthorized: () => voi
       setTokens((current) => current?.filter((token) => token.tokenId != tokenId))
       setRevoking(undefined)
     } catch {
-      setError('account.saveFailed')
+      toast.error(t('account.saveFailed'))
     } finally {
       setPending(false)
     }
@@ -302,7 +300,6 @@ function PersonalTokens({ onUnauthorized }: { readonly onUnauthorized: () => voi
           if (pending || secret != null) return
           setCreating(open)
           setName('')
-          setError(undefined)
           setRevoking(undefined)
         }}
       >
@@ -337,11 +334,6 @@ function PersonalTokens({ onUnauthorized }: { readonly onUnauthorized: () => voi
                   onChange={(event) => setName(event.target.value)}
                 />
               </HostField>
-              {error != null && (
-                <p role="alert" className="text-sm text-destructive">
-                  {t(error)}
-                </p>
-              )}
               <DialogFooter>
                 <DialogClose render={<Button variant="outline" />} disabled={pending} type="button">
                   {t('settings.cancel')}
@@ -389,14 +381,14 @@ function PersonalTokens({ onUnauthorized }: { readonly onUnauthorized: () => voi
         </DialogContent>
       </Dialog>
       <div className="host-form">
-        {error != null && !creating && (
+        {loadFailed && (
           <p role="alert" className="text-sm text-destructive">
-            {t(error)}
+            {t('account.loadFailed')}
           </p>
         )}
         {tokens == null ? (
           <div className="host-actions">
-            {error == null ? (
+            {!loadFailed ? (
               <span role="status">{t('settings.loading')}</span>
             ) : (
               <Button variant="outline" onClick={() => void load()}>

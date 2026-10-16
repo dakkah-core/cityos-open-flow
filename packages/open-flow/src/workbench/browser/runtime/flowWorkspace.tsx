@@ -184,6 +184,7 @@ const NodeInspectorContainer = memo(function NodeInspectorContainer({
               enabled: live?.status == 'runnable',
               hasUnpublishedChanges: live?.hasUnpublishedChanges ?? false,
               onRetry: () => void store.publications.loadBindings(flowId),
+              notify: store.workspace.notify,
             }
       }
       variables={{

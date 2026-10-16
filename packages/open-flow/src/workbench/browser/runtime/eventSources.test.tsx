@@ -39,7 +39,7 @@ const client: ComponentProps<typeof SourceForm>['client'] = {
 it('starts with app selection without exposing authorization identity or callback credentials', () => {
   const markup = renderToStaticMarkup(
     <I18nProvider i18n={createI18n('en')}>
-      <SourceForm client={client} teams={[]} onCancel={() => {}} onSaved={() => {}} />
+      <SourceForm notify={() => {}} client={client} teams={[]} onCancel={() => {}} onSaved={() => {}} />
     </I18nProvider>,
   )
   expect(markup).toContain('Select a Feishu app')
@@ -51,7 +51,7 @@ it('starts with app selection without exposing authorization identity or callbac
 it('shows verified app identity as text and keeps stored callback secrets out of edit fields', () => {
   const markup = renderToStaticMarkup(
     <I18nProvider i18n={createI18n('en')}>
-      <SourceForm source={source} client={client} teams={[]} onCancel={() => {}} onSaved={() => {}} />
+      <SourceForm notify={() => {}} source={source} client={client} teams={[]} onCancel={() => {}} onSaved={() => {}} />
     </I18nProvider>,
   )
   expect(markup).toContain('App ID: cli_demo')
@@ -74,7 +74,7 @@ it('disables an empty selector so it cannot open an empty popup', () => {
 it('shows the missing public callback prerequisite without offering a copy action', () => {
   const markup = renderToStaticMarkup(
     <I18nProvider i18n={createI18n('en')}>
-      <EventSourceSetup source={source} client={client} onChange={() => {}} />
+      <EventSourceSetup notify={() => {}} source={source} client={client} onChange={() => {}} />
     </I18nProvider>,
   )
   expect(markup).toContain(createI18n('en').t('eventSources.originMissing'))
@@ -86,7 +86,12 @@ it('shows the missing public callback prerequisite without offering a copy actio
 it('distinguishes verified callbacks from business event delivery', () => {
   const markup = renderToStaticMarkup(
     <I18nProvider i18n={createI18n('en')}>
-      <EventSourceSetup source={{ ...source, verifiedAt: source.updatedAt, endpointUrl: 'https://flow.example/events' }} client={client} onChange={() => {}} />
+      <EventSourceSetup
+        notify={() => {}}
+        source={{ ...source, verifiedAt: source.updatedAt, endpointUrl: 'https://flow.example/events' }}
+        client={client}
+        onChange={() => {}}
+      />
     </I18nProvider>,
   )
   expect(markup).toContain('Callback verified.')

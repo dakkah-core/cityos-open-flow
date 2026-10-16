@@ -16,6 +16,7 @@ import {
   NativeSelectOption,
 } from '@oomol-lab/open-flow/ui'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import { useTranslate } from 'val-i18n-react'
 import { z } from 'zod'
 import { HostPage, HostField } from './host-ui.tsx'
@@ -39,7 +40,7 @@ export function UsersPage({ currentUserId, onUnauthorized }: { readonly currentU
   const portal = useRef<HTMLElement>(null)
   const emailInput = useRef<HTMLInputElement>(null)
   const [pending, setPending] = useState(false)
-  const [error, setError] = useState<string>()
+  const [loadFailed, setLoadFailed] = useState(false)
   const [credentials, setCredentials] = useState<{ readonly email: string; readonly password: string }>()
   const t = useTranslate()
   const load = useCallback(
@@ -52,9 +53,9 @@ export function UsersPage({ currentUserId, onUnauthorized }: { readonly currentU
         }
         if (!response.ok) throw new Error('User list failed.')
         setUsers(listSchema.parse(await response.json()).users)
-        setError(undefined)
+        setLoadFailed(false)
       } catch {
-        if (!signal?.aborted) setError('users.loadFailed')
+        if (!signal?.aborted) setLoadFailed(true)
       }
     },
     [onUnauthorized],
@@ -69,7 +70,6 @@ export function UsersPage({ currentUserId, onUnauthorized }: { readonly currentU
   async function save(path: string, method: 'POST' | 'PUT', body: object): Promise<void> {
     if (pending) return
     setPending(true)
-    setError(undefined)
     setCredentials(undefined)
     try {
       const response = await fetch(path, {
@@ -84,7 +84,7 @@ export function UsersPage({ currentUserId, onUnauthorized }: { readonly currentU
       }
       if (response.status == 409) {
         await load()
-        setError('users.conflict')
+        toast.error(t('users.conflict'))
         return
       }
       if (!response.ok) throw new Error('User update failed.')
@@ -100,7 +100,7 @@ export function UsersPage({ currentUserId, onUnauthorized }: { readonly currentU
         setCreating(false)
       }
     } catch {
-      setError('users.saveFailed')
+      toast.error(t('users.saveFailed'))
     } finally {
       setPending(false)
     }
@@ -116,10 +116,7 @@ export function UsersPage({ currentUserId, onUnauthorized }: { readonly currentU
       <Dialog
         open={creating}
         onOpenChange={(open) => {
-          if (!pending) {
-            setCreating(open)
-            setError(undefined)
-          }
+          if (!pending) setCreating(open)
         }}
       >
         <header className="host-page-header">
@@ -162,11 +159,6 @@ export function UsersPage({ currentUserId, onUnauthorized }: { readonly currentU
                 <NativeSelectOption value="admin">{t('users.admin')}</NativeSelectOption>
               </NativeSelect>
             </HostField>
-            {error != null && (
-              <p className="text-sm text-destructive" role="alert">
-                {t(error)}
-              </p>
-            )}
             <DialogFooter>
               <DialogClose render={<Button variant="outline" />} disabled={pending} type="button">
                 {t('settings.cancel')}
@@ -207,9 +199,9 @@ export function UsersPage({ currentUserId, onUnauthorized }: { readonly currentU
           </div>
         </section>
       )}
-      {error != null && !creating && users != null && (
+      {loadFailed && users != null && (
         <p className="text-sm text-destructive" role="alert">
-          {t(error)}
+          {t('users.loadFailed')}
         </p>
       )}
       <section className="host-card" aria-label={t('users.title')}>
@@ -219,9 +211,9 @@ export function UsersPage({ currentUserId, onUnauthorized }: { readonly currentU
           </div>
         </div>
         {users == null ? (
-          <div className="host-state" role={error == null ? 'status' : 'alert'}>
-            <span>{t(error == null ? 'users.loading' : 'users.loadFailed')}</span>
-            {error != null && (
+          <div className="host-state" role={!loadFailed ? 'status' : 'alert'}>
+            <span>{t(!loadFailed ? 'users.loading' : 'users.loadFailed')}</span>
+            {loadFailed && (
               <Button variant="outline" size="sm" onClick={() => void load()}>
                 {t('settings.retry')}
               </Button>

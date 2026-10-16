@@ -24,6 +24,7 @@ import { Switch } from '../../../../ui/browser/switch.tsx'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../../../ui/browser/tooltip.tsx'
 import { actionSummary } from '../actionSummary.ts'
 import { resourceData, resourceValue } from '../stores/resource.ts'
+import { errorNotice } from '../stores/workbenchNotice.ts'
 import { ActionSelectionDialog } from './actionSelectionDialog.tsx'
 import { CodeEditor } from './codeEditor.tsx'
 import { codeTyping } from './codeTyping.ts'
@@ -109,12 +110,13 @@ function EditableCodeTaskSection({
     )
   const sharedActionCatalog = Object.fromEntries(Object.entries(useVal(completionCatalog.catalog)).filter(([, action]) => allowSharedAction(action)))
   const t = useTranslate()
-  const [saveError, setSaveError] = useState<string>()
+  const [loadError, setLoadError] = useState<string>()
   const [completionError, setCompletionError] = useState<string>()
   const [pending, setPending] = useState(false)
   useEffect(() => setPermission(savedPermission), [savedPermission, selection.id])
   const permissionActions = permission?.mode == 'independent' ? permission.actions.map((entry) => entry.action).join(',') : ''
   useEffect(() => {
+    setLoadError(undefined)
     if (permissionActions == '') return
     const controller = new AbortController()
     void Promise.all(permissionActions.split(',').map((id) => connectors.loadCodeAction(id, controller.signal)))
@@ -123,22 +125,18 @@ function EditableCodeTaskSection({
         return Promise.all([...services].map((id) => connectors.loadCodeConnections(id, controller.signal)))
       })
       .catch((cause: unknown) => {
-        if (!controller.signal.aborted) setSaveError(String(cause))
+        if (!controller.signal.aborted) setLoadError(String(cause))
       })
     return () => controller.abort()
   }, [connectors, permissionActions])
   const savePermission = async (value: ConnectorPermissionCapability) => {
     setPending(true)
-    setSaveError(undefined)
     try {
-      if (!(await store.setCodeActions(selection.id, [value]))) {
-        setSaveError(t('inspector.task.permissionSaveFailed'))
-        return false
-      }
+      if (!(await store.setCodeActions(selection.id, [value]))) return false
       setPermission(value)
       return true
     } catch (cause) {
-      setSaveError(cause instanceof Error ? cause.message : String(cause))
+      store.notify(errorNotice(cause, t))
       return false
     } finally {
       setPending(false)
@@ -168,7 +166,7 @@ function EditableCodeTaskSection({
   const selectedActions = permission?.mode == 'independent' ? permission.actions : []
   const summary = actionSummary(selectedActions, hintedCatalog, providers.data ?? [])
   const actionIssue =
-    saveError != null ||
+    loadError != null ||
     diagnostics?.some((item) => item.path.includes('/task/capabilities')) ||
     selectedActions.some((entry) => {
       const action = hintedCatalog[entry.action]
@@ -229,6 +227,7 @@ function EditableCodeTaskSection({
             </Tooltip>
           )}
           <ActionSelectionDialog
+            notify={store.notify}
             key={selection.id}
             title={t('actionPicker.configureActions')}
             triggerHint={
@@ -265,7 +264,7 @@ function EditableCodeTaskSection({
         </>
       }
     >
-      {(codeSharedPermissionsEnabled || (saveError ?? completionError) != null) && (
+      {(codeSharedPermissionsEnabled || (loadError ?? completionError) != null) && (
         <div className="flex flex-col gap-2" data-inspector-section="code-permissions">
           {codeSharedPermissionsEnabled && (
             <Field orientation="horizontal" className="justify-between gap-3">
@@ -299,9 +298,9 @@ function EditableCodeTaskSection({
             </Field>
           )}
 
-          {(saveError ?? completionError) != null && (
+          {(loadError ?? completionError) != null && (
             <p role="alert" className="text-sm text-destructive">
-              {saveError ?? completionError}
+              {loadError ?? completionError}
             </p>
           )}
         </div>

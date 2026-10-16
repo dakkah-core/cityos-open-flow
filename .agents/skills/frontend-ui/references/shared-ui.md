@@ -77,3 +77,14 @@ Each feature's locale bundle owns its product copy and accessible names. Cover `
 keep keys, placeholders, and terminology consistent. The host owns the global language preference.
 Preserve user content, Provider data, logs, and code output as written. Localize protocol errors
 through stable error codes and parameters; preserve the original message for unknown errors.
+
+## Feedback placement
+
+Report transient operation results (import, save, delete, copy, connection and refresh failures)
+through the existing host notification channel. Do not insert these messages into page or table
+layout. Stores that perform a mutation own its failure notification; consumers must not add a
+second generic error when the operation returns false.
+
+Keep field validation beside its field, and keep persistent configuration problems, load failures
+with retry actions, and execution diagnostics in the surface they describe. A failed operation
+must preserve editable input and retry controls.

@@ -531,6 +531,7 @@ function SidebarSample({ fixture, dark, language, log, state, framed = true }: S
                               runtimeVersion: 1,
                               updatedAt: '2026-10-12T00:00:00.000Z',
                             },
+                      notify: session.workspace.notify,
                       status: state === 'deployment-loading' ? 'loading' : state === 'deployment-error' ? 'failed' : 'loaded',
                       enabled: state !== 'paused',
                       hasUnpublishedChanges: state === 'edit',

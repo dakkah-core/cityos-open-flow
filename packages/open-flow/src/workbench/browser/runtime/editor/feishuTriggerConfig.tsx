@@ -154,6 +154,7 @@ export function FeishuTriggerConfig({
             ) : (
               <div className="flex h-[30px] w-full items-center overflow-hidden rounded-[var(--ui-control-radius,var(--ui-radius))] border border-input bg-[var(--ui-control-background,var(--ui-muted))]">
                 <CreateEventSourceDialog
+                  notify={store.notify}
                   key={JSON.stringify([store.$.flowId.value, nodeId])}
                   className="min-w-0 flex-1"
                   trigger={

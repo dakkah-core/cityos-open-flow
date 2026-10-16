@@ -1,4 +1,5 @@
 import type { ControlClient, EventSource } from '../../../control/common/api.ts'
+import type { SetNotice } from './stores/workbenchNotice.ts'
 
 import { useEffect, useRef, useState } from 'react'
 import { useTranslate } from 'val-i18n-react'
@@ -10,14 +11,15 @@ export function EventSourceSetup({
   source,
   client,
   onChange,
+  notify,
 }: {
+  readonly notify: SetNotice
   readonly source: EventSource
   readonly client: Pick<ControlClient, 'listEventSources'>
   readonly onChange: (source: EventSource) => void
 }) {
   const t = useTranslate()
   const [copied, setCopied] = useState<string>()
-  const [error, setError] = useState<string>()
   const [pending, setPending] = useState(false)
   const request = useRef<AbortController | null>(null)
   useEffect(() => () => request.current?.abort(), [])
@@ -27,15 +29,14 @@ export function EventSourceSetup({
     const controller = new AbortController()
     request.current = controller
     setPending(true)
-    setError(undefined)
     try {
       const result = await client.listEventSources(undefined, controller.signal)
       if (controller.signal.aborted) return
       const current = result.sources.find((item) => item.sourceId == source.sourceId)
-      if (current == null) setError(t('eventSources.notFound'))
+      if (current == null) notify({ kind: 'error', message: t('eventSources.notFound') })
       else onChange(current)
     } catch (cause) {
-      if (!controller.signal.aborted) setError(errorNotice(cause, t).message)
+      if (!controller.signal.aborted) notify(errorNotice(cause, t))
     } finally {
       if (!controller.signal.aborted) setPending(false)
     }
@@ -61,12 +62,11 @@ export function EventSourceSetup({
                 variant="outline"
                 size="sm"
                 onClick={async () => {
-                  setError(undefined)
                   try {
                     await navigator.clipboard.writeText(source.endpointUrl!)
                     setCopied(source.endpointUrl!)
                   } catch {
-                    setError(t('eventSources.copyFailed'))
+                    notify({ kind: 'error', message: t('eventSources.copyFailed') })
                   }
                 }}
               >
@@ -105,11 +105,6 @@ export function EventSourceSetup({
           </Button>
         </li>
       </ol>
-      {error != null && (
-        <p role="alert" className="m-0 text-sm text-destructive">
-          {error}
-        </p>
-      )}
     </div>
   )
 }

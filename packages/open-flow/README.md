@@ -71,7 +71,7 @@ function Host(props: OpenFlowWorkbenchProps) {
 ```
 
 `openImport({ text, fileName?, sourceUrl? })` returns `opened` when confirmation opens,
-`invalid-file` when parsing fails (with visible error feedback), or `unavailable` when the
+`invalid-file` when parsing fails (reported through `host.notify`), or `unavailable` when the
 Workbench is not on an initialized Flow list, is busy, or already has a creation/import dialog open.
 `opened` does not mean a Flow has been created. The optional `sourceUrl` is displayed in the dialog;
 only HTTP(S) URLs become links. The file's name takes precedence over `fileName`, with a localized
@@ -81,6 +81,13 @@ Cancel creates nothing. Confirmation uses the existing `importFlow` callback, or
 Control API when no callback is supplied, and opens the new unpublished draft after success.
 The host owns download errors, login recovery, navigation, and processing a share link once.
 Do not cache handles across session changes; an old session's handle returns `unavailable`.
+
+## Event source management
+
+`EventSourcesPage` from `@oomol-lab/open-flow/workbench` requires a `notify` callback with the
+same notification contract as `WorkbenchHost.notify`. Pass the host's notification handler to
+show operation failures. Field validation, unavailable configuration and loading failures remain
+within their related controls; failed saves preserve the form for retry.
 
 ## Offline workflow preview
 

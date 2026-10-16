@@ -387,7 +387,6 @@ export const FlowBrowser = forwardRef<OpenFlowWorkbenchHandle, FlowBrowserProps>
   // The command and React read the same state, including calls before React rerenders.
   const [creation$] = useState(() => val<FlowCreation | undefined>(undefined))
   const creation = useVal(creation$)
-  const [importError, setImportError] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const [filter, setFilter] = useState('')
   const [name, setName] = useState('')
@@ -406,12 +405,11 @@ export const FlowBrowser = forwardRef<OpenFlowWorkbenchHandle, FlowBrowserProps>
 
   function openImport(input: WorkbenchImportInput): ReturnType<OpenFlowWorkbenchHandle['openImport']> {
     if (initializing || store.workspace.$.busy.value != null || creation$.value != null || onImportFlow == null) return 'unavailable'
-    setImportError(false)
     let file: WorkflowFile
     try {
       file = parseWorkflowFile(input.text)
     } catch {
-      setImportError(true)
+      store.workspace.notify({ kind: 'error', message: t('resource.importInvalid') })
       return 'invalid-file'
     }
     setName(file.name ?? (input.fileName == null ? importedWorkflowName(language) : workflowNameFromFile(input.fileName)))
@@ -477,13 +475,12 @@ export const FlowBrowser = forwardRef<OpenFlowWorkbenchHandle, FlowBrowserProps>
                       const file = event.target.files?.[0]
                       event.target.value = ''
                       if (file == null) return
-                      setImportError(false)
                       void file
                         .text()
                         .then((text) => {
                           command.current?.({ text, fileName: file.name })
                         })
-                        .catch(() => setImportError(true))
+                        .catch(() => store.workspace.notify({ kind: 'error', message: t('resource.importInvalid') }))
                     }}
                   />
                   <Button variant="outline" disabled={initializing || busy != null || createFlowDisabled} onClick={() => fileInput.current?.click()}>
@@ -498,7 +495,6 @@ export const FlowBrowser = forwardRef<OpenFlowWorkbenchHandle, FlowBrowserProps>
               </Button>
             </div>
           </div>
-          {importError && <p role="alert">{t('resource.importInvalid')}</p>}
           <div className="resource-table-scroll">
             <div className={cn('resource-table', showTeam && 'resource-table-with-teams')}>
               <div aria-hidden="true" className="resource-list-columns-shell">
