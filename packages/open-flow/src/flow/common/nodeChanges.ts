@@ -500,6 +500,36 @@ export function setConnectorConnection(content: RevisionContent, nodeId: string,
   ]
 }
 
+/** Fill only missing account selections for a service as one undoable edit. */
+export function setMissingConnections(content: RevisionContent, providerId: string, connectionId: string): readonly ChangeOperation[] {
+  const operations: ChangeOperation[] = []
+  const assign = <T extends { readonly action: string; readonly connectionId?: string }>(value: T): T =>
+    value.connectionId == null && value.action.split('.')[0] == providerId ? { ...value, connectionId } : value
+  for (const [nodeId, node] of Object.entries(content.document.graph.nodes)) {
+    if ((node.kind == 'poll' || node.kind == 'integration') && node.definition.provider == providerId && node.connectionId == null) {
+      operations.push(...(setTriggerConnection(content, nodeId, connectionId) ?? []))
+    }
+    if (node.kind != 'task') continue
+    const task = node.task
+    if ('moduleId' in task) {
+      const capabilities = task.capabilities?.map((capability) =>
+        'mode' in capability && capability.mode == 'independent' ? { ...capability, actions: capability.actions.map(assign) } : capability,
+      )
+      if (capabilities != null) operations.push(...(setCodeActions(content, nodeId, capabilities) ?? []))
+    } else if (task.executor.kind == 'connector') {
+      if (assign(task.executor) !== task.executor) operations.push(...(setConnectorConnection(content, nodeId, connectionId) ?? []))
+    } else if (task.executor.kind == 'agent') {
+      const executor = {
+        ...task.executor,
+        tools: task.executor.tools.map(assign),
+        ...(task.executor.notification == null ? {} : { notification: assign(task.executor.notification) }),
+      }
+      if (!dequal(executor, task.executor)) operations.push({ kind: 'graph.node.task.set', nodeId, before: task, value: { ...task, executor } })
+    }
+  }
+  return operations
+}
+
 /** Edit the workflow input contract and preserve references on a single-field rename. */
 export function updateStartInputDefs(content: RevisionContent, nodeId: string, value: readonly Port[]): readonly ChangeOperation[] {
   const node = content.document.graph.nodes[nodeId]

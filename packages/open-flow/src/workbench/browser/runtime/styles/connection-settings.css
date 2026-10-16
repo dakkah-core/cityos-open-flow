@@ -9,6 +9,7 @@
     background: var(--ui-control-background);
 
     &[data-status='warning'] {
+      --ui-control-hover-background: var(--warning-control-hover-background);
       border-color: var(--warning-border);
       background: var(--warning-surface);
     }

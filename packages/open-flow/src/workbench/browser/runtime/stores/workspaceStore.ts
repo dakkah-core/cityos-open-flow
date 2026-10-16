@@ -48,6 +48,7 @@ import {
   updateTriggerSchedule,
   updateStartInputDefs,
   setConnectorConnection as changeConnectorConnection,
+  setMissingConnections as changeMissingConnections,
   setCodeActions as changeCodeActions,
   setTriggerConnection as changeTriggerConnection,
 } from '../../../../flow/common/nodeChanges.ts'
@@ -895,6 +896,13 @@ export class WorkspaceStore {
     if (revision == null) return false
     const changes = changeConnectorConnection(revision.revision.content, nodeId, connectionId)
     return changes != null && (await this.#editDraft(changes)) != null
+  }
+
+  public async setMissingConnections(providerId: string, connectionId: string): Promise<boolean> {
+    const revision = this.$.revision.value
+    if (revision == null) return false
+    const changes = changeMissingConnections(revision.revision.content, providerId, connectionId)
+    return changes.length == 0 || (await this.#editDraft(changes)) != null
   }
 
   public async setCodeActions(nodeId: string, capabilities: readonly ConnectorCapability[]): Promise<boolean> {

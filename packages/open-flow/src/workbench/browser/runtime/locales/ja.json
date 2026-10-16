@@ -237,6 +237,7 @@
       "manage": "管理",
       "authorizationPending": "Connection ページで認証を完了してください。ここに戻ると、このアカウントが更新されます。",
       "chooseAccount": "アカウントを選択",
+      "noAccounts": "利用可能なアカウントがありません",
       "connectBeforeRun": "このノードを実行または公開するには、先に {{service}} を接続してください。",
       "connectService": "{{service}} を接続",
       "connection": "Connection",
@@ -1342,9 +1343,8 @@
     "connectAppHint": "Connector を新しいタブで開きます。この Flow のチームを使用してください。接続後に戻ると一覧が自動更新されます。"
   },
   "connectionUsage": {
-    "title": "接続",
+    "title": "接続の概要",
     "needsAttention": "接続に対応が必要です",
-    "description": "この下書きで使用するアカウント。公開すると稼働中の Flow に反映されます。",
     "empty": "この下書きではアカウントを使用していません。",
     "stopUsing": "使用を停止",
     "stopUsingTitle": "このアカウントの使用を停止しますか？",

@@ -237,6 +237,7 @@
       "manage": "管理",
       "authorizationPending": "请在 Connection 页面完成授权，返回这里后会刷新当前账号。",
       "chooseAccount": "选择账号",
+      "noAccounts": "暂无可用账号",
       "connectBeforeRun": "请先连接 {{service}}，此节点才能运行或发布。",
       "connectService": "连接 {{service}}",
       "connection": "连接",
@@ -1342,9 +1343,8 @@
     "connectAppHint": "将在新标签页打开 Connector。请使用当前工作流所属团队；连接完成后返回这里，列表会自动刷新。"
   },
   "connectionUsage": {
-    "title": "连接",
+    "title": "连接概览",
     "needsAttention": "连接需要处理",
-    "description": "当前草稿使用的账号。发布后更新线上工作流。",
     "empty": "当前草稿尚未使用账号。",
     "stopUsing": "停止使用",
     "stopUsingTitle": "停止使用此账号？",

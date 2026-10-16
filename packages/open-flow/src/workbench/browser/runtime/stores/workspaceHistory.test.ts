@@ -90,6 +90,48 @@ async function session() {
 }
 
 describe('Workspace canvas history', () => {
+  it('fills pending service accounts in one history entry and preserves earlier edits', async () => {
+    const { store, saved, change } = await session()
+    try {
+      await store.setCodeActions('code', [
+        {
+          kind: 'connector',
+          mode: 'independent',
+          actions: [{ action: 'mail.send' }, { action: 'mail.read' }, { action: 'mail.archive', connectionId: 'personal' }, { action: 'github.create_issue' }],
+        },
+      ])
+      const before = saved().draft.content
+      change.mockClear()
+      expect(await store.setMissingConnections('mail', 'work')).toBe(true)
+      expect(change).toHaveBeenCalledTimes(1)
+      const after = saved().draft.content
+      expect(after.document.graph.nodes.code).toMatchObject({
+        task: {
+          capabilities: [
+            {
+              actions: [
+                { action: 'mail.send', connectionId: 'work' },
+                { action: 'mail.read', connectionId: 'work' },
+                { action: 'mail.archive', connectionId: 'personal' },
+                { action: 'github.create_issue' },
+              ],
+            },
+          ],
+        },
+      })
+      await store.undo()
+      expect(saved().draft.content).toEqual(before)
+      expect(store.history$.value.canUndo).toBe(true)
+      await store.redo()
+      expect(saved().draft.content).toEqual(after)
+      await store.undo()
+      await store.setMissingConnections('mail', 'other')
+      expect(store.history$.value.canRedo).toBe(false)
+    } finally {
+      store.dispose()
+    }
+  })
+
   it('saves a type change and its assigned value as one undoable edit', async () => {
     const { store, saved } = await session()
     try {

@@ -141,7 +141,6 @@ describe('Connector access settings', () => {
     expect(markup).toContain('href="https://console.example/flow/mail"')
     expect(markup).toContain('href="https://console.example/flow/mail?app=account"')
     expect(markup).not.toContain('disabled=""')
-    expect(markup).toContain('Accounts used by this draft')
     expect(markup).toContain('Personal')
     expect(markup.match(/aria-label="Mail"/g)).toHaveLength(1)
     expect(markup).not.toContain('Current account status: Unknown')

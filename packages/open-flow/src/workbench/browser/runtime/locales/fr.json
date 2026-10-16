@@ -237,6 +237,7 @@
       "manage": "Gérer",
       "authorizationPending": "Terminez l'autorisation sur la page Connection, puis revenez ici pour actualiser ce compte.",
       "chooseAccount": "Choisir un compte",
+      "noAccounts": "Aucun compte disponible",
       "connectBeforeRun": "Connectez {{service}} pour que ce bloc puisse être exécuté ou publié.",
       "connectService": "Connecter {{service}}",
       "connection": "Connection",
@@ -1342,9 +1343,8 @@
     "connectAppHint": "Connector s’ouvre dans un nouvel onglet. Utilisez l’équipe de ce Flow ; la liste sera actualisée à votre retour après la connexion."
   },
   "connectionUsage": {
-    "title": "Connexions",
+    "title": "Vue d’ensemble des connexions",
     "needsAttention": "Connexions à vérifier",
-    "description": "Comptes utilisés par ce brouillon. Publiez pour mettre à jour le Flow en ligne.",
     "empty": "Ce brouillon n’utilise aucun compte.",
     "stopUsing": "Ne plus utiliser",
     "stopUsingTitle": "Ne plus utiliser ce compte ?",

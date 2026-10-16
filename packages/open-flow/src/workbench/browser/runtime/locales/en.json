@@ -237,6 +237,7 @@
       "manage": "Manage",
       "authorizationPending": "Finish authorization in the Connection page, then return here to refresh this account.",
       "chooseAccount": "Choose an account",
+      "noAccounts": "No accounts available",
       "connectBeforeRun": "Connect {{service}} before this block can run or be published.",
       "connectService": "Connect {{service}}",
       "connection": "Connection",
@@ -1342,9 +1343,8 @@
     "connectAppHint": "Connector opens in a new tab. Use this Flow’s team; the list refreshes automatically when you return after connecting."
   },
   "connectionUsage": {
-    "title": "Connections",
+    "title": "Connection overview",
     "needsAttention": "Connections need attention",
-    "description": "Accounts used by this draft. Publish to update the live Flow.",
     "empty": "This draft does not use any accounts.",
     "stopUsing": "Stop using",
     "stopUsingTitle": "Stop using this account?",

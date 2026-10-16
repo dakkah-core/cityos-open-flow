@@ -21,6 +21,7 @@ import { cn } from '../../../../ui/browser/utils.ts'
 import { providerIcon } from '../providerIcon.ts'
 import { semanticNodeIcon, triggerNodeIcon } from '../workspace.ts'
 import { AccountName, accountDisplayName } from './accountName.tsx'
+import { AccountSelect } from './connectionSettings.tsx'
 import { connectorAccessPermissionGroupLabel, connectorAccessPermissionLabel } from './connectorAccessPresentation.ts'
 import { ServicePicker } from './servicePicker.tsx'
 
@@ -75,7 +76,7 @@ export function ConnectionUsageButton(props: Parameters<typeof ConnectorAccessSe
     <Popover open={open} onOpenChange={setOpen}>
       <CanvasTooltip placement="bottom" title={label}>
         <PopoverTrigger ref={portal} render={<Button size="icon" variant="ghost" aria-label={label} />}>
-          <i aria-hidden="true" className="i-lucide-light:plug" data-corner-icon style={hasIssue ? { color: 'var(--warning-foreground)' } : undefined} />
+          <i aria-hidden="true" className="i-lucide-light:plug" data-corner-icon style={hasIssue ? { color: 'var(--ui-destructive)' } : undefined} />
         </PopoverTrigger>
       </CanvasTooltip>
       <PopoverPanelContent
@@ -85,7 +86,7 @@ export function ConnectionUsageButton(props: Parameters<typeof ConnectorAccessSe
         sideOffset={8}
         title={<span className="text-[14px]">{t('connectionUsage.title')}</span>}
         closeLabel={t('connectionUsage.close')}
-        className="w-96"
+        className="w-md"
       >
         <ConnectorAccessSettings
           {...props}
@@ -152,6 +153,7 @@ export function ConnectorAccessSettings({
   const [root, setRoot] = useState<HTMLElement | null>(null)
   const [removing, setRemoving] = useState<string>()
   const [pending, setPending] = useState(false)
+  const [selectingAccount, setSelectingAccount] = useState(false)
   const portal = useCallback((element: HTMLElement | null) => {
     panel.current = element
     setRoot(element?.closest<HTMLElement>('.open-flow-workbench') ?? element?.closest<HTMLElement>('.open-flow-theme') ?? null)
@@ -199,7 +201,7 @@ export function ConnectorAccessSettings({
           </Button>
         </div>
       )}
-      <p className="m-0 text-xs text-muted-foreground">{t(published ? 'connectionUsage.publishedDescription' : 'connectionUsage.description')}</p>
+      {published && <p className="m-0 text-xs text-muted-foreground">{t('connectionUsage.publishedDescription')}</p>}
       {(published && snapshotError) || (!published && !state.loading && state.access == null) ? (
         <p role="alert">
           {t('connectionUsage.loadFailed')}{' '}
@@ -214,15 +216,51 @@ export function ConnectorAccessSettings({
       ) : (
         <div className="flex flex-col gap-4">
           {pendingUses.length > 0 && (
-            <div className="rounded-md bg-[var(--warning-subtle-surface)] p-2 [--ui-control-hover-background:var(--warning-subtle-hover)]">
-              <AccountReferences
-                icon={referenceIcon}
-                references={pendingUses}
-                label={t('connectionUsage.needsConnection')}
-                labelClassName="text-[var(--warning-foreground)]"
-                onSelect={published ? undefined : onSelectReference}
-              />
-            </div>
+            <section className="flex flex-col gap-3" aria-label={t('connectionUsage.needsConnection')}>
+              <h3 className="m-0 text-xs font-medium text-[var(--warning-foreground)]">{t('connectionUsage.needsConnection')}</h3>
+              {[...new Set(pendingUses.map((use) => use.providerId))].map((providerId) => {
+                const provider = providers.data?.find((item) => item.serviceId == providerId) ?? { serviceId: providerId, serviceName: providerId }
+                return (
+                  <section
+                    key={providerId}
+                    aria-label={provider.serviceName}
+                    className="flex min-w-0 flex-col gap-3 rounded-md bg-[var(--warning-subtle-surface)] p-3 [--ui-control-hover-background:var(--warning-subtle-hover)]"
+                  >
+                    <div className="flex min-w-0 items-center gap-2 text-[13px] font-medium">
+                      <ContentIcon src={providerIcon(provider)} className="size-4 shrink-0 data-[icon-kind=initials]:text-[20px]" />
+                      <span className="min-w-0 truncate" title={provider.serviceName}>
+                        {provider.serviceName}
+                      </span>
+                    </div>
+                    {!published && (
+                      <AccountSelect
+                        connections={connections.filter((connection) => connection.serviceId == providerId && connection.status == 'active')}
+                        disabled={selectingAccount || connectionState.error != null}
+                        loading={connectionState.data == null && connectionState.error == null}
+                        warning
+                        label={t('actionPicker.accountFor', { action: provider.serviceName })}
+                        onChange={(connectionId) => {
+                          if (connectionId == null) return
+                          setSelectingAccount(true)
+                          void store.workspace.setMissingConnections(providerId, connectionId).then((saved) => {
+                            setSelectingAccount(false)
+                            if (saved) panel.current?.focus()
+                          })
+                        }}
+                        onManage={() => void store.connectors.connect(providerId)}
+                      />
+                    )}
+                    <AccountReferences
+                      showLabel={false}
+                      icon={referenceIcon}
+                      references={pendingUses.filter((use) => use.providerId == providerId)}
+                      label={t('connectionUsage.needsConnection')}
+                      onSelect={published ? undefined : onSelectReference}
+                    />
+                  </section>
+                )
+              })}
+            </section>
           )}
           <div className="flex flex-col gap-4">
             {[...new Set([...accounts.values()].map((account) => account.providerId))].map((providerId) => {
@@ -233,7 +271,9 @@ export function ConnectorAccessSettings({
                   <div className="flex min-w-0 items-center gap-2 font-medium">
                     <ConnectionConsoleLink href={connectionHref?.(flowId, providerId)}>
                       <ContentIcon src={providerIcon(provider)} className="size-4 shrink-0 data-[icon-kind=initials]:text-[20px]" />
-                      <span className="min-w-0 wrap-anywhere">{provider.serviceName}</span>
+                      <span className="min-w-0 truncate" title={provider.serviceName}>
+                        {provider.serviceName}
+                      </span>
                     </ConnectionConsoleLink>
                     <span className="ml-auto shrink-0 text-xs font-normal text-muted-foreground">{providerAccounts.length}</span>
                   </div>
@@ -245,7 +285,7 @@ export function ConnectorAccessSettings({
                           <div className="flex items-center justify-between gap-2">
                             <ConnectionConsoleLink href={connectionHref?.(flowId, providerId, id)}>
                               <i aria-hidden="true" className="i-codicon:credit-card size-3.5 shrink-0 text-sm text-muted-foreground" />
-                              <AccountName name={accountDisplayName(connection, account.name, builtInName)} builtIn={connection?.builtInAccount} />
+                              <AccountName name={accountDisplayName(connection, account.name, builtInName)} builtIn={connection?.builtInAccount} truncate />
                             </ConnectionConsoleLink>
                             {!published && (
                               <DropdownMenu>
@@ -292,7 +332,7 @@ export function ConnectorAccessSettings({
           </div>
         </div>
       )}
-      {accounts.size > 0 && (connectionState.error != null || connectionState.data == null) && (
+      {(accounts.size > 0 || pendingUses.length > 0) && (connectionState.error != null || connectionState.data == null) && (
         <p className="text-xs text-muted-foreground" role="status">
           {t(connectionState.error != null ? 'connectorAccess.accountsFailed' : 'inspector.account.loading')}
           {connectionState.error != null && (
@@ -664,27 +704,27 @@ export function ConnectorAccessEmptyState({ store, serviceId }: { readonly store
 
 function AccountReferences({
   hierarchy = false,
+  showLabel = !hierarchy,
   icon,
   code = false,
   references,
   label,
-  labelClassName,
   onSelect,
 }: {
   readonly hierarchy?: boolean
+  readonly showLabel?: boolean
   readonly icon: (reference: ConnectorAccountReference) => string | undefined
   readonly code?: boolean
   readonly references: readonly ConnectorAccountReference[]
   readonly label: string
-  readonly labelClassName?: string
   readonly onSelect?: ((reference: ConnectorAccountReference) => void) | undefined
 }): ReactElement | null {
   const t = useTranslate()
   if (references.length == 0 && !code) return null
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      {(!hierarchy || references.length == 0) && (
-        <span className={cn('text-xs text-muted-foreground', labelClassName)}>{references.length > 0 ? label : t('connectionUsage.codeAccess')}</span>
+      {(showLabel || references.length == 0) && (
+        <span className="text-xs text-muted-foreground">{references.length > 0 ? label : t('connectionUsage.codeAccess')}</span>
       )}
       {references.length > 0 && (
         <ul
@@ -695,12 +735,14 @@ function AccountReferences({
             const content = (
               <>
                 <ContentIcon src={icon(reference)} className="size-4 shrink-0 data-[icon-kind=initials]:text-[20px]" />
-                <span className="min-w-0 flex-1 wrap-anywhere">{reference.name}</span>
+                <span className="min-w-0 flex-1 truncate" title={reference.name}>
+                  {reference.name}
+                </span>
                 {reference.kind != null && <span className="shrink-0 text-xs text-muted-foreground">{t(`connectionUsage.${reference.kind}`)}</span>}
               </>
             )
             return (
-              <li key={JSON.stringify([reference.nodeId, reference.kind])} className={hierarchy ? 'relative min-w-0 pl-4' : 'min-w-0'}>
+              <li key={JSON.stringify([reference.nodeId, reference.kind, reference.providerId])} className={hierarchy ? 'relative min-w-0 pl-4' : 'min-w-0'}>
                 {hierarchy && (
                   <>
                     <span
@@ -721,7 +763,7 @@ function AccountReferences({
                   <div className="flex min-h-7 items-center gap-2 px-2 py-1 text-[13px]">{content}</div>
                 ) : (
                   <Button
-                    className="h-auto min-h-7 w-full justify-start gap-2 px-2 py-1 text-left text-[13px] font-normal whitespace-normal"
+                    className="h-auto min-h-7 w-full justify-start gap-2 px-2 py-1 text-left text-[13px] font-normal"
                     variant="ghost"
                     size="xs"
                     type="button"
@@ -744,7 +786,7 @@ function AccountReferences({
 function ConnectionConsoleLink({ href, children }: { readonly href?: string; readonly children: ReactNode }) {
   const className = cn(
     buttonVariants({ variant: 'ghost', size: 'xs' }),
-    '-my-1 -ml-2 min-w-0 h-auto min-h-6 shrink justify-start gap-2 py-1 text-left text-[13px] text-foreground whitespace-normal',
+    '-my-1 -ml-2 min-w-0 h-auto min-h-6 shrink justify-start gap-2 py-1 text-left text-[13px] text-foreground',
   )
   return href == null ? (
     <span className={cn(className, 'pointer-events-none')}>{children}</span>

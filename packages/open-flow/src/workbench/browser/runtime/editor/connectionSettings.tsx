@@ -19,6 +19,7 @@ import { AccountName, accountDisplayName } from './accountName.tsx'
 import { InspectorStatusSection } from './inspectorStatusSection.tsx'
 
 const manageAccountOption = '__manage-account__'
+const noAccountsOption = '__no-accounts__'
 
 function ConnectionAlert({
   detail,
@@ -124,8 +125,10 @@ export function AccountSelect({
         : `${selectedId} (${t('inspector.account.unavailable')})`
       : `${displayName(selected)}${selected.isDefault ? ` (${t('inspector.account.teamDefault')})` : ''}`
   const missingSelected = selectedId != null && !connections.some((candidate) => candidate.connectionId == selectedId)
+  const empty = !loading && connections.length == 0
   const items = [
     ...(missingSelected ? [{ value: selectedId, label: selectedLabel!, disabled: true }] : []),
+    ...(empty ? [{ value: noAccountsOption, label: t('inspector.account.noAccounts'), disabled: true }] : []),
     ...connections.map((candidate) => ({
       value: candidate.connectionId,
       label: `${displayName(candidate)}${candidate.isDefault ? ` (${t('inspector.account.teamDefault')})` : ''}`,
@@ -178,6 +181,11 @@ export function AccountSelect({
           {missingSelected && (
             <SelectItem value={selectedId} disabled className={selectionMenuItemClass}>
               {selectedLabel}
+            </SelectItem>
+          )}
+          {empty && (
+            <SelectItem value={noAccountsOption} disabled className={selectionMenuItemClass}>
+              {t('inspector.account.noAccounts')}
             </SelectItem>
           )}
           {connections.map((candidate) => (

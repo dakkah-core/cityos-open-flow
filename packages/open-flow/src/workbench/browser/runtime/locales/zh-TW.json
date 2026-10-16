@@ -237,6 +237,7 @@
       "manage": "管理",
       "authorizationPending": "請在 Connection 頁面完成授權，再回到這裡重新整理這個帳號。",
       "chooseAccount": "選擇帳號",
+      "noAccounts": "暫無可用帳號",
       "connectBeforeRun": "請先連接 {{service}}，這個節點才能執行或發布。",
       "connectService": "連接 {{service}}",
       "connection": "Connection",
@@ -1342,9 +1343,8 @@
     "connectAppHint": "將於新分頁開啟 Connector。請使用目前 Flow 所屬團隊；連接完成後返回此處，清單會自動更新。"
   },
   "connectionUsage": {
-    "title": "連線",
+    "title": "連線概覽",
     "needsAttention": "連線需要處理",
-    "description": "目前草稿使用的帳號。發佈後更新線上工作流程。",
     "empty": "目前草稿尚未使用帳號。",
     "stopUsing": "停止使用",
     "stopUsingTitle": "停止使用此帳號？",
