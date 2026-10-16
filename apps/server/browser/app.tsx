@@ -12,7 +12,6 @@ import { Toaster } from 'sonner'
 import { I18nProvider, useTranslate } from 'val-i18n-react'
 import { AgentAccessPage } from './agent-access.tsx'
 import { connectionHref } from './connectionNavigation.ts'
-import { flowTeamBadges } from './flowTeamBadges.ts'
 import { HostPage, HostPageLayout, HostPageTabs } from './host-ui.tsx'
 import { createBrowserHost } from './host.ts'
 import { createI18n } from './i18n.ts'
@@ -395,7 +394,6 @@ function Shell({ language, onLanguageChange, theme, themeMode, onThemeModeChange
     if (defaultTeam != null) teamOptions.push({ label: t('team.defaultNamed', { name: defaultTeam.name }), value: defaultTeam.id })
     teamOptions.push(...team.teams.filter((item) => item.id != defaultTeam?.id).map((item) => ({ label: item.name, value: item.id })))
   }
-  const flowBadges = 'bindings' in team ? flowTeamBadges(team.bindings, team.kind == 'hidden' ? [] : team.teams) : undefined
   let createFlowField: OpenFlowWorkbenchProps['createFlowField']
   if (team.kind == 'ready' && team.selectedTeamId != null) {
     createFlowField = {
@@ -525,7 +523,6 @@ function Shell({ language, onLanguageChange, theme, themeMode, onThemeModeChange
                   createFlow={team.kind == 'ready' && team.selectedTeamId != null ? createHostedFlow : undefined}
                   createFlowDisabled={team.kind != 'hidden' && (team.kind != 'ready' || team.selectedTeamId == null)}
                   createFlowField={createFlowField}
-                  flowBadges={flowBadges}
                   connectionHref={
                     administrator
                       ? (flowId, providerId, connectionId) => connectionHref(connectionConsole, connectorOwnerForFlow(flowId), providerId, connectionId)

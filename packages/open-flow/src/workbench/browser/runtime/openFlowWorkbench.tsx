@@ -139,7 +139,6 @@ interface WorkbenchProps {
   readonly createFlowDisabled?: boolean | undefined
   readonly createFlowField?: OpenFlowWorkbenchProps['createFlowField']
   readonly connectionHref?: ConnectionHref | undefined
-  readonly flowBadges?: Readonly<Record<string, string>> | undefined
   readonly hrefFor: (location: WorkbenchLocation) => string
   readonly initializing: boolean
   readonly language: WorkbenchLanguage
@@ -158,7 +157,6 @@ function Workbench({
   importFlow,
   createFlowDisabled,
   createFlowField,
-  flowBadges,
   connectionHref,
   hrefFor,
   initializing,
@@ -179,7 +177,6 @@ function Workbench({
           catalogWidth={catalogWidth}
           createFlowDisabled={createFlowDisabled}
           createFlowField={createFlowField}
-          flowBadges={flowBadges}
           hrefForFlow={(flow, view = 'design') => hrefFor({ flowId: flow.flowId, view })}
           initializing={initializing}
           language={language}
@@ -262,7 +259,6 @@ export interface OpenFlowWorkbenchProps {
       }
     | undefined
   readonly connectionHref?: ConnectionHref | undefined
-  readonly flowBadges?: Readonly<Record<string, string>> | undefined
   /** Reports the active Flow name, including renames; clears it on exit or unmount. Hosts own document titles. */
   readonly onFlowNameChange?: ((name: string | undefined) => void) | undefined
   readonly host: WorkbenchHost
@@ -288,7 +284,6 @@ const Session = forwardRef<OpenFlowWorkbenchHandle, SessionProps>(function Sessi
     importFlow,
     createFlowDisabled,
     createFlowField,
-    flowBadges,
     connectionHref,
     host,
     hrefFor,
@@ -372,7 +367,6 @@ const Session = forwardRef<OpenFlowWorkbenchHandle, SessionProps>(function Sessi
               importFlow={importFlow}
               createFlowDisabled={createFlowDisabled}
               createFlowField={createFlowField}
-              flowBadges={flowBadges}
               connectionHref={connectionHref}
               hrefFor={hrefFor}
               initializing={!started}

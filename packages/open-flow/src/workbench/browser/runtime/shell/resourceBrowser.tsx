@@ -44,8 +44,6 @@ interface LanguageSelectProps {
 }
 
 interface FlowItemProps {
-  readonly showTeam: boolean
-  readonly badge?: string | undefined
   readonly busy: WorkspaceBusy | undefined
   readonly flow: FlowCatalogItem
   readonly href: string
@@ -70,7 +68,7 @@ function formatUpdatedAt(updatedAt: string, locale: string): string {
   })
 }
 
-function FlowItem({ showTeam, badge, busy, flow, href, hrefForFlow, onSelect, store }: FlowItemProps): ReactElement {
+function FlowItem({ busy, flow, href, hrefForFlow, onSelect, store }: FlowItemProps): ReactElement {
   const [root, setRoot] = useState<HTMLDivElement | null>(null)
   const renameAnchor = useRef<HTMLSpanElement>(null)
   const actionsButton = useRef<HTMLButtonElement>(null)
@@ -80,7 +78,6 @@ function FlowItem({ showTeam, badge, busy, flow, href, hrefForFlow, onSelect, st
   const [mode, setMode] = useState<'delete' | 'idle' | 'rename'>('idle')
   const [name, setName] = useState(flow.name)
   const [pending, setPending] = useState<'publish' | 'enabled' | undefined>()
-  const hasTeam = showTeam && Boolean(badge?.trim())
   const changed = flow.live != null && flow.live.revisionId != flow.draftRevisionId
   const publicationStatus =
     flow.status == 'retiring'
@@ -115,7 +112,7 @@ function FlowItem({ showTeam, badge, busy, flow, href, hrefForFlow, onSelect, st
 
   return (
     <div className="resource-item-row" ref={setRoot}>
-      <div className="resource-list-row flow-columns" data-has-team={hasTeam}>
+      <div className="resource-list-row flow-columns">
         <span className="resource-primary-cell">
           <span aria-hidden="true" className="resource-flow-icon">
             <i className="i-lucide-light:workflow" />
@@ -215,11 +212,6 @@ function FlowItem({ showTeam, badge, busy, flow, href, hrefForFlow, onSelect, st
             alignOffset={flowIdTooltipAlignOffset}
           />
         </span>
-        {showTeam && (
-          <span className="resource-team-cell" title={badge}>
-            {hasTeam ? badge : '—'}
-          </span>
-        )}
         <Tooltip>
           <TooltipTrigger render={<time className="resource-updated-at" dateTime={flow.updatedAt} tabIndex={0} />}>
             {formatUpdatedAt(flow.updatedAt, locale)}
@@ -319,10 +311,10 @@ function FlowItem({ showTeam, badge, busy, flow, href, hrefForFlow, onSelect, st
   )
 }
 
-function FlowSkeleton({ showTeam }: { readonly showTeam: boolean }): ReactElement {
+function FlowSkeleton(): ReactElement {
   return (
     <div aria-hidden="true" className="resource-item-row">
-      <div className="resource-list-row flow-columns" data-has-team={showTeam}>
+      <div className="resource-list-row flow-columns">
         <span className="resource-primary-cell">
           <Skeleton className="resource-flow-icon" />
           <span className="resource-primary-copy">
@@ -330,7 +322,6 @@ function FlowSkeleton({ showTeam }: { readonly showTeam: boolean }): ReactElemen
           </span>
         </span>
         <Skeleton className="resource-flow-id-cell h-3 w-36 max-w-full" />
-        {showTeam && <Skeleton className="resource-team-cell h-3 w-24 max-w-full" />}
         <Skeleton className="resource-updated-at h-3 w-28 max-w-full" />
         <Skeleton className="resource-publication-status h-3 w-16" />
         <Skeleton className="resource-status h-3 w-16" />
@@ -348,7 +339,6 @@ interface FlowBrowserProps extends LanguageSelectProps {
   readonly catalogWidth?: OpenFlowWorkbenchProps['catalogWidth']
   readonly createFlowDisabled?: boolean | undefined
   readonly createFlowField?: ComponentProps<typeof CreateResourceDialog>['field']
-  readonly flowBadges?: Readonly<Record<string, string>> | undefined
   readonly hrefForFlow: (flow: Pick<Flow, 'flowId'>, view?: WorkbenchView) => string
   readonly initializing?: boolean
   readonly onImportFlow?: (file: WorkflowFile, name: string, key: string) => Promise<boolean>
@@ -362,7 +352,6 @@ export const FlowBrowser = forwardRef<OpenFlowWorkbenchHandle, FlowBrowserProps>
     catalogWidth,
     createFlowDisabled,
     createFlowField,
-    flowBadges,
     hrefForFlow,
     initializing = false,
     onCreateFlow,
@@ -390,7 +379,6 @@ export const FlowBrowser = forwardRef<OpenFlowWorkbenchHandle, FlowBrowserProps>
   const fileInput = useRef<HTMLInputElement>(null)
   const [filter, setFilter] = useState('')
   const [name, setName] = useState('')
-  const showTeam = flows.some((flow) => (flowBadges?.[flow.flowId]?.trim().length ?? 0) > 0)
   const normalized = filter.trim().toLocaleLowerCase()
   const visible = flows.filter((flow) => flow.name.toLocaleLowerCase().includes(normalized))
 
@@ -496,12 +484,11 @@ export const FlowBrowser = forwardRef<OpenFlowWorkbenchHandle, FlowBrowserProps>
             </div>
           </div>
           <div className="resource-table-scroll">
-            <div className={cn('resource-table', showTeam && 'resource-table-with-teams')}>
+            <div className="resource-table">
               <div aria-hidden="true" className="resource-list-columns-shell">
                 <div className="resource-list-columns flow-columns">
                   <span>{t('resource.name')}</span>
                   <span className="resource-flow-id-heading">{t('resource.flowId')}</span>
-                  {showTeam && <span className="resource-team-heading">{t('resource.team')}</span>}
                   <span className="resource-updated-heading">{t('resource.updated')}</span>
                   <span>{t('resource.publicationStatus')}</span>
                   <span>{t('resource.runtimeStatus')}</span>
@@ -510,7 +497,7 @@ export const FlowBrowser = forwardRef<OpenFlowWorkbenchHandle, FlowBrowserProps>
               </div>
               <div className="resource-list">
                 {loading ? (
-                  Array.from({ length: 5 }, (_, index) => <FlowSkeleton key={index} showTeam={showTeam} />)
+                  Array.from({ length: 5 }, (_, index) => <FlowSkeleton key={index} />)
                 ) : loadFailed ? (
                   <Empty className="min-h-64" role="alert">
                     <EmptyHeader>
@@ -547,8 +534,6 @@ export const FlowBrowser = forwardRef<OpenFlowWorkbenchHandle, FlowBrowserProps>
                 ) : (
                   visible.map((flow) => (
                     <FlowItem
-                      showTeam={showTeam}
-                      badge={flowBadges?.[flow.flowId]}
                       busy={busy}
                       flow={flow}
                       href={hrefForFlow(flow)}
