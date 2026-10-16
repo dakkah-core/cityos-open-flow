@@ -14,6 +14,15 @@ Consult the references relevant to the task:
 - [n8n conversion](references/flow-n8n-conversion.md): represent collections,
   branches, provider operations and state while preserving source behavior.
 
+Keep generated Flow and node names short enough to scan on the canvas. Aim for
+2–4 English words or 4–8 Chinese characters, using the user's language unless
+the workflow has an established naming language. Name a Flow by its main purpose
+and a node by its action and object, such as `AI Trend Digest`, `Fetch trends`,
+`Verify sources`, or `发布文章`. Keep only qualifiers needed to distinguish similar
+nodes. Put detailed behavior in descriptions; avoid sentences, repeated workflow
+context, and obscure abbreviations. Preserve names explicitly supplied by the
+user, and do not rename unrelated existing nodes.
+
 <!-- agentic:if localDevelopment -->
 
 Run commands from this repository's root. The development CLI connects to the
