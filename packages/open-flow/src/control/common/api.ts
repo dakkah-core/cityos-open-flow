@@ -128,8 +128,12 @@ export interface Presentation {
   readonly version: 1
 }
 
+export interface FlowListItem extends Flow {
+  readonly referenceCount: number
+}
+
 export interface FlowPage {
-  readonly flows: readonly Flow[]
+  readonly flows: readonly FlowListItem[]
   readonly nextCursor?: string
   readonly total?: number
   readonly version: 1

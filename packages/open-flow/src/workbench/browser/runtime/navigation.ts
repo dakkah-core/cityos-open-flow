@@ -87,7 +87,7 @@ export class NavigationStore {
     }
   }
 
-  public async selectFlow(flow: Flow, view: WorkbenchView = 'design'): Promise<void> {
+  public async selectFlow(flow: Pick<Flow, 'flowId'>, view: WorkbenchView = 'design'): Promise<void> {
     const change = ++this.#change
     this.#syncing = true
     this.#store.runRequests.dismissInputs()

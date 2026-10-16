@@ -1,4 +1,4 @@
-import type { ErrorListener, Flow, FlowPage, FlowResources, Variable, VariableListItem, VariableReferences } from './api.ts'
+import type { ErrorListener, Flow, FlowListItem, FlowPage, FlowResources, Variable, VariableListItem, VariableReferences } from './api.ts'
 
 import { requiredFields, integer, invalidResponse, record, string } from './decoding.ts'
 
@@ -72,6 +72,13 @@ export function flow(value: unknown): Flow {
   }
 }
 
+export function flowListItem(value: unknown): FlowListItem {
+  const source = record(value)
+  const referenceCount = integer(source.referenceCount)
+  if (referenceCount < 0) return invalidResponse()
+  return { ...flow(source), referenceCount }
+}
+
 export function flowPage(value: unknown): FlowPage {
   const source = record(value)
   if (source.version != 1 || !Array.isArray(source.flows)) return invalidResponse()
@@ -81,7 +88,7 @@ export function flowPage(value: unknown): FlowPage {
   if (total != null && !Number.isSafeInteger(total)) return invalidResponse()
   return {
     ...(nextCursor == null ? {} : { nextCursor }),
-    flows: source.flows.map(flow),
+    flows: source.flows.map(flowListItem),
     ...(total == null ? {} : { total: total as number }),
     version: 1,
   }

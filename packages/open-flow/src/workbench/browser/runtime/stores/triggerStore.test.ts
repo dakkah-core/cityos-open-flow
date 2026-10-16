@@ -33,7 +33,7 @@ function createSetup(language: 'en' | 'zh-CN' = 'en') {
   const fetchConnections = connectionFetcher()
   const request = vi.fn(async (path: string, init?: RequestInit) => {
     requests.push(path)
-    if (path == '/v1/flows?limit=50&includeTotal=true') return Response.json({ flows: [flow], total: 1, version: 1 })
+    if (path == '/v1/flows?limit=50&includeTotal=true') return Response.json({ flows: [{ ...flow, referenceCount: 0 }], total: 1, version: 1 })
     if (path == `/v1/flows/${flow.flowId}/editor`) {
       return Response.json({
         flow,

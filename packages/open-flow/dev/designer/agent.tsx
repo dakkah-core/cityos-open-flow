@@ -154,7 +154,7 @@ function createSession(language: UiLanguage, log: LogAction) {
         throw new Error('Simulated catalog request failure')
       }
     }
-    if (url.pathname === '/v1/flows') return Response.json({ flows: [flow], total: 1, version: 1 })
+    if (url.pathname === '/v1/flows') return Response.json({ flows: [{ ...flow, referenceCount: 0 }], total: 1, version: 1 })
     if (url.pathname.endsWith('/editor'))
       return Response.json({
         flow: { ...flow, draftRevisionId: `revision-${sequence}` },

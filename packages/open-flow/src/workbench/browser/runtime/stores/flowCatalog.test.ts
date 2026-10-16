@@ -62,12 +62,12 @@ it('refreshes stale enable controls without overwriting the current publication'
   const catalog = new FlowCatalog(client, notice, createI18n())
   const current = { ...flow, live: { ...flow.live, publicationId: 'new-live' } }
   const change = vi.spyOn(client, 'setFlowEnabled').mockRejectedValue(new ApiError(409, 'flow.conflict', 'Changed'))
-  vi.spyOn(client, 'listFlows').mockResolvedValue({ flows: [current], version: 1 })
+  vi.spyOn(client, 'listFlows').mockResolvedValue({ flows: [{ ...current, referenceCount: 0 }], version: 1 })
   catalog.include(flow)
   try {
     await catalog.setEnabled(flow, false)
     expect(change).toHaveBeenCalledWith('flow', 'live', false)
-    expect(catalog.flow('flow')).toEqual(current)
+    expect(catalog.flow('flow')).toEqual({ ...current, referenceCount: 0 })
     expect(notice).toHaveBeenCalledWith(expect.objectContaining({ kind: 'error' }))
   } finally {
     catalog.dispose()
@@ -107,4 +107,47 @@ it('stops observing a pending publication when the workspace is disposed', async
   await vi.advanceTimersByTimeAsync(3000)
   expect(observe).toHaveBeenCalledTimes(1)
   expect(notice).not.toHaveBeenCalled()
+})
+
+it('retains list counts through detail merges and replaces them only on list reload', async () => {
+  const client = new WorkbenchClient(vi.fn())
+  const list = vi.spyOn(client, 'listFlows').mockResolvedValue({ flows: [{ ...flow, referenceCount: 2 }], version: 1 })
+  const catalog = new FlowCatalog(client, vi.fn(), createI18n())
+  try {
+    await catalog.reload()
+    catalog.include({ ...flow, name: 'Renamed' })
+    expect(catalog.$.flows.value[0]).toMatchObject({ name: 'Renamed', referenceCount: 2 })
+    const { live: _live, ...unpublished } = flow
+    catalog.include(unpublished)
+    expect(catalog.$.flows.value[0]).not.toHaveProperty('live')
+    expect(catalog.$.flows.value[0]?.referenceCount).toBe(2)
+    catalog.include({ ...flow, flowId: 'detail-only' })
+    expect(catalog.$.flows.value[1]).not.toHaveProperty('referenceCount')
+    list.mockResolvedValue({ flows: [{ ...flow, referenceCount: 0 }], version: 1 })
+    await catalog.reload()
+    expect(catalog.$.flows.value[0]?.referenceCount).toBe(0)
+  } finally {
+    catalog.dispose()
+  }
+})
+
+it('applies list metadata to detail-only entries when their page is loaded without duplicating rows', async () => {
+  const client = new WorkbenchClient(vi.fn())
+  const detail = { ...flow, flowId: 'detail-only' }
+  const listed = { ...detail, name: 'Current name', referenceCount: 3 }
+  const list = vi
+    .spyOn(client, 'listFlows')
+    .mockResolvedValueOnce({ flows: [{ ...flow, referenceCount: 0 }], nextCursor: 'next', version: 1 })
+    .mockResolvedValueOnce({ flows: [listed], version: 1 })
+  const catalog = new FlowCatalog(client, vi.fn(), createI18n())
+  try {
+    await catalog.reload()
+    catalog.include(detail)
+    expect(catalog.$.flows.value[1]).not.toHaveProperty('referenceCount')
+    await catalog.loadMore()
+    expect(catalog.$.flows.value).toEqual([{ ...flow, referenceCount: 0 }, listed])
+    expect(list).toHaveBeenLastCalledWith({ cursor: 'next', limit: 50 })
+  } finally {
+    catalog.dispose()
+  }
 })

@@ -1507,5 +1507,17 @@
       "missingStart": "게시되었지만 Start 노드 없음",
       "other": "미게시 또는 사용 불가"
     }
+  },
+  "flowReferences": {
+    "count": "참조하는 플로우 {{count}}개 보기",
+    "title": "{{name}}을(를) 참조하는 플로우",
+    "draft": "초안",
+    "live": "게시됨",
+    "disabled": "비활성화됨",
+    "loading": "참조 불러오는 중…",
+    "failed": "참조를 불러오지 못했습니다.",
+    "retry": "다시 시도",
+    "empty": "이 워크플로를 참조하는 플로우가 없습니다.",
+    "loadMore": "더 불러오기"
   }
 }

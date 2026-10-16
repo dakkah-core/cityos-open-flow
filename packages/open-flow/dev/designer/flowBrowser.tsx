@@ -27,6 +27,9 @@ const sampleText = JSON.stringify({ ...sampleWorkflow, name: 'GitHub sample' })
 
 function FlowBrowserStory({ dark, language, log }: { dark: boolean; language: UiLanguage; log: LogAction }) {
   const importRef = useRef<OpenFlowWorkbenchHandle>(null)
+  const [referenceFailure, setReferenceFailure] = useState<'none' | 'initial' | 'next'>('none')
+  const referenceFailureRef = useRef(referenceFailure)
+  referenceFailureRef.current = referenceFailure
   const [teamState, setTeamState] = useState<'ready' | 'loading' | 'disabled'>('ready')
   const [failImport, setFailImport] = useState(false)
   const [single, setSingle] = useState(false)
@@ -37,6 +40,8 @@ function FlowBrowserStory({ dark, language, log }: { dark: boolean; language: Ui
   const [connected, setConnected] = useState(false)
   const [session, setSession] = useState<{ connect: () => void; i18n: ReturnType<typeof createI18n>; store: WorkbenchStore }>()
   useStoryActions([
+    { label: referenceFailure == 'initial' ? 'Initial failure armed' : 'Fail initial reference request', onClick: () => setReferenceFailure('initial') },
+    { label: referenceFailure == 'next' ? 'Next-page failure armed' : 'Fail next reference page', onClick: () => setReferenceFailure('next') },
     {
       label: 'Import external file',
       onClick: () =>
@@ -113,11 +118,39 @@ function FlowBrowserStory({ dark, language, log }: { dark: boolean; language: Ui
           log('flow.enabled', enabled)
           return Response.json(flows[index])
         }
+        if (url.endsWith('/references')) {
+          await Promise.resolve()
+          init?.signal?.throwIfAborted()
+          const offset = Number(new URL(String(path), 'https://lab.local').searchParams.get('offset') ?? 0)
+          if (referenceFailureRef.current == 'initial' || (referenceFailureRef.current == 'next' && offset > 0)) {
+            referenceFailureRef.current = 'none'
+            setReferenceFailure('none')
+            return Response.json({ message: 'Reference request failed' }, { status: 500 })
+          }
+          const references = Array.from({ length: 53 }, (_, position) => ({
+            flowId: `referencing-flow-${position}`,
+            name: position == 0 ? 'Workflow with a long name that wraps within the references popover' : `Referencing workflow ${position + 1}`,
+            available: true,
+            draft: position % 3 != 1,
+            live: position % 3 == 0 ? null : { publicationId: `publication-${position}`, enabled: position % 3 != 2 },
+          }))
+          return Response.json({
+            version: 1,
+            direction: 'incoming',
+            total: references.length,
+            references: references.slice(offset, offset + 50),
+            ...(offset + 50 < references.length ? { nextOffset: offset + 50 } : {}),
+          })
+        }
         if (url.endsWith('/export')) return Response.json(sampleWorkflow)
         if (url.endsWith('/error-listeners')) return Response.json({ version: 1, listeners: [] })
         if (String(path).split('?')[0] == '/v1/flows') {
           const catalog = reads++ == 0 ? flows : flows.map((item, position) => (position == 3 ? Object.assign({}, item, { name: 'Updated draft flow' }) : item))
-          return Response.json({ version: 1, flows: empty ? [] : catalog, total: empty ? 0 : catalog.length })
+          return Response.json({
+            version: 1,
+            flows: empty ? [] : catalog.map((item, position) => ({ ...item, referenceCount: position == 0 ? 53 : 0 })),
+            total: empty ? 0 : catalog.length,
+          })
         }
         return Response.json({ message: 'Unsupported story action' }, { status: 400 })
       },
@@ -168,7 +201,7 @@ function FlowBrowserStory({ dark, language, log }: { dark: boolean; language: Ui
           initializing={initializing}
           language={language}
           store={session.store}
-          hrefForFlow={(flow) => `#${flow.flowId}`}
+          hrefForFlow={(flow, view = 'design') => `#${flow.flowId}/${view}`}
           onCreateFlow={async () => false}
           onImportFlow={async (file, name, key) => {
             log('flow.import', { file, name, key })
@@ -186,7 +219,7 @@ export const flowBrowserStory: FrontendStory = {
   id: 'flow-browser',
   title: 'Flow list',
   description:
-    'Show single workflow reproduces a short name, a full-length ID, and a team in an embedded list. Compare column spacing at wide and compact widths; search and dialog inputs keep the same text size at both widths. Hover or focus a flow name to see its full text. Hover, focus, or click a Flow ID to inspect its full value and copy action; Escape closes the tooltip. Embedded layout leaves page width and spacing to the host. Show empty list to inspect the empty state. New Flow and Import workflow include a team field for checking modal controls. Import external file and Import invalid file exercise the production ref entry. The source link sits beneath the dialog title and uses the muted theme color. Fail import submission keeps the dialog open for retry; submitted keys are logged. Team cycles ready, loading and disabled submission states. Import accepts .openflow.json files and logs the submitted content; malformed files show an error. Row menus export a deterministic sample file that can be imported again. The list loads before notifications connect. Connect notifications to refresh the Draft row without clearing the list. Show startup to inspect the skeleton. Use the row menu to rename a flow, start/stop its publication, or open publication and run history (logged with the target flow and view). Check that renaming stays centered on the flow name with compact controls; invalid names show feedback below the controls, and Enter, Escape, and Cancel retain their usual behavior. Search for Published flow to verify the menu extends beyond a single-row table. Show teams to inspect the optional Team column. At compact widths, team names sit below flow names, unassigned teams are hidden, and status columns stay aligned across rows. Switch language and theme to inspect labels and menus.',
+    'Open the reference count to compare draft, published, disabled and long-name references, and load the second page. Fail initial reference request and Fail next reference page each fail once, allowing retry without losing loaded rows. Reference links log their target flow and view. Show single workflow reproduces a short name, a full-length ID, and a team in an embedded list. Compare column spacing at wide and compact widths; search and dialog inputs keep the same text size at both widths. Hover or focus a flow name to see its full text. Hover, focus, or click a Flow ID to inspect its full value and copy action; Escape closes the tooltip. Embedded layout leaves page width and spacing to the host. Show empty list to inspect the empty state. New Flow and Import workflow include a team field for checking modal controls. Import external file and Import invalid file exercise the production ref entry. The source link sits beneath the dialog title and uses the muted theme color. Fail import submission keeps the dialog open for retry; submitted keys are logged. Team cycles ready, loading and disabled submission states. Import accepts .openflow.json files and logs the submitted content; malformed files show an error. Row menus export a deterministic sample file that can be imported again. The list loads before notifications connect. Connect notifications to refresh the Draft row without clearing the list. Show startup to inspect the skeleton. Use the row menu to rename a flow, start/stop its publication, or open publication and run history (logged with the target flow and view). Check that renaming stays centered on the flow name with compact controls; invalid names show feedback below the controls, and Enter, Escape, and Cancel retain their usual behavior. Search for Published flow to verify the menu extends beyond a single-row table. Show teams to inspect the optional Team column. Compare publication and runtime columns with equal flexible space, and check that reference counts and menus fit the action column at each width. At compact widths, team names sit below flow names, unassigned teams are hidden, and status columns stay aligned across rows. Switch language and theme to inspect labels and menus.',
   standalone: true,
   render: (log, dark, language) => <FlowBrowserStory dark={dark} language={language} log={log} />,
 }

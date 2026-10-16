@@ -269,3 +269,53 @@ it('uses an existing Draft summary for matching Live and only reads Live when th
   expect(read.mock.calls.map(([id]) => id)).toEqual(['initial'])
   expect(store.resourceReferences.variableReferences('owner', 'TOKEN').references[0]).toMatchObject({ draft: false, live: { enabled: true } })
 })
+
+it('counts only requested workflow targets with indexed lookups, owner isolation and merged scopes', () => {
+  const { database, store } = setup()
+  const initial = body('TOKEN')
+  for (const [flowId, actorId] of [
+    ['other', 'owner'],
+    ['foreign', 'foreign-owner'],
+  ]) {
+    store.flows.createFlow({
+      ...initial,
+      actorId: actorId!,
+      createdAt: 2,
+      flowId: flowId!,
+      idempotencyKey: flowId!,
+      modelVersion: 6,
+      name: flowId!,
+      requestDigest: flowId!,
+      revisionId: `${flowId}-initial`,
+    })
+  }
+  const references = store.resourceReferences
+  references.replaceResources('owner', 'flow', 'draft', { variableNames: ['target'], calledFlowIds: ['target', 'target', 'off-page'] })
+  references.replaceResources('owner', 'flow', 'live', { variableNames: [], calledFlowIds: ['target'] })
+  references.replaceResources('owner', 'other', 'draft', { variableNames: [], calledFlowIds: ['target'] })
+  references.replaceResources('foreign-owner', 'foreign', 'draft', { variableNames: [], calledFlowIds: ['target'] })
+  const prepare = vi.spyOn(database.connection, 'prepare')
+  expect(references.incomingFlowCounts([]).size).toBe(0)
+  expect(prepare).not.toHaveBeenCalled()
+  expect(
+    references.incomingFlowCounts([
+      { ownerId: 'owner', flowId: 'target' },
+      { ownerId: 'owner', flowId: 'empty' },
+    ]),
+  ).toEqual(new Map([['target', 2]]))
+  expect(prepare).toHaveBeenCalledTimes(1)
+  const sql = prepare.mock.calls[0]![0]
+  const plan = database.connection.prepare(`EXPLAIN QUERY PLAN ${sql}`).all('owner', 'target', 'owner', 'empty') as { detail: string }[]
+  expect(
+    plan.some(({ detail }) =>
+      /SEARCH r USING COVERING INDEX flow_resource_reference_target \(owner_id=\? AND relation_kind=\? AND target_key=\?\)/.test(detail),
+    ),
+  ).toBe(true)
+  references.replaceResources('owner', 'flow', 'draft', null)
+  expect(references.incomingFlowCounts([{ ownerId: 'owner', flowId: 'target' }]).get('target')).toBe(2)
+  references.replaceResources('owner', 'flow', 'live', null)
+  expect(references.incomingFlowCounts([{ ownerId: 'owner', flowId: 'target' }]).get('target')).toBe(1)
+  store.flows.retire('other', 3)
+  expect(references.incomingFlowCounts([{ ownerId: 'owner', flowId: 'target' }]).size).toBe(0)
+  expect(references.incomingFlowCounts([{ ownerId: 'foreign-owner', flowId: 'target' }]).get('target')).toBe(1)
+})

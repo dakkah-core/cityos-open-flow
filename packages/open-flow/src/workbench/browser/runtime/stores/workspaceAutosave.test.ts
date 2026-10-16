@@ -55,7 +55,7 @@ async function setup(startParameters?: readonly Port[]) {
     return Response.json({ revision: metadata, version: 1 })
   })
   const request = async (path: string, init?: RequestInit) => {
-    if (path.startsWith('/v1/flows?')) return Response.json({ flows: [flow], total: 1, version: 1 })
+    if (path.startsWith('/v1/flows?')) return Response.json({ flows: [{ ...flow, referenceCount: 0 }], total: 1, version: 1 })
     if (path.endsWith('/editor'))
       return Response.json({
         flow,

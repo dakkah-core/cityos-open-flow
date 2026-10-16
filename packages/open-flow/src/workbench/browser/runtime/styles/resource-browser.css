@@ -91,13 +91,13 @@
 
   .resource-table {
     display: grid;
-    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr) max-content minmax(max-content, 0.7fr) 64px;
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr) repeat(2, minmax(max-content, 0.7fr)) minmax(64px, max-content);
     column-gap: 24px;
     min-width: 0;
   }
 
   .resource-table-with-teams {
-    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 1fr) max-content minmax(max-content, 0.7fr) 64px;
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 1fr) repeat(2, minmax(max-content, 0.7fr)) minmax(64px, max-content);
   }
 
   .resource-list {

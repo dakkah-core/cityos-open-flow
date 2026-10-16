@@ -1507,5 +1507,17 @@
       "missingStart": "Published without Start",
       "other": "Unpublished or unavailable"
     }
+  },
+  "flowReferences": {
+    "count": "View referencing flows ({{count}})",
+    "title": "Flows referencing {{name}}",
+    "draft": "Draft",
+    "live": "Published",
+    "disabled": "Disabled",
+    "loading": "Loading references…",
+    "failed": "Could not load references.",
+    "retry": "Retry",
+    "empty": "No flows reference this workflow.",
+    "loadMore": "Load more"
   }
 }

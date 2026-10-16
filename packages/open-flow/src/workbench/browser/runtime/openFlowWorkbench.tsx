@@ -180,7 +180,7 @@ function Workbench({
           createFlowDisabled={createFlowDisabled}
           createFlowField={createFlowField}
           flowBadges={flowBadges}
-          hrefForFlow={(flow) => hrefFor({ flowId: flow.flowId, view: 'design' })}
+          hrefForFlow={(flow, view = 'design') => hrefFor({ flowId: flow.flowId, view })}
           initializing={initializing}
           language={language}
           onCreateFlow={(name) => navigation.createFlow(name, createFlow)}

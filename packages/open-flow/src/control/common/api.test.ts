@@ -29,9 +29,11 @@ describe('ControlClient Flow API', () => {
     { draft: null, sharedAccess: { accessRevision: 2, providerIds: [], bindings: [{ providerId: 'mail', connectionId: null, accessBindingId: 'missing' }] } },
   ])('decodes resource references in Flow detail and list responses', async (resourceReferences) => {
     const expected = { ...flow, resourceReferences }
-    const client = new ControlClient(async (url) => Response.json(String(url).endsWith('/v1/flows') ? { flows: [expected], version: 1 } : expected))
+    const client = new ControlClient(async (url) =>
+      Response.json(String(url).endsWith('/v1/flows') ? { flows: [{ ...expected, referenceCount: 0 }], version: 1 } : expected),
+    )
     await expect(client.getFlow(flow.flowId)).resolves.toEqual(expected)
-    await expect(client.listFlows()).resolves.toEqual({ flows: [expected], version: 1 })
+    await expect(client.listFlows()).resolves.toEqual({ flows: [{ ...expected, referenceCount: 0 }], version: 1 })
   })
 
   it.each([
@@ -48,13 +50,13 @@ describe('ControlClient Flow API', () => {
   it('creates and lists top-level Flows', async () => {
     const request = vi.fn(async (path: string, init?: RequestInit) => {
       if (path == '/v1/flows' && init?.method == 'POST') return Response.json(flow, { status: 201 })
-      if (path == '/v1/flows?limit=50&includeTotal=true') return Response.json({ flows: [flow], total: 1, version: 1 })
+      if (path == '/v1/flows?limit=50&includeTotal=true') return Response.json({ flows: [{ ...flow, referenceCount: 0 }], total: 1, version: 1 })
       throw new Error(path)
     })
     const client = new ControlClient(request)
 
     await expect(client.createFlow('Main', 'flow-create')).resolves.toEqual(flow)
-    await expect(client.listFlows({ includeTotal: true, limit: 50 })).resolves.toEqual({ flows: [flow], total: 1, version: 1 })
+    await expect(client.listFlows({ includeTotal: true, limit: 50 })).resolves.toEqual({ flows: [{ ...flow, referenceCount: 0 }], total: 1, version: 1 })
     expect(JSON.parse(String(request.mock.calls[0]![1]?.body))).toEqual({ name: 'Main', version: 1 })
     expect(new Headers(request.mock.calls[0]![1]?.headers).get('idempotency-key')).toBe('flow-create')
   })
@@ -814,4 +816,14 @@ it('decodes Variable references and forwards cancellation', async () => {
 it('reports malformed workflow exports through the standard Control response error', async () => {
   const client = new ControlClient(async () => Response.json({ kind: 'open-flow-workflow', version: 99 }))
   await expect(client.exportFlow('flow')).rejects.toMatchObject({ code: 'response.invalid', status: 502 })
+})
+
+it.each([undefined, null, -1, 1.5, '2'])('rejects an invalid list-only reference count: %j', async (referenceCount) => {
+  const client = new ControlClient(async () => Response.json({ version: 1, flows: [{ ...flow, referenceCount }] }))
+  await expect(client.listFlows()).rejects.toMatchObject({ code: 'response.invalid' })
+})
+
+it('keeps reference counts out of Flow detail decoding', async () => {
+  const client = new ControlClient(async () => Response.json({ ...flow, referenceCount: 3 }))
+  await expect(client.getFlow(flow.flowId)).resolves.toEqual(flow)
 })

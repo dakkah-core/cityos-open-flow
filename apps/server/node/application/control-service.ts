@@ -11,6 +11,7 @@ import type {
   Draft,
   DraftChange,
   Flow,
+  FlowListItem,
   FlowCatalogEvent,
   FlowChangeEvent,
   FlowCheck,
@@ -59,6 +60,7 @@ import { Store } from '../storage/store.ts'
 import { actionAccountDiagnostics } from './action-account-diagnostics.ts'
 import {
   flow,
+  flowListItem,
   variable,
   variableListItem,
   revisionContent,
@@ -666,15 +668,16 @@ export class ControlService {
     ownerId?: string,
   ): {
     readonly next?: FlowPosition
-    readonly page: { readonly flows: readonly Flow[]; readonly total?: number; readonly version: 1 }
+    readonly page: { readonly flows: readonly FlowListItem[]; readonly total?: number; readonly version: 1 }
   } {
     const stored = this.store.flows.list(limit + 1, after, includeTotal, ownerId)
     const rows = stored.flows.slice(0, limit)
     const last = rows.at(-1)
+    const counts = this.store.resourceReferences.incomingFlowCounts(rows)
     return {
       ...(stored.flows.length > limit && last != null ? { next: { createdAt: last.createdAt, flowId: last.flowId } } : {}),
       page: {
-        flows: rows.map(flow),
+        flows: rows.map((row) => flowListItem(row, counts.get(row.flowId) ?? 0)),
         ...(stored.total == null ? {} : { total: stored.total }),
         version: 1,
       },

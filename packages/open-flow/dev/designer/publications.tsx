@@ -126,7 +126,7 @@ function createSession(language: UiLanguage, scenario: Scenario, log: LogAction)
   const client = new WorkbenchClient(async (path, init) => {
     const url = new URL(path instanceof Request ? path.url : String(path), 'https://lab.invalid')
     const route = url.pathname
-    if (route == '/v1/flows') return Response.json({ flows: [flow()], total: 1, version: 1 })
+    if (route == '/v1/flows') return Response.json({ flows: [{ ...flow(), referenceCount: 0 }], total: 1, version: 1 })
     if (route.endsWith('/editor'))
       return Response.json({
         flow: flow(),

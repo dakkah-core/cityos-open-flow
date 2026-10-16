@@ -1507,5 +1507,17 @@
       "missingStart": "公開済み・Start ノードなし",
       "other": "未公開または利用不可"
     }
+  },
+  "flowReferences": {
+    "count": "参照している {{count}} 件のフローを表示",
+    "title": "{{name}} を参照しているフロー",
+    "draft": "下書き",
+    "live": "公開済み",
+    "disabled": "無効",
+    "loading": "参照を読み込み中…",
+    "failed": "参照を読み込めませんでした。",
+    "retry": "再試行",
+    "empty": "このワークフローを参照しているフローはありません。",
+    "loadMore": "さらに読み込む"
   }
 }

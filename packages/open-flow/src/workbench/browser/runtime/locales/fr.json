@@ -1507,5 +1507,17 @@
       "missingStart": "Publiés sans nœud Start",
       "other": "Non publiés ou indisponibles"
     }
+  },
+  "flowReferences": {
+    "count": "Voir les {{count}} workflows qui font référence à ce workflow",
+    "title": "Workflows faisant référence à {{name}}",
+    "draft": "Brouillon",
+    "live": "Publié",
+    "disabled": "Désactivé",
+    "loading": "Chargement des références…",
+    "failed": "Impossible de charger les références.",
+    "retry": "Réessayer",
+    "empty": "Aucun workflow ne fait référence à ce workflow.",
+    "loadMore": "Charger plus"
   }
 }

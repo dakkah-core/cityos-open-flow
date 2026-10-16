@@ -12,6 +12,8 @@ import { errorNotice } from './workbenchNotice.ts'
 
 const pageLimit = 50
 
+export type FlowCatalogItem = Flow & { readonly referenceCount?: number }
+
 interface State {
   readonly failed: boolean
   readonly loaded: boolean
@@ -20,7 +22,7 @@ interface State {
   readonly loadMoreFailed: boolean
   readonly refreshing: boolean
   readonly nextCursor?: string
-  readonly flows: readonly Flow[]
+  readonly flows: readonly FlowCatalogItem[]
   readonly total?: number
 }
 
@@ -31,7 +33,7 @@ export interface FlowCatalog$ {
   readonly loadMoreFailed: ReadonlyVal<boolean>
   readonly refreshing: ReadonlyVal<boolean>
   readonly nextCursor: ReadonlyVal<string | undefined>
-  readonly flows: ReadonlyVal<readonly Flow[]>
+  readonly flows: ReadonlyVal<readonly FlowCatalogItem[]>
   readonly total: ReadonlyVal<number | undefined>
 }
 
@@ -131,11 +133,12 @@ export class FlowCatalog {
     try {
       const page = await this.#client.listFlows({ cursor: nextCursor, limit: pageLimit })
       if (!current()) return
-      const seen = new Set(this.#state.value.flows.map((flow) => flow.flowId))
+      const flows = new Map(this.#state.value.flows.map((flow) => [flow.flowId, flow]))
+      for (const flow of page.flows) flows.set(flow.flowId, flow)
       this.#set({
         loadingMore: false,
         nextCursor: page.nextCursor,
-        flows: [...this.#state.value.flows, ...page.flows.filter((flow) => !seen.has(flow.flowId))],
+        flows: [...flows.values()],
       })
     } catch (error) {
       if (!current()) return
@@ -197,7 +200,8 @@ export class FlowCatalog {
       this.#set({ flows: [...this.#state.value.flows, flow] })
       return
     }
-    this.#set({ flows: this.#state.value.flows.with(index, flow) })
+    const referenceCount = this.#state.value.flows[index]!.referenceCount
+    this.#set({ flows: this.#state.value.flows.with(index, { ...flow, ...(referenceCount == null ? {} : { referenceCount }) }) })
   }
 
   public insert(flow: Flow): void {

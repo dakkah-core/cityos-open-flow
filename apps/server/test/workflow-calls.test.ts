@@ -610,3 +610,20 @@ it('reads and compares publication interfaces without reading revision bodies, a
   })
   expect(store.publications.interfaceForRevision(child.flowId, second.revisionId)).toEqual({ inputs: first.inputs, outputs: first.outputs })
 })
+
+it('refreshes list counts through real draft, publication, disabled-live and retirement changes', async () => {
+  const service = await openService(':memory:', { clock: Date.now })
+  const child = await target(service)
+  const parent = await caller(service, child.flowId)
+  const count = () => service.control.listFlows(50, undefined, false, 'operator').page.flows.find((flow) => flow.flowId == child.flowId)!.referenceCount
+  expect(count()).toBe(1)
+  const published = await service.control.publishFlow('operator', parent.flowId, parent.revisionId, engine, null, 'publish-parent')
+  await expect.poll(() => service.control.getPublishOperation(parent.flowId, published.operationId).status).toBe('succeeded')
+  const live = service.control.getFlow(parent.flowId).live!
+  service.control.setFlowEnabled(parent.flowId, live.publicationId, false)
+  expect(count()).toBe(1)
+  const store = (service.control as unknown as { store: Store }).store
+  store.flows.retire(parent.flowId, Date.now())
+  expect(count()).toBe(0)
+  expect(service.control.getFlowReferences('operator', child.flowId, 'incoming', 0, 50).total).toBe(0)
+})

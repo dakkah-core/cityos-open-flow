@@ -1,4 +1,14 @@
-import type { Draft, Flow, Presentation, Publication, TriggerActivity, TriggerBinding, Variable, VariableListItem } from '@oomol-lab/open-flow/control-api'
+import type {
+  Draft,
+  Flow,
+  FlowListItem,
+  Presentation,
+  Publication,
+  TriggerActivity,
+  TriggerBinding,
+  Variable,
+  VariableListItem,
+} from '@oomol-lab/open-flow/control-api'
 import type { RevisionContent } from '@oomol-lab/open-flow/flow-change'
 import type { StoredChangeRevision, StoredFlow, StoredFlowRevision, StoredPresentation } from '../storage/flow-store.ts'
 import type { StoredPublication } from '../storage/publication-store.ts'
@@ -46,6 +56,10 @@ export function flow(stored: StoredFlow): Flow {
     updatedAt: timestamp(stored.updatedAt),
     version: 1,
   }
+}
+
+export function flowListItem(stored: StoredFlow, referenceCount: number): FlowListItem {
+  return { ...flow(stored), referenceCount }
 }
 
 export function variable(stored: { readonly name: string; readonly updatedAt: number; readonly value: string }): Variable {

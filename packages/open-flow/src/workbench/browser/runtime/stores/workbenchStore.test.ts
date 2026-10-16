@@ -456,20 +456,20 @@ describe('Flow creation notifications', () => {
         await connection.promise
         expect(list).toHaveBeenCalledOnce()
       }
-      initial.resolve({ flows: [flow], version: 1 })
+      initial.resolve({ flows: [{ ...flow, referenceCount: 0 }], version: 1 })
       await started
 
       expect(navigation.$.ready.value).toBe(true)
-      expect(store.workspace.$.flows.value).toEqual([flow])
+      expect(store.workspace.$.flows.value).toEqual([{ ...flow, referenceCount: 0 }])
       expect(store.workspace.$.flowLoading.value).toBe(false)
       if (timing == 'after') connection.resolve()
       await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2))
       expect(store.workspace.$.flowRefreshing.value).toBe(true)
-      expect(store.workspace.$.flows.value).toEqual([flow])
+      expect(store.workspace.$.flows.value).toEqual([{ ...flow, referenceCount: 0 }])
 
       const updated = { ...flow, name: 'Updated before connection' }
-      refreshed.resolve({ flows: [updated], version: 1 })
-      await vi.waitFor(() => expect(store.workspace.$.flows.value).toEqual([updated]))
+      refreshed.resolve({ flows: [{ ...updated, referenceCount: 0 }], version: 1 })
+      await vi.waitFor(() => expect(store.workspace.$.flows.value).toEqual([{ ...updated, referenceCount: 0 }]))
       expect(navigate).not.toHaveBeenCalled()
       expect(store.workspace.$.flowId.value).toBeUndefined()
     } finally {
@@ -497,13 +497,13 @@ describe('Flow creation notifications', () => {
       status: 'active',
       version: 1,
     } as const
-    list.mockResolvedValueOnce({ flows: [flow], version: 1 }).mockRejectedValueOnce(new Error('Catch-up failed'))
+    list.mockResolvedValueOnce({ flows: [{ ...flow, referenceCount: 0 }], version: 1 }).mockRejectedValueOnce(new Error('Catch-up failed'))
     try {
       await navigation.start()
       connection.resolve()
       await vi.waitFor(() => expect(store.$.notice.value?.message).toContain('Catch-up failed'))
       expect(navigation.$.ready.value).toBe(true)
-      expect(store.workspace.$.flows.value).toEqual([flow])
+      expect(store.workspace.$.flows.value).toEqual([{ ...flow, referenceCount: 0 }])
       expect(store.workspace.$.flowLoading.value).toBe(false)
       expect(store.workspace.$.flowRefreshing.value).toBe(false)
       expect(store.workspace.$.flowLoadFailed.value).toBe(false)

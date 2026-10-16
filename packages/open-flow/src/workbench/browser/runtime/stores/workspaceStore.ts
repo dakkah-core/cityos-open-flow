@@ -474,6 +474,10 @@ export class WorkspaceStore {
     }
   }
 
+  public getFlowReferences(flowId: string, options: { offset?: number; signal?: AbortSignal } = {}) {
+    return this.#client.getFlowReferences(flowId, { ...options, direction: 'incoming', limit: 50 })
+  }
+
   public getErrorListeners(flowId: string, signal?: AbortSignal) {
     return this.#client.getErrorListeners(flowId, signal)
   }

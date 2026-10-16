@@ -12,11 +12,11 @@
 
   @container open-flow-workbench (width <= 720px) {
     .resource-table {
-      grid-template-columns: minmax(0, 1fr) max-content minmax(max-content, 0.7fr) 64px;
+      grid-template-columns: minmax(0, 1fr) repeat(2, minmax(max-content, 0.7fr)) minmax(64px, max-content);
     }
 
     .resource-table-with-teams {
-      grid-template-columns: minmax(0, 1fr) minmax(0, 0.6fr) max-content minmax(max-content, 0.7fr) 64px;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 0.6fr) repeat(2, minmax(max-content, 0.7fr)) minmax(64px, max-content);
     }
 
     .flow-columns,
@@ -133,13 +133,13 @@
 
     .resource-table,
     .resource-table-with-teams {
-      grid-template-columns: max-content minmax(0, 1fr) max-content max-content auto;
-      column-gap: 8px;
+      grid-template-columns: max-content minmax(0, 1fr) max-content max-content minmax(64px, max-content);
+      column-gap: 16px;
     }
 
     .resource-item-row > .resource-list-row {
       align-content: center;
-      gap: 2px 8px;
+      gap: 2px 16px;
     }
 
     .resource-primary-cell {

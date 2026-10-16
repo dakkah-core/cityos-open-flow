@@ -111,7 +111,9 @@ it('returns current delta-backed resources in one list/detail query without read
     errorSourceFlowIds: ['source'],
   }
   expect(flowView(stored).resourceReferences.draft).toEqual(expected)
-  const client = new ControlClient(async () => Response.json({ flows: page.flows.map(flowView), version: 1 }))
+  const client = new ControlClient(async () =>
+    Response.json({ flows: page.flows.map((item) => Object.assign(flowView(item), { referenceCount: 0 })), version: 1 }),
+  )
   expect((await client.listFlows()).flows.find((flow) => flow.flowId == 'flow')!.resourceReferences.draft).toEqual(expected)
   query.mockRestore()
   read.mockRestore()

@@ -1507,5 +1507,17 @@
       "missingStart": "已发布但没有开始节点",
       "other": "未发布或不可用"
     }
+  },
+  "flowReferences": {
+    "count": "查看引用的 {{count}} 个工作流",
+    "title": "引用 {{name}} 的工作流",
+    "draft": "草稿",
+    "live": "已发布",
+    "disabled": "已停用",
+    "loading": "正在查询引用…",
+    "failed": "无法查询引用。",
+    "retry": "重试",
+    "empty": "暂无工作流引用此工作流。",
+    "loadMore": "加载更多"
   }
 }

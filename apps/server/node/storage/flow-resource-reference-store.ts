@@ -12,6 +12,25 @@ export class FlowResourceReferenceStore {
     this.#database = database
   }
 
+  incomingFlowCounts(targets: readonly { readonly ownerId: string; readonly flowId: string }[]): ReadonlyMap<string, number> {
+    if (targets.length == 0) return new Map()
+    // The caller passes only the returned page, after removing the lookahead row.
+    // Drive indexed reverse lookups from those targets rather than aggregating all edges.
+    const rows = this.#database
+      .prepare(`
+      WITH targets(owner_id, flow_id) AS (VALUES ${targets.map(() => '(?, ?)').join(', ')})
+      SELECT targets.flow_id AS flowId, COUNT(DISTINCT r.source_flow_id) AS referenceCount
+      FROM targets
+      CROSS JOIN flow_resource_references r
+        ON r.owner_id = targets.owner_id AND r.relation_kind = 'flow' AND r.target_key = targets.flow_id
+      JOIN flows source ON source.flow_id = r.source_flow_id AND source.owner_id = r.owner_id
+      WHERE source.status = 'active'
+      GROUP BY targets.flow_id
+    `)
+      .all(...targets.flatMap(({ ownerId, flowId }) => [ownerId, flowId])) as unknown as { flowId: string; referenceCount: number }[]
+    return new Map(rows.map(({ flowId, referenceCount }) => [flowId, referenceCount]))
+  }
+
   variableReferences(ownerId: string, name: string): VariableReferences {
     const rows = this.#database
       .prepare(`

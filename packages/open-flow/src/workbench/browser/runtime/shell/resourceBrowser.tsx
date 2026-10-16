@@ -3,6 +3,7 @@ import type { WorkflowFile } from '../../../../flow/common/workflowFile.ts'
 import type { ErrorListener, Flow } from '../api.ts'
 import type { OpenFlowWorkbenchHandle, WorkbenchImportInput, WorkbenchLanguage, WorkbenchView } from '../contract.ts'
 import type { OpenFlowWorkbenchProps } from '../openFlowWorkbench.tsx'
+import type { FlowCatalogItem } from '../stores/flowCatalog.ts'
 import type { WorkbenchStore } from '../stores/workbenchStore.ts'
 import type { WorkspaceBusy } from '../stores/workspaceModel.ts'
 
@@ -28,6 +29,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../../../../ui/browser/
 import { cn } from '../../../../ui/browser/utils.ts'
 import { Icon } from '../icons.tsx'
 import { followWorkbenchLink } from '../navigationLink.ts'
+import { FlowReferencesButton } from './flowReferences.tsx'
 import { IdTooltip } from './idTooltip.tsx'
 import { WorkflowExportMenuItem } from './workflowExportMenuItem.tsx'
 
@@ -45,9 +47,10 @@ interface FlowItemProps {
   readonly showTeam: boolean
   readonly badge?: string | undefined
   readonly busy: WorkspaceBusy | undefined
-  readonly flow: Flow
+  readonly flow: FlowCatalogItem
   readonly href: string
-  readonly onSelect: (flow: Flow, view?: WorkbenchView) => void
+  readonly hrefForFlow: FlowBrowserProps['hrefForFlow']
+  readonly onSelect: (flow: Pick<Flow, 'flowId'>, view?: WorkbenchView) => void
   readonly store: WorkbenchStore
 }
 
@@ -111,7 +114,7 @@ export function FlowDeletionImpact({
   )
 }
 
-function FlowItem({ showTeam, badge, busy, flow, href, onSelect, store }: FlowItemProps): ReactElement {
+function FlowItem({ showTeam, badge, busy, flow, href, hrefForFlow, onSelect, store }: FlowItemProps): ReactElement {
   const [root, setRoot] = useState<HTMLDivElement | null>(null)
   const renameAnchor = useRef<HTMLSpanElement>(null)
   const actionsButton = useRef<HTMLButtonElement>(null)
@@ -298,6 +301,7 @@ function FlowItem({ showTeam, badge, busy, flow, href, onSelect, store }: FlowIt
         </span>
       </div>
       <div className="resource-live-controls" aria-busy={pending != null}>
+        <FlowReferencesButton flow={flow} workspace={store.workspace} container={root} hrefForFlow={hrefForFlow} onSelectFlow={onSelect} />
         <DropdownMenu>
           <Tooltip>
             <TooltipTrigger
@@ -416,11 +420,11 @@ interface FlowBrowserProps extends LanguageSelectProps {
   readonly createFlowDisabled?: boolean | undefined
   readonly createFlowField?: ComponentProps<typeof CreateResourceDialog>['field']
   readonly flowBadges?: Readonly<Record<string, string>> | undefined
-  readonly hrefForFlow: (flow: Flow) => string
+  readonly hrefForFlow: (flow: Pick<Flow, 'flowId'>, view?: WorkbenchView) => string
   readonly initializing?: boolean
   readonly onImportFlow?: (file: WorkflowFile, name: string, key: string) => Promise<boolean>
   readonly onCreateFlow: (name: string) => Promise<boolean>
-  readonly onSelectFlow: (flow: Flow, view?: WorkbenchView) => void
+  readonly onSelectFlow: (flow: Pick<Flow, 'flowId'>, view?: WorkbenchView) => void
   readonly store: WorkbenchStore
 }
 
@@ -623,6 +627,7 @@ export const FlowBrowser = forwardRef<OpenFlowWorkbenchHandle, FlowBrowserProps>
                       busy={busy}
                       flow={flow}
                       href={hrefForFlow(flow)}
+                      hrefForFlow={hrefForFlow}
                       key={flow.flowId}
                       onSelect={onSelectFlow}
                       store={store}

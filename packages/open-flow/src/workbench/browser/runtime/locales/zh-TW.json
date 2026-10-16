@@ -1507,5 +1507,17 @@
       "missingStart": "已發布但沒有開始節點",
       "other": "未發佈或無法使用"
     }
+  },
+  "flowReferences": {
+    "count": "查看引用的 {{count}} 個工作流程",
+    "title": "引用 {{name}} 的工作流程",
+    "draft": "草稿",
+    "live": "已發佈",
+    "disabled": "已停用",
+    "loading": "正在查詢引用…",
+    "failed": "無法查詢引用。",
+    "retry": "重試",
+    "empty": "尚無工作流程引用此工作流程。",
+    "loadMore": "載入更多"
   }
 }

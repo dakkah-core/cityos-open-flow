@@ -175,6 +175,14 @@ interface FlowPage {
 
 Deployments generate `flowId`. Deletion moves a Flow to `retiring`. Draft mutation, Run, Publish, Rollback, and Trigger admission then fail closed. `total` is required only with `includeTotal=true`.
 
+`FlowListItem` extends `Flow` with required nonnegative integer `referenceCount`. Only
+Flow list responses use this type. The count is the number of distinct active source
+Flows calling the target in their current Draft or Live, including disabled Live,
+within the same owner. It excludes Error Trigger subscriptions and historical versions.
+The Server selects the cursor page and removes its lookahead row before one indexed,
+batched count query for the returned targets. Empty pages skip that query. Flow detail
+and mutation responses remain `Flow` and do not compute counts.
+
 `resourceReferences.draft` corresponds to `draftRevisionId`. It contains deduplicated, stably ordered Variable names, explicitly selected connection accounts, and Error Trigger source Flow IDs actually referenced by the Draft. These are static references across the whole Draft, not proof that a Run used every resource. An undecodable Draft or one requiring repair/upgrade returns `null`; a readable Draft without references returns three empty arrays. `sharedAccess` comes from independently maintained Flow shared account authorization, versioned by `accessRevision`.
 
 Unconfigured access uses revision 0 and empty arrays. Shared access describes availability, not node usage. Unresolvable account references retain `accessBindingId` with `connectionId: null`. Account scope follows the Flow’s `connectorTeamId`. These fields contain no Variable values, credentials, live account status, or published resource snapshots. Lists and details return the same reference projection.
