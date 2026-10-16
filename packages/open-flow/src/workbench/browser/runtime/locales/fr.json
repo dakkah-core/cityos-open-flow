@@ -214,7 +214,7 @@
     "enabledHint": "Contrôle les nouvelles exécutions en production. Les tests du brouillon restent disponibles.",
     "publish": "Publier",
     "publishUpdate": "Mettre à jour",
-    "deleteDescription": "Le flux et son historique seront supprimés et les déclencheurs arrêtés. Cette action est irréversible.",
+    "deleteDescription": "Le workflow et son historique seront définitivement supprimés, et ses déclencheurs actifs arrêtés.",
     "importFlow": "Importer un workflow",
     "exportFlow": "Exporter le workflow",
     "importInvalid": "Fichier de workflow invalide ou non pris en charge."
@@ -760,7 +760,7 @@
     "search": "Rechercher",
     "searchResources": "Rechercher des {{kind}}",
     "listenersLoading": "Recherche des déclencheurs d’erreur…",
-    "listenersFailed": "Impossible de vérifier les déclencheurs. Réessayez ou poursuivez la suppression.",
+    "listenersFailed": "Impossible de déterminer quels nœuds d’erreur de workflow sont à l’écoute. Veuillez réessayer.",
     "listenersTitle": "Ces configurations publiées de déclencheurs d’erreur surveillent ce workflow :",
     "listenerDisabled": "Désactivé",
     "listenersImpact": "La suppression arrête la transmission des erreurs de ce workflow. Les autres workflows en amont ne sont pas affectés. Retirez manuellement les références indisponibles des configurations."
@@ -1518,6 +1518,9 @@
     "failed": "Impossible de charger les références.",
     "retry": "Réessayer",
     "empty": "Aucun workflow ne fait référence à ce workflow.",
-    "loadMore": "Charger plus"
+    "loadMore": "Charger plus",
+    "deleteImpact": "Les appels de {{count}} workflows échoueront",
+    "deleteAnyway": "Supprimer quand même",
+    "deleteListeners": "Écouteurs qui ne recevront plus d’erreurs : {{count}}"
   }
 }

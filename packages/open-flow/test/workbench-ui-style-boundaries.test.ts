@@ -1,8 +1,11 @@
+import { parse } from '@babel/parser'
+import traverseModule from '@babel/traverse'
 import assert from 'node:assert/strict'
 import { glob, readFile } from 'node:fs/promises'
 import { test } from 'vitest'
 
 const packageRoot = new URL('..', import.meta.url)
+const traverse = ((traverseModule as unknown as { readonly default?: typeof traverseModule }).default ?? traverseModule) as typeof traverseModule
 
 const surfaceUiTokens = [
   '--ui-accent',
@@ -147,9 +150,21 @@ test('keeps Button icon sizing on the shared size variants', async () => {
   const paths: URL[] = []
   for await (const path of glob('src/workbench/browser/runtime/**/*.tsx', { cwd: packageRoot })) paths.push(new URL(path, packageRoot))
   const sources = await Promise.all(paths.map((path) => readFile(path, 'utf8')))
-  const buttonBodies = sources.flatMap((source) => [...source.matchAll(/<Button\b[\s\S]*?<\/Button>/g)].map((match) => match[0]))
-
-  for (const body of buttonBodies) assert.doesNotMatch(body, /<Icon\b[^>]*\bsize=\{/)
+  for (const source of sources) {
+    traverse(parse(source, { plugins: ['jsx', 'typescript'], sourceType: 'module' }), {
+      JSXOpeningElement(element) {
+        if (element.node.name.type != 'JSXIdentifier' || element.node.name.name != 'Icon') return
+        const hasSize = element.node.attributes.some(
+          (attribute) => attribute.type == 'JSXAttribute' && attribute.name.type == 'JSXIdentifier' && attribute.name.name == 'size',
+        )
+        if (!hasSize) return
+        const button = element.findParent(
+          (parent) => parent.isJSXElement() && parent.node.openingElement.name.type == 'JSXIdentifier' && parent.node.openingElement.name.name == 'Button',
+        )
+        assert.equal(button, null, 'Button icons must use the shared size variant.')
+      },
+    })
+  }
 })
 
 test('keeps URL-changing Workbench navigation on real links', async () => {

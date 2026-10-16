@@ -214,7 +214,7 @@
     "enabledHint": "控制新的線上執行，草稿測試仍可使用。",
     "publish": "發佈",
     "publishUpdate": "更新",
-    "deleteDescription": "此操作將刪除工作流程及其執行記錄，並停止線上觸發，無法復原。",
+    "deleteDescription": "工作流程及執行記錄將永久刪除，並停止線上觸發。",
     "importFlow": "匯入工作流",
     "exportFlow": "匯出工作流",
     "importInvalid": "檔案損壞或工作流格式不受支援。"
@@ -760,7 +760,7 @@
     "search": "搜尋",
     "searchResources": "搜尋 {{kind}}",
     "listenersLoading": "正在查詢錯誤觸發器…",
-    "listenersFailed": "無法確認哪些錯誤觸發器正在監聽。可重試，或繼續刪除。",
+    "listenersFailed": "無法確認哪些工作流程錯誤節點正在監聽。請重試。",
     "listenersTitle": "以下已發佈的錯誤觸發器設定正在監聽此工作流程：",
     "listenerDisabled": "已停用",
     "listenersImpact": "刪除後將停止接收此工作流程的錯誤，其他上游的監聽不受影響。設定中的失效引用需手動移除。"
@@ -1518,6 +1518,9 @@
     "failed": "無法查詢引用。",
     "retry": "重試",
     "empty": "尚無工作流程引用此工作流程。",
-    "loadMore": "載入更多"
+    "loadMore": "載入更多",
+    "deleteImpact": "{{count}} 個工作流程中的呼叫將失效",
+    "deleteAnyway": "仍然刪除",
+    "deleteListeners": "{{count}} 個錯誤監聽將停止接收"
   }
 }

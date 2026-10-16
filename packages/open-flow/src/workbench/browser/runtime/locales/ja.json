@@ -214,7 +214,7 @@
     "enabledHint": "新しい本番実行を制御します。下書きのテストは引き続き利用できます。",
     "publish": "公開",
     "publishUpdate": "更新",
-    "deleteDescription": "フローと実行履歴を削除し、本番のトリガーを停止します。この操作は取り消せません。",
+    "deleteDescription": "ワークフローと実行履歴を完全に削除し、公開中のトリガーを停止します。",
     "importFlow": "ワークフローをインポート",
     "exportFlow": "ワークフローをエクスポート",
     "importInvalid": "無効または未対応のワークフローファイルです。"
@@ -760,7 +760,7 @@
     "search": "検索",
     "searchResources": "{{kind}} を検索",
     "listenersLoading": "エラートリガーを確認中…",
-    "listenersFailed": "エラートリガーを確認できませんでした。再試行するか、削除を続行できます。",
+    "listenersFailed": "監視しているフローエラーノードを確認できませんでした。再試行してください。",
     "listenersTitle": "次の公開済みエラートリガー設定がこのワークフローを監視しています：",
     "listenerDisabled": "無効",
     "listenersImpact": "削除すると、このワークフローのエラーは届かなくなります。他の上流の監視には影響しません。無効な参照は設定から手動で削除してください。"
@@ -1518,6 +1518,9 @@
     "failed": "参照を読み込めませんでした。",
     "retry": "再試行",
     "empty": "このワークフローを参照しているフローはありません。",
-    "loadMore": "さらに読み込む"
+    "loadMore": "さらに読み込む",
+    "deleteImpact": "{{count}} 件のワークフローの呼び出しが無効になります",
+    "deleteAnyway": "削除する",
+    "deleteListeners": "エラーの受信が停止するリスナー：{{count}} 件"
   }
 }

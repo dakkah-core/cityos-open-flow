@@ -214,7 +214,7 @@
     "enabledHint": "控制新的线上运行，草稿测试仍可使用。",
     "publish": "发布",
     "publishUpdate": "更新",
-    "deleteDescription": "此操作将删除工作流及其运行记录，并停止线上触发，无法撤销。",
+    "deleteDescription": "工作流及运行记录将永久删除，并停止线上触发。",
     "importFlow": "导入工作流",
     "exportFlow": "导出工作流",
     "importInvalid": "文件损坏或工作流格式不受支持。"
@@ -760,7 +760,7 @@
     "search": "搜索",
     "searchResources": "搜索{{kind}}",
     "listenersLoading": "正在查询工作流错误节点…",
-    "listenersFailed": "无法确认哪些工作流错误节点正在监听。可重试，或继续删除。",
+    "listenersFailed": "无法确认哪些工作流错误节点正在监听。请重试。",
     "listenersTitle": "以下已发布的工作流错误节点配置正在监听此工作流：",
     "listenerDisabled": "已停用",
     "listenersImpact": "删除后将停止接收此工作流的错误，其他上游的监听不受影响。配置中的失效引用需手动移除。"
@@ -1518,6 +1518,9 @@
     "failed": "无法查询引用。",
     "retry": "重试",
     "empty": "暂无工作流引用此工作流。",
-    "loadMore": "加载更多"
+    "loadMore": "加载更多",
+    "deleteImpact": "{{count}} 个工作流中的调用将失效",
+    "deleteAnyway": "仍然删除",
+    "deleteListeners": "{{count}} 个错误监听将停止接收"
   }
 }

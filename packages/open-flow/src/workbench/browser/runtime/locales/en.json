@@ -214,7 +214,7 @@
     "enabledHint": "Controls new live runs. Draft tests remain available.",
     "publish": "Publish",
     "publishUpdate": "Update",
-    "deleteDescription": "This deletes the flow and its run history and stops live triggers. This cannot be undone.",
+    "deleteDescription": "Permanently delete this workflow and its run history, and stop its live triggers.",
     "importFlow": "Import workflow",
     "exportFlow": "Export workflow",
     "importInvalid": "Invalid or unsupported workflow file."
@@ -760,7 +760,7 @@
     "search": "Search",
     "searchResources": "Search {{kind}}",
     "listenersLoading": "Checking error listeners…",
-    "listenersFailed": "Could not check error listeners. Retry or continue deleting.",
+    "listenersFailed": "Could not determine which Flow Error nodes are listening. Please retry.",
     "listenersTitle": "These published Flow Error configurations listen to this workflow:",
     "listenerDisabled": "Disabled",
     "listenersImpact": "Deleting stops errors from this workflow reaching these triggers. Other upstream workflows are unaffected. Unavailable references must be removed from their configurations manually."
@@ -1518,6 +1518,9 @@
     "failed": "Could not load references.",
     "retry": "Retry",
     "empty": "No flows reference this workflow.",
-    "loadMore": "Load more"
+    "loadMore": "Load more",
+    "deleteImpact": "Calls in {{count}} workflows will break",
+    "deleteAnyway": "Delete anyway",
+    "deleteListeners": "Error listeners that will stop receiving: {{count}}"
   }
 }

@@ -100,12 +100,18 @@ function FlowBrowserStory({ dark, language, log }: { dark: boolean; language: Ui
             })
       },
     )
+    const referencedFlowId = flows[0]?.flowId
     let reads = 0
     const client = new WorkbenchClient(
       async (path, init) => {
         const url = String(path).split('?')[0]!
         const index = flows.findIndex((flow) => url == `/v1/flows/${flow.flowId}` || url == `/v1/flows/${flow.flowId}/enabled`)
         const flow = flows[index]
+        if (flow != null && init?.method == 'DELETE') {
+          flows.splice(index, 1)
+          log('flow.delete', flow.flowId)
+          return Response.json({ ...flow, status: 'retiring' }, { status: 202 })
+        }
         if (flow != null && init?.method == 'PATCH') {
           const { name } = JSON.parse(String(init.body)) as { name: string }
           flows[index] = { ...flow, name }
@@ -127,7 +133,7 @@ function FlowBrowserStory({ dark, language, log }: { dark: boolean; language: Ui
             setReferenceFailure('none')
             return Response.json({ message: 'Reference request failed' }, { status: 500 })
           }
-          const references = Array.from({ length: 53 }, (_, position) => ({
+          const references = Array.from({ length: url == `/v1/flows/${referencedFlowId}/references` ? 53 : 0 }, (_, position) => ({
             flowId: `referencing-flow-${position}`,
             name: position == 0 ? 'Workflow with a long name that wraps within the references popover' : `Referencing workflow ${position + 1}`,
             available: true,
@@ -143,12 +149,19 @@ function FlowBrowserStory({ dark, language, log }: { dark: boolean; language: Ui
           })
         }
         if (url.endsWith('/export')) return Response.json(sampleWorkflow)
-        if (url.endsWith('/error-listeners')) return Response.json({ version: 1, listeners: [] })
+        if (url.endsWith('/error-listeners'))
+          return Response.json({
+            version: 1,
+            listeners:
+              url == `/v1/flows/${referencedFlowId}/error-listeners`
+                ? [{ flowId: 'error-handler', flowName: 'Error notifications', nodeId: 'error', nodeName: 'Workflow failure', enabled: false }]
+                : [],
+          })
         if (String(path).split('?')[0] == '/v1/flows') {
           const catalog = reads++ == 0 ? flows : flows.map((item, position) => (position == 3 ? Object.assign({}, item, { name: 'Updated draft flow' }) : item))
           return Response.json({
             version: 1,
-            flows: empty ? [] : catalog.map((item, position) => ({ ...item, referenceCount: position == 0 ? 53 : 0 })),
+            flows: empty ? [] : catalog.map((item) => ({ ...item, referenceCount: item.flowId == referencedFlowId ? 53 : 0 })),
             total: empty ? 0 : catalog.length,
           })
         }
@@ -219,7 +232,7 @@ export const flowBrowserStory: FrontendStory = {
   id: 'flow-browser',
   title: 'Flow list',
   description:
-    'Open the reference count to compare draft, published, disabled and long-name references, and load the second page. Fail initial reference request and Fail next reference page each fail once, allowing retry without losing loaded rows. Reference links log their target flow and view. Show single workflow reproduces a short name, a full-length ID, and a team in an embedded list. Compare column spacing at wide and compact widths; search and dialog inputs keep the same text size at both widths. Hover or focus a flow name to see its full text. Hover, focus, or click a Flow ID to inspect its full value and copy action; Escape closes the tooltip. Embedded layout leaves page width and spacing to the host. Show empty list to inspect the empty state. New Flow and Import workflow include a team field for checking modal controls. Import external file and Import invalid file exercise the production ref entry. The source link sits beneath the dialog title and uses the muted theme color. Fail import submission keeps the dialog open for retry; submitted keys are logged. Team cycles ready, loading and disabled submission states. Import accepts .openflow.json files and logs the submitted content; malformed files show an error. Row menus export a deterministic sample file that can be imported again. The list loads before notifications connect. Connect notifications to refresh the Draft row without clearing the list. Show startup to inspect the skeleton. Use the row menu to rename a flow, start/stop its publication, or open publication and run history (logged with the target flow and view). Check that renaming stays centered on the flow name with compact controls; invalid names show feedback below the controls, and Enter, Escape, and Cancel retain their usual behavior. Search for Published flow to verify the menu extends beyond a single-row table. Show teams to inspect the optional Team column. Compare publication and runtime columns with equal flexible space, and check that reference counts and menus fit the action column at each width. At compact widths, team names sit below flow names, unassigned teams are hidden, and status columns stay aligned across rows. Switch language and theme to inspect labels and menus.',
+    'Open the reference count to compare draft, published, disabled and long-name references, and load the second page. Fail initial reference request and Fail next reference page each fail once, allowing retry without losing loaded rows. Reference links log their target flow and view. Delete the first row to inspect compact impact summaries; expand each summary for calling workflows or error listeners. The other rows have no references. Reference lookup failures block deletion until retry succeeds. Deleting removes only the sample workflow. Show single workflow reproduces a short name, a full-length ID, and a team in an embedded list. Compare column spacing at wide and compact widths; search and dialog inputs keep the same text size at both widths. Hover or focus a flow name to see its full text. Hover, focus, or click a Flow ID to inspect its full value and copy action; Escape closes the tooltip. Embedded layout leaves page width and spacing to the host. Show empty list to inspect the empty state. New Flow and Import workflow include a team field for checking modal controls. Import external file and Import invalid file exercise the production ref entry. The source link sits beneath the dialog title and uses the muted theme color. Fail import submission keeps the dialog open for retry; submitted keys are logged. Team cycles ready, loading and disabled submission states. Import accepts .openflow.json files and logs the submitted content; malformed files show an error. Row menus export a deterministic sample file that can be imported again. The list loads before notifications connect. Connect notifications to refresh the Draft row without clearing the list. Show startup to inspect the skeleton. Use the row menu to rename a flow, start/stop its publication, or open publication and run history (logged with the target flow and view). Check that renaming stays centered on the flow name with compact controls; invalid names show feedback below the controls, and Enter, Escape, and Cancel retain their usual behavior. Search for Published flow to verify the menu extends beyond a single-row table. Show teams to inspect the optional Team column. Compare publication and runtime columns with equal flexible space, and check that reference counts and menus fit the action column at each width. At compact widths, team names sit below flow names, unassigned teams are hidden, and status columns stay aligned across rows. Switch language and theme to inspect labels and menus.',
   standalone: true,
   render: (log, dark, language) => <FlowBrowserStory dark={dark} language={language} log={log} />,
 }

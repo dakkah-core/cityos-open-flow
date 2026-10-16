@@ -1,13 +1,13 @@
 import type { ComponentProps, FormEvent, ReactElement } from 'react'
 import type { WorkflowFile } from '../../../../flow/common/workflowFile.ts'
-import type { ErrorListener, Flow } from '../api.ts'
+import type { Flow } from '../api.ts'
 import type { OpenFlowWorkbenchHandle, WorkbenchImportInput, WorkbenchLanguage, WorkbenchView } from '../contract.ts'
 import type { OpenFlowWorkbenchProps } from '../openFlowWorkbench.tsx'
 import type { FlowCatalogItem } from '../stores/flowCatalog.ts'
 import type { WorkbenchStore } from '../stores/workbenchStore.ts'
 import type { WorkspaceBusy } from '../stores/workspaceModel.ts'
 
-import { forwardRef, lazy, Suspense, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
+import { forwardRef, lazy, Suspense, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
 import { useVal } from 'use-value-enhancer'
 import { useLang, useTranslate } from 'val-i18n-react'
 import { val } from 'value-enhancer'
@@ -17,7 +17,6 @@ import { parseWorkflowFile, workflowNameFromFile } from '../../../../flow/common
 import { importedWorkflowName } from '../../../../localization/common/languages.ts'
 import { Badge } from '../../../../ui/browser/badge.tsx'
 import { Button } from '../../../../ui/browser/button.tsx'
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../../../ui/browser/dialog.tsx'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../../../../ui/browser/dropdown-menu.tsx'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../../../../ui/browser/empty.tsx'
 import { Field, FieldError, FieldLabel } from '../../../../ui/browser/field.tsx'
@@ -29,6 +28,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../../../../ui/browser/
 import { cn } from '../../../../ui/browser/utils.ts'
 import { Icon } from '../icons.tsx'
 import { followWorkbenchLink } from '../navigationLink.ts'
+import { FlowDeletionDialog } from './flowDeletionDialog.tsx'
 import { FlowReferencesButton } from './flowReferences.tsx'
 import { IdTooltip } from './idTooltip.tsx'
 import { WorkflowExportMenuItem } from './workflowExportMenuItem.tsx'
@@ -70,79 +70,15 @@ function formatUpdatedAt(updatedAt: string, locale: string): string {
   })
 }
 
-export function FlowDeletionImpact({
-  listeners,
-  failed,
-  onRetry,
-}: {
-  readonly listeners: readonly ErrorListener[] | undefined
-  readonly failed: boolean
-  readonly onRetry: () => void
-}) {
-  const t = useTranslate()
-  if (failed)
-    return (
-      <div className="space-y-2">
-        <p role="alert" className="text-sm text-destructive">
-          {t('sidebar.listenersFailed')}
-        </p>
-        <Button variant="outline" size="sm" onClick={onRetry}>
-          {t('errorWorkflow.retry')}
-        </Button>
-      </div>
-    )
-  if (listeners == null)
-    return (
-      <p role="status" className="text-sm text-muted-foreground">
-        {t('sidebar.listenersLoading')}
-      </p>
-    )
-  if (listeners.length == 0) return null
-  return (
-    <div className="min-w-0 space-y-3 text-sm">
-      <p>{t('sidebar.listenersTitle')}</p>
-      <ul className="m-0 max-h-48 list-none space-y-2 overflow-y-auto p-0">
-        {listeners.map((listener) => (
-          <li key={`${listener.flowId}/${listener.nodeId}`} className="break-words">
-            <span className="font-medium">{listener.flowName}</span> / {listener.nodeName}
-            {!listener.enabled && <span className="ml-2 text-muted-foreground">{t('sidebar.listenerDisabled')}</span>}
-          </li>
-        ))}
-      </ul>
-      <p className="text-muted-foreground">{t('sidebar.listenersImpact')}</p>
-    </div>
-  )
-}
-
 function FlowItem({ showTeam, badge, busy, flow, href, hrefForFlow, onSelect, store }: FlowItemProps): ReactElement {
   const [root, setRoot] = useState<HTMLDivElement | null>(null)
   const renameAnchor = useRef<HTMLSpanElement>(null)
   const actionsButton = useRef<HTMLButtonElement>(null)
   const nameInput = useRef<HTMLInputElement>(null)
-  const cancelDelete = useRef<HTMLButtonElement>(null)
   const locale = useLang()
   const t = useTranslate()
   const [mode, setMode] = useState<'delete' | 'idle' | 'rename'>('idle')
   const [name, setName] = useState(flow.name)
-  const [listeners, setListeners] = useState<readonly ErrorListener[]>()
-  const [listenersFailed, setListenersFailed] = useState(false)
-  const [listenersRetry, setListenersRetry] = useState(0)
-  useEffect(() => {
-    if (mode != 'delete') return
-    const controller = new AbortController()
-    setListeners(undefined)
-    setListenersFailed(false)
-    void store.workspace.getErrorListeners(flow.flowId, controller.signal).then(
-      (value) => {
-        if (!controller.signal.aborted) setListeners(value)
-      },
-      () => {
-        if (!controller.signal.aborted) setListenersFailed(true)
-      },
-    )
-    return () => controller.abort()
-  }, [mode, flow.flowId, store, listenersRetry])
-
   const [pending, setPending] = useState<'publish' | 'enabled' | undefined>()
   const hasTeam = showTeam && Boolean(badge?.trim())
   const changed = flow.live != null && flow.live.revisionId != flow.draftRevisionId
@@ -366,26 +302,19 @@ function FlowItem({ showTeam, badge, busy, flow, href, hrefForFlow, onSelect, st
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <Dialog
-        open={mode == 'delete'}
-        onOpenChange={(open) => {
-          if (!open) setMode('idle')
-        }}
-      >
-        <DialogContent container={root} initialFocus={cancelDelete} finalFocus={actionsButton} showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>{t('sidebar.deleteFlowConfirm', { name: flow.name })}</DialogTitle>
-            <DialogDescription>{t('resource.deleteDescription')}</DialogDescription>
-          </DialogHeader>
-          <FlowDeletionImpact listeners={listeners} failed={listenersFailed} onRetry={() => setListenersRetry((value) => value + 1)} />
-          <DialogFooter>
-            <DialogClose render={<Button ref={cancelDelete} variant="outline" />}>{t('common.cancel')}</DialogClose>
-            <Button disabled={busy != null || (listeners == null && !listenersFailed)} onClick={() => void remove()} variant="destructive">
-              {t(busy == 'flow' ? 'common.deleting' : 'common.delete')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {mode == 'delete' && (
+        <FlowDeletionDialog
+          flow={flow}
+          workspace={store.workspace}
+          container={root}
+          busy={busy}
+          finalFocus={() => actionsButton.current}
+          onClose={() => setMode('idle')}
+          onDelete={() => void remove()}
+          hrefForFlow={hrefForFlow}
+          onSelectFlow={onSelect}
+        />
+      )}
     </div>
   )
 }
