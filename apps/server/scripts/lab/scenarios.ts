@@ -159,7 +159,7 @@ export function initialOperations(id: string): ChangeOperation[] {
     id == 'webhook-live'
   )
     return []
-  const start = node('start', { kind: 'start', name: 'Start' })
+  const start = node('start', { inputDefs: [], kind: 'start', name: 'Start' })
   if (id.startsWith('specialize-summary')) {
     const task: ManagedTaskDefinition = {
       name: 'Order summary',
@@ -393,7 +393,7 @@ export function assertions(id: string, base: RevisionContent, current: RevisionC
       : ['Create one workflow call.']
   if (id == 'workflow-outputs') {
     const outputs = Object.entries(current.document.graph.nodes).filter(([, candidate]) => candidate.kind == 'outputs')
-    const definitions = Object.fromEntries((current.document.outputDefs ?? []).map((port) => [port.handle, port]))
+    const definitions = Object.fromEntries((outputs[0]?.[1].kind == 'outputs' ? outputs[0][1].outputDefs : []).map((port) => [port.handle, port]))
     const fields = [
       ['total', 'number', false],
       ['message', 'string', false],
@@ -413,7 +413,7 @@ export function assertions(id: string, base: RevisionContent, current: RevisionC
   if (id == 'start-parameters') {
     const starts = Object.values(current.document.graph.nodes).filter((candidate) => candidate.kind == 'start')
     if (starts.length != 1 || starts[0]?.kind != 'start') return ['Create one Start node.']
-    const parameters = Object.fromEntries((current.document.inputDefs ?? []).map((port) => [port.handle, port]))
+    const parameters = Object.fromEntries(starts[0].inputDefs.map((port) => [port.handle, port]))
     const amount = parameters.amount
     if (
       parameters.message?.nullable !== false ||

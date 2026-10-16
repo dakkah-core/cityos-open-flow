@@ -46,7 +46,7 @@ import {
   repairNodeNames,
   updateTriggerConfig,
   updateTriggerSchedule,
-  updateFlowInputDefs,
+  updateStartInputDefs,
   setConnectorConnection as changeConnectorConnection,
   setCodeActions as changeCodeActions,
   setTriggerConnection as changeTriggerConnection,
@@ -734,7 +734,7 @@ export class WorkspaceStore {
     return (await this.#editDraft(resetInputValues(revision.revision.content, nodeId, handles))) != null
   }
 
-  public async saveFlowOutputDefs(
+  public async saveOutputsDefs(
     nodeId: string,
     definitions: readonly InputPort[],
     deletion?: PropertyDeletion,
@@ -742,13 +742,13 @@ export class WorkspaceStore {
   ): Promise<boolean> {
     const revision = this.$.revision.value
     if (revision == null || revision.graph().nodes[nodeId]?.kind != 'outputs') return false
-    return (await this.#editDraft(updateOutputPorts(revision, definitions, values), deletion)) != null
+    return (await this.#editDraft(updateOutputPorts(revision, nodeId, definitions, values), deletion)) != null
   }
 
-  public async saveFlowInputDefs(inputDefs: readonly Port[], deletion?: PropertyDeletion): Promise<boolean> {
+  public async saveStartInputDefs(nodeId: string, inputDefs: readonly Port[], deletion?: PropertyDeletion): Promise<boolean> {
     const revision = this.$.revision.value
-    if (revision == null) return false
-    const changes = updateFlowInputDefs(revision.revision.content, inputDefs)
+    if (revision == null || revision.graph().nodes[nodeId]?.kind != 'start') return false
+    const changes = updateStartInputDefs(revision.revision.content, nodeId, inputDefs)
     return (await this.#editDraft(changes, deletion)) != null
   }
 

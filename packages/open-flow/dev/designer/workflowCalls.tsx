@@ -28,6 +28,7 @@ function WorkflowStory({ dark, language, log, empty = false }: { dark: boolean; 
   const [session, setSession] = useState<ReturnType<typeof createInspectorSession>>()
   const failure = useRef(false),
     changed = useRef(false),
+    implementationChanged = useRef(false),
     saveFailure = useRef(false),
     published = useRef(false),
     logRef = useRef(log)
@@ -53,13 +54,26 @@ function WorkflowStory({ dark, language, log, empty = false }: { dark: boolean; 
         },
       },
     }
+    const currentContract = (): WorkflowContract =>
+      changed.current
+        ? {
+            ...contract,
+            revisionId: 'r3',
+            inputs: [...contract.inputs, { handle: 'note', jsonSchema: { type: 'string' }, nullable: true, description: 'Optional note' }],
+          }
+        : { ...contract, revisionId: implementationChanged.current ? 'r2' : 'r1' }
     const next = createInspectorSession(language, (name, value) => logRef.current(name, value), content, {
       saveError: () => saveFailure.current,
       workflows: () => [
-        { ...contract, live: { enabled: true, publicationId: 'p1', revisionId: changed.current ? 'r2' : 'r1' } },
-        { flowId: 'draft-target', name: 'Draft target', live: published.current ? { enabled: true, publicationId: 'p1', revisionId: 'r1' } : null },
-        { flowId: 'disabled-target', name: 'Disabled target', live: { enabled: false, publicationId: 'p1', revisionId: 'r1' } },
-        { flowId: 'empty-target', name: 'Empty published workflow', live: { enabled: true, publicationId: 'p1', revisionId: 'r1' } },
+        { ...contract, live: { hasStart: true, enabled: true, publicationId: 'p1', revisionId: currentContract().revisionId } },
+        {
+          flowId: 'draft-target',
+          name: 'Draft target',
+          live: published.current ? { hasStart: true, enabled: true, publicationId: 'p1', revisionId: 'r1' } : null,
+        },
+        { flowId: 'disabled-target', name: 'Disabled target', live: { hasStart: true, enabled: false, publicationId: 'p1', revisionId: 'r1' } },
+        { flowId: 'no-start-target', name: 'Published without Start', live: { hasStart: false, enabled: true, publicationId: 'p1', revisionId: 'r1' } },
+        { flowId: 'empty-target', name: 'Empty published workflow', live: { hasStart: true, enabled: true, publicationId: 'p1', revisionId: 'r1' } },
       ],
       checkDiagnostics: (draft) => {
         const node = draft.document.graph.nodes.call
@@ -81,14 +95,20 @@ function WorkflowStory({ dark, language, log, empty = false }: { dark: boolean; 
             ? 'unpublished'
             : flowId == 'disabled-target'
               ? 'disabled'
-              : flowId == 'inspector-lab'
-                ? 'recursive'
-                : null
+              : flowId == 'no-start-target'
+                ? 'missing-start'
+                : flowId == 'inspector-lab'
+                  ? 'recursive'
+                  : null
         if (problem) return [{ code: `workflow.${problem}`, message: problem, path: '/document/graph/nodes/call/task/executor/flowId', line: 0, column: 0 }]
-        return workflowCompatibility(node, { ...contract, revisionId: flowId == contract.flowId && changed.current ? 'r2' : 'r1' })
+        return workflowCompatibility(
+          node,
+          flowId == contract.flowId ? currentContract() : { ...contract, flowId, inputs: [], outputs: null },
+          executor.revisionId == 'r3' ? currentContract() : contract,
+        )
           .filter((issue) => issue.side == 'revision')
           .map((issue) => ({
-            code: executor.revisionId ? 'workflow.revision-stale' : 'workflow.interface-required',
+            code: `workflow.${issue.reason ?? 'revision-stale'}`,
             message: issue.message,
             path: '/document/graph/nodes/call/task/executor/revisionId',
             line: 0,
@@ -99,17 +119,18 @@ function WorkflowStory({ dark, language, log, empty = false }: { dark: boolean; 
       workflowContract: async (flowId) => {
         logRef.current('workflow.contract-request', flowId)
         if (failure.current) throw new Error('Unavailable')
-        const problem = flowId == 'draft-target' && !published.current ? 'unpublished' : flowId == 'disabled-target' ? 'disabled' : null
+        const problem =
+          flowId == 'draft-target' && !published.current
+            ? 'unpublished'
+            : flowId == 'disabled-target'
+              ? 'disabled'
+              : flowId == 'no-start-target'
+                ? 'missing-start'
+                : null
         if (problem) throw new ApiError(400, 'flow.invalid', problem, { reason: `workflow.${problem}` })
         if (flowId != contract.flowId)
-          return { ...contract, flowId, name: flowId == 'draft-target' ? 'Draft target' : 'Empty published workflow', inputs: [], outputs: [] }
-        return changed.current
-          ? {
-              ...contract,
-              revisionId: 'r2',
-              inputs: [...contract.inputs, { handle: 'note', jsonSchema: { type: 'string' }, nullable: true, description: 'Optional note' }],
-            }
-          : contract
+          return { ...contract, flowId, name: flowId == 'draft-target' ? 'Draft target' : 'Empty published workflow', inputs: [], outputs: null }
+        return currentContract()
       },
     })
     setSession(next)
@@ -130,7 +151,14 @@ function WorkflowStory({ dark, language, log, empty = false }: { dark: boolean; 
       },
     },
     {
-      label: 'Publish target change',
+      label: 'Publish implementation change',
+      onClick: () => {
+        implementationChanged.current = true
+        void session?.store.check()
+      },
+    },
+    {
+      label: 'Publish interface change',
       onClick: () => {
         changed.current = true
         void session?.store.check()
@@ -197,7 +225,7 @@ export const workflowCallStories: FrontendStory[] = [
     group: 'Node Workflow',
     title: 'Properties',
     description:
-      'The saved interface renders without a contract request. Publish a target change to produce a check error and the top update prompt; updating keeps existing input values. Failed updates keep the saved contract.',
+      'The saved interface renders without a contract request. Publish an implementation change to keep the call valid, or an interface change to show the update prompt; updating keeps existing input values. Failed updates keep the saved contract. Published targets without Start remain unavailable.',
     standalone: true,
     render: (log, dark, language) => <WorkflowStory log={log} dark={dark} language={language} />,
   },

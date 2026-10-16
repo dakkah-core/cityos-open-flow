@@ -19,7 +19,7 @@ import { closeService, openService, startService } from './serviceFixture.ts'
 
 const token = 'mcp-test-operator-token-000000000001'
 const version = '2026-07-28'
-const start = { kind: 'graph.node.create', nodeId: 'start', node: { kind: 'start', name: 'Start' } }
+const start = { kind: 'graph.node.create', nodeId: 'start', node: { inputDefs: [], kind: 'start', name: 'Start' } }
 
 it('broadcasts REST and MCP canvas commands to every subscriber of only the authorized Flow', async () => {
   const { call, control, service, app, client } = await fixture()
@@ -790,11 +790,11 @@ it('executes fixed Live code revisions and keeps old Run retries stable after re
   if (publication.status != 'succeeded') throw new Error('Publication did not succeed.')
   expect(await call('flow_publish', publishArgs)).toEqual(publication)
   expect(await call('flow_set_enabled', { flowId, expectedPublicationId: publication.publicationId, enabled: false })).toMatchObject({
-    live: { enabled: false },
+    live: { hasStart: true, enabled: false },
   })
   expect((await control.getLive(flowId)).status).toBe('suspended')
   expect(await call('flow_set_enabled', { flowId, expectedPublicationId: publication.publicationId, enabled: true })).toMatchObject({
-    live: { enabled: true },
+    live: { hasStart: true, enabled: true },
   })
   const args = { source: 'live', publicationId: publication.publicationId, trigger: { nodeId: 'start', outputs: {} }, idempotencyKey: 'live-run' }
   const run = await call('flow_run', args)

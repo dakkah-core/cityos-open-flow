@@ -13,7 +13,7 @@ const samples = {
     baseRevision: 'r',
     requestId: 'change',
     edits: [
-      { op: 'flow.update', set: { inputDefs: {} } },
+      { op: 'node.update', node: 'start', set: { config: { inputDefs: {} } } },
       { op: 'node.add', as: 'start', type: 'start', name: 'Start' },
     ],
   },
@@ -35,7 +35,7 @@ const samples = {
   renameFlow: { name: 'Flow', version: 1 },
   changeDraft: {
     expectedRevisionId: 'r1',
-    operations: [{ kind: 'graph.node.create', nodeId: 'start', node: { kind: 'start', name: 'Start' } }],
+    operations: [{ kind: 'graph.node.create', nodeId: 'start', node: { inputDefs: [], kind: 'start', name: 'Start' } }],
     version: 1,
   },
   repairDraft: { expectedRevisionId: 'r1', version: 1 },

@@ -48,11 +48,18 @@ export function flow(value: unknown): Flow {
   if (source.version != 1) return invalidResponse()
   if (status != 'active' && status != 'retiring') return invalidResponse()
   const target = source.live == null ? undefined : record(source.live)
-  if (target != null && typeof target.enabled != 'boolean') return invalidResponse()
+  if (target != null && (typeof target.enabled != 'boolean' || typeof target.hasStart != 'boolean')) return invalidResponse()
   return {
     ...(target == null
       ? {}
-      : { live: { enabled: target.enabled as boolean, publicationId: string(target.publicationId), revisionId: string(target.revisionId) } }),
+      : {
+          live: {
+            enabled: target.enabled as boolean,
+            hasStart: target.hasStart as boolean,
+            publicationId: string(target.publicationId),
+            revisionId: string(target.revisionId),
+          },
+        }),
     createdAt: string(source.createdAt),
     ...(source.connectorTeamId == null ? {} : { connectorTeamId: string(source.connectorTeamId) }),
     draftRevisionId: string(source.draftRevisionId),

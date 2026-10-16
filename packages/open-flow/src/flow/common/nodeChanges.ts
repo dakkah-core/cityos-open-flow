@@ -396,7 +396,7 @@ export function setInputValues(
   if (node == null || isTriggerNode(node)) return
   const operations: ChangeOperation[] = []
   for (const [handle, value] of Object.entries(values)) {
-    const before = nodeInputMappings(node, content.document)[handle]
+    const before = nodeInputMappings(node)[handle]
     const next = fixedInputValue(value)
     if (dequal(before, next)) continue
     operations.push({ before, handle, kind: 'graph.node.input.set', nodeId, value: next })
@@ -408,7 +408,7 @@ export function setInputValues(
 export function resetInputValues(content: RevisionContent, nodeId: string, handles: readonly string[]): readonly ChangeOperation[] {
   const node = content.document.graph?.nodes[nodeId]
   if (node == null || isTriggerNode(node)) return []
-  const mappings = nodeInputMappings(node, content.document)
+  const mappings = nodeInputMappings(node)
   return cleanVariableBindings(
     content,
     [...new Set(handles)].flatMap((handle): ChangeOperation[] =>
@@ -426,7 +426,7 @@ export function setInputSources(
   const node = content.document.graph?.nodes[nodeId]
   if (node == null || isTriggerNode(node)) return []
   return cleanVariableBindings(content, [
-    { kind: 'graph.node.input.set', nodeId, handle, before: nodeInputMappings(node, content.document)[handle], value: { kind: 'sources', sources } },
+    { kind: 'graph.node.input.set', nodeId, handle, before: nodeInputMappings(node)[handle], value: { kind: 'sources', sources } },
   ])
 }
 
@@ -439,7 +439,7 @@ export function setInputVariable(
 ): readonly ChangeOperation[] | undefined {
   const node = content.document.graph?.nodes[nodeId]
   if (node == null || isTriggerNode(node)) return
-  const mapping = nodeInputMappings(node, content.document)[handle]
+  const mapping = nodeInputMappings(node)[handle]
   const currentId =
     mapping?.kind == 'sources' && mapping.sources.length == 1 && mapping.sources[0]?.kind == 'binding' ? mapping.sources[0].bindingId : undefined
   const current = currentId == null ? undefined : content.document.bindings[currentId]
@@ -473,15 +473,12 @@ function bindingReferences(document: RevisionContent['document']): Map<string, n
     references.set(bindingId, (references.get(bindingId) ?? 0) + 1)
   }
   for (const node of Object.values(document.graph.nodes)) {
-    if (isTriggerNode(node) || node.kind == 'outputs') continue
-    const inputs = Object.values(nodeInputMappings(node, document))
+    if (isTriggerNode(node)) continue
+    const inputs = Object.values(nodeInputMappings(node))
     for (const mapping of inputs) {
       if (mapping.kind != 'sources') continue
       for (const source of mapping.sources) if (source.kind == 'binding') add(source.bindingId)
     }
-  }
-  for (const mapping of Object.values(document.outputMappings ?? {})) {
-    if (mapping.kind == 'sources') for (const source of mapping.sources) if (source.kind == 'binding') add(source.bindingId)
   }
   return references
 }
@@ -504,25 +501,22 @@ export function setConnectorConnection(content: RevisionContent, nodeId: string,
 }
 
 /** Edit the workflow input contract and preserve references on a single-field rename. */
-export function updateFlowInputDefs(content: RevisionContent, value: readonly Port[]): readonly ChangeOperation[] {
-  const previous = content.document.inputDefs ?? []
+export function updateStartInputDefs(content: RevisionContent, nodeId: string, value: readonly Port[]): readonly ChangeOperation[] {
+  const node = content.document.graph.nodes[nodeId]
+  if (node?.kind != 'start') throw new TypeError('Expected a Start node.')
+  const previous = node.inputDefs
   if (dequal(previous, value)) return []
-  const operations: ChangeOperation[] = [{ kind: 'flow.input-defs.set', before: previous, value }]
+  const operations: ChangeOperation[] = [{ kind: 'graph.node.replace', nodeId, before: node, node: { ...node, inputDefs: value } }]
   const rename = renamedPort(previous, value)
   if (rename != null) {
-    const instances = new Set(
-      Object.entries(content.document.graph.nodes)
-        .filter(([, node]) => node.kind == 'start')
-        .map(([id]) => id),
-    )
-    for (const [id, node] of Object.entries(content.document.graph.nodes)) {
-      if (isTriggerNode(node) || node.kind == 'outputs') continue
-      for (const [handle, before] of Object.entries(nodeInputMappings(node, content.document))) {
+    const instances = new Set([nodeId])
+    for (const [id, downstream] of Object.entries(content.document.graph.nodes)) {
+      if (isTriggerNode(downstream)) continue
+      for (const [handle, before] of Object.entries(nodeInputMappings(downstream))) {
         const mapping = renameOutputMapping(before, instances, rename)
         if (before !== mapping) operations.push({ before, kind: 'graph.node.input.set', nodeId: id, handle, value: mapping })
       }
     }
-    operations.push(...renameFlowOutputSources(content, instances, previous, value))
   }
   return operations
 }
@@ -647,21 +641,18 @@ export function createDecisionTask(
   return createManagedTask(identity, decisionTask(questions, name))
 }
 
-/** Persist the output contract and its mappings in one undoable change, including editor-converted values. */
-export function updateFlowOutputDefs(
+/** Edit an Outputs node's definitions and mappings as one undoable change. */
+export function updateOutputsDefs(
   content: RevisionContent,
+  nodeId: string,
   value: readonly Port[],
   outputMappings?: Readonly<Record<string, InputMapping>>,
 ): readonly ChangeOperation[] {
-  const previous = content.document.outputDefs
-  const definitionsChanged = !dequal(previous ?? [], value)
-  if (!definitionsChanged && outputMappings == null) return []
-  const before = content.document.outputMappings
-  const next = outputMappings ?? remapInputMappings(before ?? {}, value, renamedPort(previous ?? [], value))
-  const operations: ChangeOperation[] = []
-  if (definitionsChanged) operations.push({ kind: 'flow.output-defs.set', before: previous, value })
-  if (!dequal(before ?? {}, next)) operations.push({ kind: 'flow.output-mappings.set', before, value: next })
-  return operations.length == 0 ? [] : cleanVariableBindings(content, operations)
+  const node = content.document.graph.nodes[nodeId]
+  if (node?.kind != 'outputs') throw new TypeError('Expected an Outputs node.')
+  const mappings = outputMappings ?? remapInputMappings(node.outputMappings, value, renamedPort(node.outputDefs, value))
+  const next = { ...node, outputDefs: value, outputMappings: mappings }
+  return dequal(node, next) ? [] : cleanVariableBindings(content, [{ kind: 'graph.node.replace', nodeId, before: node, node: next }])
 }
 
 export function renameFlowOutputSources(
@@ -671,8 +662,12 @@ export function renameFlowOutputSources(
   next: readonly (Port | Group)[],
 ): readonly ChangeOperation[] {
   const rename = renamedPort(previous, next)
-  const before = content.document.outputMappings
-  if (rename == null || before == null) return []
-  const value = Object.fromEntries(Object.entries(before).map(([name, mapping]) => [name, renameOutputMapping(mapping, nodeIds, rename)]))
-  return dequal(before, value) ? [] : [{ kind: 'flow.output-mappings.set', before, value }]
+  if (rename == null) return []
+  return Object.entries(content.document.graph.nodes).flatMap(([nodeId, node]): ChangeOperation[] => {
+    if (node.kind != 'outputs') return []
+    const outputMappings = Object.fromEntries(
+      Object.entries(node.outputMappings).map(([name, mapping]) => [name, renameOutputMapping(mapping, nodeIds, rename)]),
+    )
+    return dequal(node.outputMappings, outputMappings) ? [] : [{ kind: 'graph.node.replace', nodeId, before: node, node: { ...node, outputMappings } }]
+  })
 }

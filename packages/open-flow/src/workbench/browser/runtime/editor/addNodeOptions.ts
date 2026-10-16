@@ -79,7 +79,7 @@ export function indexAddNodeOptions(options: readonly AddNodeOption[]): Readonly
   return indexed
 }
 
-function builtinOptions(draft: Draft, t: TFunction): readonly AddNodeOption[] {
+function builtinOptions(_draft: Draft, t: TFunction): readonly AddNodeOption[] {
   const group = t('addNode.blocks')
   return [
     {
@@ -153,7 +153,7 @@ function builtinOptions(draft: Draft, t: TFunction): readonly AddNodeOption[] {
       description: t('addNode.outputsDescription'),
       group: t('addNode.blocks'),
       icon: ':lucide-light:log-out:',
-      inputs: revisionView(draft).outputDefs(),
+      inputs: [],
       outputs: [],
     },
     {
@@ -193,7 +193,7 @@ export function deriveAddNodeOptions(draft: Draft | undefined, t: TFunction): re
       inputs: [],
       kind: 'trigger',
       label: t('addNode.webhook'),
-      outputs: triggerOutputDefinitions({ kind: 'webhook', method: 'POST', name: 'Webhook', bodyFields: [] }, []),
+      outputs: triggerOutputDefinitions({ kind: 'webhook', method: 'POST', name: 'Webhook', bodyFields: [] }),
       trigger: { kind: 'webhook' },
     },
     {
@@ -204,7 +204,7 @@ export function deriveAddNodeOptions(draft: Draft | undefined, t: TFunction): re
       inputs: [],
       kind: 'trigger',
       label: t('addNode.cron'),
-      outputs: triggerOutputDefinitions({ kind: 'cron', name: 'Cron', cronTimes: [] }, []),
+      outputs: triggerOutputDefinitions({ kind: 'cron', name: 'Cron', cronTimes: [] }),
       trigger: { kind: 'cron' },
     },
     {
@@ -215,7 +215,7 @@ export function deriveAddNodeOptions(draft: Draft | undefined, t: TFunction): re
       inputs: [],
       kind: 'trigger',
       label: t('errorWorkflow.trigger'),
-      outputs: triggerOutputDefinitions({ kind: 'error', name: 'Flow Error' }, []),
+      outputs: triggerOutputDefinitions({ kind: 'error', name: 'Flow Error' }),
       trigger: { kind: 'error' },
     },
     ...options,

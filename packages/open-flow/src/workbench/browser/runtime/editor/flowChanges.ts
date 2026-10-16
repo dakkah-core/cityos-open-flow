@@ -17,12 +17,12 @@ import type { RevisionView } from '../revisionView.ts'
 
 import { dequal } from 'dequal/lite'
 import { connectorOutputMode } from '../../../../connector/common/actionSchema.ts'
-import { nextNodeName, normalizeNodeName, applyFlowChanges as reduceFlowChanges } from '../../../../flow/common/change.ts'
+import { isTriggerNode, nextNodeName, normalizeNodeName, applyFlowChanges as reduceFlowChanges } from '../../../../flow/common/change.ts'
 import { otherwiseOutput } from '../../../../flow/common/condition.ts'
 import { fixedInputValue } from '../../../../flow/common/inputValue.ts'
 import {
   cleanVariableBindings,
-  updateFlowOutputDefs,
+  updateOutputsDefs,
   renameFlowOutputSources,
   createApproval,
   createAgentTask,
@@ -186,7 +186,7 @@ export function addNode(revision: RevisionView, nodeId: string, intent: AddNodeI
       changes = createValue(nodeId, intent.name)
       break
     case 'outputs':
-      changes = [{ kind: 'graph.node.create', nodeId, node: { kind: 'outputs', name: intent.name } }]
+      changes = [{ kind: 'graph.node.create', nodeId, node: { outputDefs: [], outputMappings: {}, kind: 'outputs', name: intent.name } }]
       break
     case 'wait':
       changes = createWait(nodeId, intent.name)
@@ -195,7 +195,7 @@ export function addNode(revision: RevisionView, nodeId: string, intent: AddNodeI
       changes = createBuiltinTrigger(nodeId, { kind: 'error', name: intent.name })
       break
     case 'start':
-      changes = createBuiltinTrigger(nodeId, { kind: 'start', name: intent.name })
+      changes = createBuiltinTrigger(nodeId, { inputDefs: [], kind: 'start', name: intent.name })
       break
     case 'webhook':
       changes = createBuiltinTrigger(nodeId, { bodyFields: [], kind: 'webhook', method: 'POST', name: intent.name })
@@ -496,7 +496,7 @@ function replaceTaskPorts(
   const outputRename = renamedPort(previous.outputs, task.outputs)
   const inputNames = new Set(task.inputs.flatMap((port) => ('handle' in port ? [port.handle] : [])))
   const outputNames = new Set(task.outputs.flatMap((port) => ('handle' in port ? [port.handle] : [])))
-  const changes: ChangeOperation[] = [...renameFlowOutputSources(revision.revision.content, instances, previous.outputs, task.outputs)]
+  const changes: ChangeOperation[] = []
   for (const edge of graph.edges) {
     if (!instances.has(edge.source) || edge.sourceHandle == null) continue
     const renamed = outputRename != null && edge.sourceHandle == outputRename[0] ? outputRename[1] : edge.sourceHandle
@@ -506,7 +506,7 @@ function replaceTaskPorts(
   }
 
   for (const [currentNodeId, node] of Object.entries(graph.nodes)) {
-    if (!('inputs' in node)) continue
+    if (isTriggerNode(node)) continue
     const inputs =
       currentNodeId == nodeId
         ? updatedInputMappings(revision.inputMappings(node), previous.inputs, task.inputs, inputRename, values)
@@ -559,25 +559,22 @@ function replaceTaskPorts(
 }
 import type { Settings as NodeSettings } from '../../../../flow/common/nodeChanges.ts'
 
-/** Share the input editor's type conversion while persisting only workflow-owned output configuration. */
+/** Share the input editor's type conversion while persisting only Outputs node configuration. */
 export function updateOutputPorts(
   revision: RevisionView,
+  nodeId: string,
   definitions: readonly InputPort[],
   values?: Readonly<Record<string, JsonValue | undefined>>,
 ): FlowChanges {
   const content = revision.revision.content
+  const node = content.document.graph.nodes[nodeId]
+  if (node?.kind != 'outputs') return []
   const ports = definitions.map(({ handle, jsonSchema, nullable, description }) => ({
     handle,
     jsonSchema,
     nullable,
     ...(description == null ? {} : { description }),
   }))
-  const next = updatedInputMappings(
-    content.document.outputMappings ?? {},
-    content.document.outputDefs ?? [],
-    ports,
-    renamedPort(content.document.outputDefs ?? [], ports),
-    values,
-  )
-  return updateFlowOutputDefs(content, ports, next)
+  const next = updatedInputMappings(node.outputMappings, node.outputDefs, ports, renamedPort(node.outputDefs, ports), values)
+  return updateOutputsDefs(content, nodeId, ports, next)
 }

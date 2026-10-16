@@ -851,7 +851,9 @@
         "robot-required": "Sélectionnez un robot Leina ou liez son identifiant à une source d’entrée."
       },
       "workflow": {
-        "revision-stale": "La révision Live du workflow cible a changé.",
+        "revision-stale": "L’interface du workflow cible a changé.",
+        "snapshot-missing": "L’instantané de l’interface enregistré est indisponible. Actualisez l’interface.",
+        "missing-start": "Le workflow cible ne contient aucun nœud Start.",
         "dependency-stale": "Un appel dans le workflow cible doit être mis à jour.",
         "target-required": "Sélectionnez un workflow cible.",
         "unpublished": "Le workflow cible n’est pas publié.",

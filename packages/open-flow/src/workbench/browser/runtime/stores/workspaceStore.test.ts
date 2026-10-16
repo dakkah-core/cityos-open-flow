@@ -1142,7 +1142,7 @@ it('repairs the persisted title of an already upgraded Start when opening in Chi
     ...draft,
     content: {
       ...draft.content,
-      document: { inputDefs: parameters, bindings: {}, graph: { nodes: { start: { kind: 'start', name: 'Manual trigger' } }, edges: [] } },
+      document: { bindings: {}, graph: { nodes: { start: { kind: 'start', name: 'Manual trigger', inputDefs: parameters } }, edges: [] } },
     },
   } as import('../api.ts').Draft
   const original = structuredClone(head)
@@ -1187,7 +1187,7 @@ it('repairs the persisted title of an already upgraded Start when opening in Chi
     expect(store.$.workspaceLoading.value).toBe(false)
     expect(upgrades).not.toHaveBeenCalled()
     expect(writes).toHaveBeenCalledTimes(1)
-    expect(head.content.document.graph.nodes.start).toEqual({ kind: 'start', name: '开始' })
+    expect(head.content.document.graph.nodes.start).toEqual({ ...original.content.document.graph.nodes.start, name: '开始' })
     expect(original.content.document.graph.nodes.start?.name).toBe('Manual trigger')
     const displayed = designerGraph(store.$.draft.value, {}, [], {}, {}, i18n.t)
     expect(displayed.nodes.find((node) => node.id == 'start')?.title).toBe('开始')
@@ -1252,7 +1252,7 @@ it('upgrades legacy manual nodes before editing and rereads a conflicting Draft 
         ...head.content,
         document: {
           ...head.content.document,
-          graph: { ...head.content.document.graph, nodes: { ...head.content.document.graph.nodes, legacy: { kind: 'start', name: 'Start' } } },
+          graph: { ...head.content.document.graph, nodes: { ...head.content.document.graph.nodes, legacy: { inputDefs: [], kind: 'start', name: 'Start' } } },
         },
       },
     }
@@ -1280,7 +1280,7 @@ it('upgrades legacy manual nodes before editing and rereads a conflicting Draft 
     await opening
     expect(expectedHeads).toEqual(['revision-1', 'revision-concurrent'])
     expect(store.$.draft.value?.revisionId).toBe('revision-upgraded')
-    expect(store.$.draft.value?.content.document.graph.nodes.legacy).toEqual({ kind: 'start', name: 'Start' })
+    expect(store.$.draft.value?.content.document.graph.nodes.legacy).toEqual({ inputDefs: [], kind: 'start', name: 'Start' })
     expect(store.$.draft.value?.content.document.graph.nodes.value).toMatchObject({ values: [{ handle: 'message', value: 'concurrent' }] })
     expect(store.$.workspaceLoading.value).toBe(false)
   } finally {
@@ -1299,8 +1299,8 @@ it('lists all workflow targets across pages using only list metadata', async () 
     .mockResolvedValueOnce({
       version: 1,
       flows: [
-        { ...flow, flowId: 'disabled', live: { enabled: false, publicationId: 'p1', revisionId: 'r1' } },
-        { ...flow, flowId: 'ready', live: { enabled: true, publicationId: 'p2', revisionId: 'r2' } },
+        { ...flow, flowId: 'disabled', live: { hasStart: true, enabled: false, publicationId: 'p1', revisionId: 'r1' } },
+        { ...flow, flowId: 'ready', live: { hasStart: true, enabled: true, publicationId: 'p2', revisionId: 'r2' } },
       ],
     })
   const contract = vi.spyOn(client, 'getWorkflowContract')

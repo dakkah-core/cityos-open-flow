@@ -1,5 +1,6 @@
-import type { TaskNode, ManagedTaskDefinition, Port, JsonValue } from '../../flow/common/change.ts'
+import type { TaskNode, ManagedTaskDefinition, Port, JsonValue, RevisionContent } from '../../flow/common/change.ts'
 
+import { dequal } from 'dequal/lite'
 import { z } from 'zod'
 import { comparePorts, matchesSchema } from '../../flow/common/schema.ts'
 
@@ -15,6 +16,32 @@ const portSchema = z.object({
   nullable: z.boolean(),
   description: z.string().optional(),
 })
+export const publishedWorkflowInterfaceSchema = z.strictObject({
+  inputs: z.array(portSchema).nullable(),
+  outputs: z.array(portSchema).nullable(),
+})
+export type PublishedWorkflowInterface = z.infer<typeof publishedWorkflowInterfaceSchema>
+
+/** The callable interface of one fixed definition; absence differs from empty ports. */
+export function publishedWorkflowInterface(content: Pick<RevisionContent, 'document'>): PublishedWorkflowInterface {
+  const nodes = Object.values(content.document.graph.nodes)
+  const start = nodes.find((node) => node.kind == 'start')
+  const outputs = nodes.find((node) => node.kind == 'outputs')
+  return { inputs: start == null ? null : workflowPorts(start.inputDefs), outputs: outputs == null ? null : workflowPorts(outputs.outputDefs) }
+}
+
+function comparablePorts(value: PublishedWorkflowInterface['inputs']) {
+  return value == null
+    ? null
+    : value
+        .map(({ handle, jsonSchema, nullable }) => ({ handle, jsonSchema, nullable }))
+        .toSorted((a, b) => (a.handle < b.handle ? -1 : a.handle > b.handle ? 1 : 0))
+}
+
+export function sameWorkflowInterface(left: PublishedWorkflowInterface, right: PublishedWorkflowInterface): boolean {
+  return dequal(comparablePorts(left.inputs), comparablePorts(right.inputs)) && dequal(comparablePorts(left.outputs), comparablePorts(right.outputs))
+}
+
 export const workflowContractSchema = z.object({
   version: z.literal(1),
   flowId: z.string().min(1),
@@ -22,19 +49,19 @@ export const workflowContractSchema = z.object({
   revisionId: z.string().min(1),
   publicationId: z.string().min(1),
   inputs: z.array(portSchema),
-  outputs: z.array(portSchema),
+  outputs: z.array(portSchema).nullable(),
 })
 export type WorkflowContract = z.infer<typeof workflowContractSchema>
 
 export interface WorkflowCandidate {
   readonly flowId: string
   readonly name: string
-  readonly problem: 'unpublished' | 'disabled' | 'retiring' | 'recursive' | null
+  readonly problem: 'unpublished' | 'disabled' | 'retiring' | 'recursive' | 'missing-start' | null
 }
 
 /** Classify only list metadata; opening the selector does not inspect a Revision. */
 export function workflowCandidate(
-  flow: { flowId: string; name: string; status: string; live?: { enabled: boolean } | null },
+  flow: { flowId: string; name: string; status: string; live?: { enabled: boolean; hasStart: boolean } | null },
   sourceFlowId?: string,
 ): WorkflowCandidate {
   const problem =
@@ -46,7 +73,9 @@ export function workflowCandidate(
           ? 'unpublished'
           : !flow.live.enabled
             ? 'disabled'
-            : null
+            : !flow.live.hasStart
+              ? 'missing-start'
+              : null
   return { flowId: flow.flowId, name: flow.name, problem }
 }
 
@@ -66,7 +95,12 @@ export function workflowSelectionTask(
 }
 
 export function workflowTask(contract: WorkflowContract, name = contract.name): ManagedTaskDefinition {
-  return { name, executor: { kind: 'workflow', flowId: contract.flowId, revisionId: contract.revisionId }, inputs: contract.inputs, outputs: contract.outputs }
+  return {
+    name,
+    executor: { kind: 'workflow', flowId: contract.flowId, revisionId: contract.revisionId },
+    inputs: contract.inputs,
+    outputs: contract.outputs ?? [],
+  }
 }
 
 export function workflowPorts(ports: readonly Port[]): WorkflowContract['inputs'] {
@@ -76,18 +110,46 @@ export function workflowPorts(ports: readonly Port[]): WorkflowContract['inputs'
 export function workflowCompatibility(
   node: TaskNode,
   contract: WorkflowContract,
-): readonly { side: 'revision' | 'input' | 'output'; field: string; message: string }[] {
-  const issues: { side: 'revision' | 'input' | 'output'; field: string; message: string }[] = []
-  if ('executor' in node.task && node.task.executor.kind == 'workflow' && node.task.executor.revisionId != contract.revisionId)
-    return [
-      {
-        side: 'revision',
-        field: 'revisionId',
-        message: node.task.executor.revisionId
-          ? 'The called workflow Live revision has changed. Update the interface definition.'
-          : 'The called workflow interface has not been loaded. Refresh the interface definition.',
-      },
-    ]
+  previous?: PublishedWorkflowInterface,
+): readonly { side: 'revision' | 'input' | 'output'; field: string; message: string; reason?: 'snapshot-missing' | 'interface-required' | 'revision-stale' }[] {
+  const issues: {
+    side: 'revision' | 'input' | 'output'
+    field: string
+    message: string
+    reason?: 'snapshot-missing' | 'interface-required' | 'revision-stale'
+  }[] = []
+  if ('executor' in node.task && node.task.executor.kind == 'workflow') {
+    const saved = node.task.executor.revisionId
+    if (!saved)
+      return [
+        {
+          side: 'revision',
+          field: 'revisionId',
+          reason: 'interface-required',
+          message: 'The called workflow interface has not been loaded. Refresh the interface definition.',
+        },
+      ]
+    if (saved != contract.revisionId) {
+      if (previous == null)
+        return [
+          {
+            side: 'revision',
+            field: 'revisionId',
+            reason: 'snapshot-missing',
+            message: 'The saved workflow interface snapshot is unavailable. Refresh the interface definition.',
+          },
+        ]
+      if (!sameWorkflowInterface(previous, contract))
+        return [
+          {
+            side: 'revision',
+            field: 'revisionId',
+            reason: 'revision-stale',
+            message: 'The called workflow interface has changed. Update the interface definition.',
+          },
+        ]
+    }
+  }
 
   for (const port of contract.inputs) {
     const source = node.inputs[port.handle]
@@ -107,7 +169,7 @@ export function workflowCompatibility(
   }
   for (const port of node.task.outputs) {
     if (!('handle' in port)) continue
-    const current = contract.outputs.find((p) => p.handle == port.handle)
+    const current = contract.outputs?.find((p) => p.handle == port.handle)
     if (current == null || comparePorts(current, port).kind != 'compatible')
       issues.push({ side: 'output', field: port.handle, message: `Workflow output "${port.handle}" was removed or changed type.` })
   }

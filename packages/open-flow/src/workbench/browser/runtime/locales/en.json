@@ -851,7 +851,9 @@
         "robot-required": "Select a Leina robot or bind its identifier to an input source."
       },
       "workflow": {
-        "revision-stale": "The target workflow’s Live revision has changed.",
+        "revision-stale": "The target workflow’s interface has changed.",
+        "snapshot-missing": "The saved workflow interface snapshot is unavailable. Refresh the interface.",
+        "missing-start": "The target workflow has no Start node.",
         "dependency-stale": "A call inside the target workflow needs updating.",
         "target-required": "Select a target workflow.",
         "unpublished": "The target workflow has not been published.",

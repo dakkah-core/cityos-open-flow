@@ -176,9 +176,9 @@ const sourceConfig: SourceConfiguration = sourceDefinition.initialize(
 )
 void sourceDefinition.ready(sourceConfig)
 const manual = { kind: 'manual', name: 'Manual' } as const
-export const validOutputs: boolean = matchesTriggerOutputs(manual, {}, [])
-void triggerOutputDefinitions(manual, [])
-void triggerOutputPorts(manual, [])
+export const validOutputs: boolean = matchesTriggerOutputs(manual, {})
+void triggerOutputDefinitions(manual)
+void triggerOutputPorts(manual)
 const portable = decodeWorkflowFile({
   kind: 'open-flow-workflow',
   version: 1,

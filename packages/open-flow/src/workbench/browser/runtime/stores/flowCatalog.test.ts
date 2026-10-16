@@ -15,7 +15,7 @@ const flow = {
   name: 'Main',
   status: 'active',
   version: 1,
-  live: { enabled: true, publicationId: 'live', revisionId: 'published' },
+  live: { hasStart: true, enabled: true, publicationId: 'live', revisionId: 'published' },
 } as const
 const operation = {
   createdAt: flow.createdAt,
@@ -78,7 +78,7 @@ it('publishes the selected list revision and shows the authoritative disabled st
   const client = new WorkbenchClient(vi.fn())
   const notice = vi.fn()
   const catalog = new FlowCatalog(client, notice, createI18n())
-  const changed = { ...flow, live: { enabled: false, publicationId: 'new-live', revisionId: 'draft' } }
+  const changed = { ...flow, live: { hasStart: true, enabled: false, publicationId: 'new-live', revisionId: 'draft' } }
   const publish = vi.spyOn(client, 'publishFlow').mockResolvedValue({ ...operation, status: 'succeeded', publicationId: 'new-live' })
   vi.spyOn(client, 'getFlow').mockResolvedValue(changed)
   catalog.include(flow)

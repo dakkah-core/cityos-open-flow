@@ -68,6 +68,7 @@ function setup() {
       forceFull,
     })
   const input = {
+    interface: { inputs: null, outputs: null },
     content: initial.content,
     revisionDigest: initial.digest,
     revisionId: 'initial',

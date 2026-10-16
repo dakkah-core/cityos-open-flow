@@ -60,8 +60,7 @@ export function authoringExample(name: string): { version: 1; operations: readon
     }
     case 'start':
       operations = [
-        { kind: 'flow.input-defs.set', before: [], value: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: false }] },
-        ...createBuiltinTrigger('start', { kind: 'start', name: 'Start' }),
+        ...createBuiltinTrigger('start', { inputDefs: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: false }], kind: 'start', name: 'Start' }),
       ]
       break
     case 'webhook':

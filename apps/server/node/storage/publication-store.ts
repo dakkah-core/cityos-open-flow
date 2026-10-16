@@ -1,5 +1,6 @@
 import type { Presentation, PublishOperation } from '@oomol-lab/open-flow/control-api'
 import type { ConnectorAccess, ConnectorAccessSnapshot } from '@oomol-lab/open-flow/control-api'
+import type { PublishedWorkflowInterface } from '@oomol-lab/open-flow/workflow'
 import type { FlowResourceReferenceStore } from './flow-resource-reference-store.ts'
 import type { FlowStore, StoredFlow, StoredFlowRevision } from './flow-store.ts'
 import type { IntegrationPublication } from './integration-store.ts'
@@ -7,6 +8,7 @@ import type { PollPublication } from './poll-store.ts'
 import type { RevisionStore } from './revision-store.ts'
 
 import { decodeConnectorAccessSnapshot } from '@oomol-lab/open-flow/control-api'
+import { publishedWorkflowInterfaceSchema } from '@oomol-lab/open-flow/workflow'
 import { randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import { z } from 'zod'
@@ -36,6 +38,7 @@ export type PublicationAcceptance =
     }
 
 export interface StoredPublication {
+  readonly interfaceJson: string
   readonly liveEndedAt: number | null
   readonly liveEnabledAtEnd: number | null
   readonly actorId: string
@@ -59,6 +62,7 @@ export interface StoredLive {
 }
 
 const publicationColumns = `
+  publications.interface_json AS interfaceJson,
   publications.live_ended_at AS liveEndedAt,
   publications.live_enabled_at_end AS liveEnabledAtEnd,
   publications.actor_id AS actorId,
@@ -92,6 +96,7 @@ const implicitProviderAccess: ConnectorAccessSnapshot = {
 }
 
 interface PublishInput {
+  readonly interface: PublishedWorkflowInterface
   readonly errorTriggers?: readonly { readonly nodeId: string; readonly sourceFlowIds: readonly string[] }[]
   readonly closureDigest: string
   readonly content: string
@@ -166,6 +171,13 @@ export class PublicationStore {
          WHERE publications.flow_id = ? AND publications.publication_id = ?`,
       )
       .get(flowId, publicationId) as StoredPublication | undefined
+  }
+
+  interfaceForRevision(flowId: string, revisionId: string): PublishedWorkflowInterface | undefined {
+    const row = this.#database
+      .prepare('SELECT interface_json AS snapshot FROM publications WHERE revision_id = ? AND flow_id = ? LIMIT 1')
+      .get(revisionId, flowId) as { snapshot: string } | undefined
+    return row == null ? undefined : publishedWorkflowInterfaceSchema.parse(JSON.parse(row.snapshot))
   }
 
   publicationById(publicationId: string): StoredPublication | undefined {
@@ -650,6 +662,7 @@ export class PublicationStore {
         const modelVersion = input.metadata?.modelVersion ?? z.object({ modelVersion: z.number().int().positive() }).parse(JSON.parse(content)).modelVersion
         const publicationId = `publication_${randomUUID().replaceAll('-', '')}`
         insert(this.#database, 'publications', {
+          interface_json: JSON.stringify(publishedWorkflowInterfaceSchema.parse(input.interface)),
           presentation_snapshot: JSON.stringify(this.#presentationSnapshot(input)),
           publication_id: publicationId,
           shared_access_digest: providerAccess.sharedAccessDigest,

@@ -36,11 +36,7 @@ export async function reference(call: ToolCall, id: string, flowId: string, stag
     if (target == null) throw new Error('Published target not found')
     const before = await read()
     await submit(before.revision, [
-      {
-        op: 'flow.update',
-        set: { inputDefs: { amount: { schema: { type: 'number' }, nullable: false } }, outputDefs: { total: { schema: { type: 'number' }, nullable: false } } },
-      },
-      { op: 'node.add', as: 'start', type: 'start', name: 'Start' },
+      { op: 'node.add', as: 'start', type: 'start', name: 'Start', config: { inputDefs: { amount: { schema: { type: 'number' }, nullable: false } } } },
       {
         op: 'node.add',
         as: 'call',
@@ -49,7 +45,14 @@ export async function reference(call: ToolCall, id: string, flowId: string, stag
         config: { flowId: target.flowId },
         inputs: { amount: { kind: 'output', node: '$start', port: 'amount' } },
       },
-      { op: 'node.add', as: 'outputs', type: 'outputs', name: 'Outputs', inputs: { total: { kind: 'output', node: '$call', port: 'total' } } },
+      {
+        op: 'node.add',
+        as: 'outputs',
+        type: 'outputs',
+        name: 'Outputs',
+        inputs: { total: { kind: 'output', node: '$call', port: 'total' } },
+        config: { outputDefs: { total: { schema: { type: 'number' }, nullable: false } } },
+      },
       { op: 'edge.connect', source: '$start', target: '$call' },
       { op: 'edge.connect', source: '$call', target: '$outputs' },
     ])
@@ -67,13 +70,14 @@ export async function reference(call: ToolCall, id: string, flowId: string, stag
     const before = await read()
     await submit(before.revision, [
       {
-        op: 'flow.update',
-        set: {
+        op: 'node.add',
+        as: 'start',
+        type: 'start',
+        name: 'Start',
+        config: {
           inputDefs: { amount: { schema: { type: 'number' }, nullable: false }, message: stringPort, note: { schema: { type: 'string' }, nullable: true } },
-          outputDefs: { total: { schema: { type: 'number' }, nullable: false }, message: stringPort, note: { schema: { type: 'string' }, nullable: true } },
         },
       },
-      { op: 'node.add', as: 'start', type: 'start', name: 'Start' },
       {
         op: 'node.add',
         as: 'double',
@@ -110,6 +114,9 @@ export async function reference(call: ToolCall, id: string, flowId: string, stag
           message: { kind: 'output', node: '$message' },
           note: { kind: 'output', node: '$start', port: 'note' },
         },
+        config: {
+          outputDefs: { total: { schema: { type: 'number' }, nullable: false }, message: stringPort, note: { schema: { type: 'string' }, nullable: true } },
+        },
       },
       { op: 'edge.connect', source: '$start', target: '$double' },
       { op: 'edge.connect', source: '$start', target: '$message' },
@@ -118,7 +125,9 @@ export async function reference(call: ToolCall, id: string, flowId: string, stag
       { op: 'edge.connect', source: '$message', target: '$outputs' },
     ])
     const saved = await read()
-    await submit(saved.revision, [{ op: 'flow.update', set: { outputDefs: { total: { description: 'Invoice total' } } } }])
+    await submit(saved.revision, [
+      { op: 'node.update', node: await find('Outputs'), set: { config: { outputDefs: { total: { description: 'Invoice total' } } } } },
+    ])
     await call('flow_check', { flowId, revisionId: savedRevision })
     return
   }
@@ -131,20 +140,17 @@ export async function reference(call: ToolCall, id: string, flowId: string, stag
     const before = await read()
     await submit(before.revision, [
       {
-        op: 'flow.update',
-        set: {
+        op: 'node.add',
+        as: 'start',
+        type: 'start',
+        name: 'Start',
+        config: {
           inputDefs: {
             message: stringPort,
             amount: { schema: { type: 'number' }, nullable: false, description: 'Amount' },
             note: { schema: { type: 'string' }, nullable: true },
           },
         },
-      },
-      {
-        op: 'node.add',
-        as: 'start',
-        type: 'start',
-        name: 'Start',
       },
       {
         op: 'node.add',
@@ -171,7 +177,9 @@ export async function reference(call: ToolCall, id: string, flowId: string, stag
       { op: 'edge.connect', source: '$combine', target: '$archive' },
     ])
     const details = await read()
-    await submit(details.revision, [{ op: 'flow.update', set: { inputDefs: { amount: { description: 'Invoice total' } } } }])
+    await submit(details.revision, [
+      { op: 'node.update', node: await find('Start'), set: { config: { inputDefs: { amount: { description: 'Invoice total' } } } } },
+    ])
   } else if (id == 'connector-responses') {
     const catalog = await call('connector_search', { flowId, query: 'Read' })
     const available = catalog.actions as { actionId: string; name: string; serviceId: string }[]

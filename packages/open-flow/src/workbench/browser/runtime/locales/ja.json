@@ -851,7 +851,9 @@
         "robot-required": "Leina ロボットを選択するか、識別子の入力ソースを設定してください。"
       },
       "workflow": {
-        "revision-stale": "対象ワークフローの Live リビジョンが変更されました。",
+        "revision-stale": "対象ワークフローのインターフェースが変更されました。",
+        "snapshot-missing": "保存されたインターフェースが利用できません。更新してください。",
+        "missing-start": "対象ワークフローに Start ノードがありません。",
         "dependency-stale": "対象ワークフロー内の呼び出しを更新してください。",
         "target-required": "呼び出し先のワークフローを選択してください。",
         "unpublished": "対象ワークフローは未公開です。",

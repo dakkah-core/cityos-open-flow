@@ -669,15 +669,23 @@ it('creates Start and saves parameter edits through the existing undo and redo h
     const startId = Object.entries(saved().draft.content.document.graph.nodes).find(([, node]) => node.kind === 'start')?.[0]
     expect(startId).toBeDefined()
     const parameters = [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: true, description: 'Message to process' }] as const
-    expect(await store.saveFlowInputDefs(parameters)).toBe(true)
-    expect(saved().draft.content.document.inputDefs).toEqual(parameters)
+    expect(await store.saveStartInputDefs('missing-start', parameters)).toBe(false)
+    expect(await store.saveStartInputDefs('value', parameters)).toBe(false)
+    expect(await store.saveStartInputDefs(startId!, parameters)).toBe(true)
+    expect(
+      (saved().draft.content.document.graph.nodes[startId!] as Extract<import('../../../../flow/common/change.ts').GraphNode, { kind: 'start' }>).inputDefs,
+    ).toEqual(parameters)
     const projected = designerGraph(saved().draft).nodes.find((node) => node.id === startId)
     if (projected?.kind !== 'trigger') throw new Error('Expected Start canvas node')
     expect(projected.outputs).toMatchObject(parameters)
     await store.undo()
-    expect(saved().draft.content.document.inputDefs).toEqual([])
+    expect(
+      (saved().draft.content.document.graph.nodes[startId!] as Extract<import('../../../../flow/common/change.ts').GraphNode, { kind: 'start' }>).inputDefs,
+    ).toEqual([])
     await store.redo()
-    expect(saved().draft.content.document.inputDefs).toEqual(parameters)
+    expect(
+      (saved().draft.content.document.graph.nodes[startId!] as Extract<import('../../../../flow/common/change.ts').GraphNode, { kind: 'start' }>).inputDefs,
+    ).toEqual(parameters)
     expect(saved().draft.content.document.graph.nodes.value?.name).toBe('Previous edit')
   } finally {
     store.dispose()

@@ -46,7 +46,7 @@ export class WebhookTargets {
     ) {
       return
     }
-    if (!matchesTriggerOutputs(trigger, outputs, [])) {
+    if (!matchesTriggerOutputs(trigger, outputs)) {
       throw new AcceptanceError('trigger-outputs-invalid', 'Webhook outputs do not match the fixed Trigger schema.')
     }
     const requestDigest = await digestBytes(

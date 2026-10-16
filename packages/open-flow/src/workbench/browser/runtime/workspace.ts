@@ -9,7 +9,7 @@ import type {
   FlowCanvasViewOutput,
   FlowCanvasViewTriggerNode,
 } from '../../../canvas/browser/graph/FlowCanvas/model.ts'
-import type { ConditionOperand, Port } from '../../../flow/common/change.ts'
+import type { ConditionOperand } from '../../../flow/common/change.ts'
 import type { ConnectorProvider, Diagnostic, Draft, GraphNode, Group, JsonValue, Run, RunDetails, RunEvent, TaskDefinition, TriggerNode } from './api.ts'
 import type { Point, DesignerViewport } from './canvasPresentation.ts'
 import type { ConnectionCatalog, ConnectorActionView } from './connectionCatalog.ts'
@@ -126,9 +126,9 @@ function edgeId(source: string, sourceHandle: string, target: string, targetHand
   return JSON.stringify([source, sourceHandle, target, targetHandle])
 }
 
-function nodePorts(node: ResolvedSelection, inputDefs: readonly Port[], revision: RevisionView): NodePorts {
+function nodePorts(node: ResolvedSelection, revision: RevisionView): NodePorts {
   if (node.kind == 'trigger') {
-    return { inputs: new Map(), outputs: new Map(Object.entries(triggerOutputPorts(node.trigger, inputDefs))) }
+    return { inputs: new Map(), outputs: new Map(Object.entries(triggerOutputPorts(node.trigger))) }
   }
   const inputs = new Map<string, Omit<FlowCanvasViewInput, 'handle' | 'sources' | 'value'>>(
     Object.keys(revision.inputMappings(node.node)).map((handle) => [handle, {}]),
@@ -136,7 +136,7 @@ function nodePorts(node: ResolvedSelection, inputDefs: readonly Port[], revision
   const outputs = new Map<string, Omit<FlowCanvasViewOutput, 'handle'>>()
   switch (node.kind) {
     case 'outputs':
-      for (const port of revision.outputDefs()) inputs.set(port.handle, { description: port.description, jsonSchema: port.jsonSchema, nullable: port.nullable })
+      for (const port of node.node.outputDefs) inputs.set(port.handle, { description: port.description, jsonSchema: port.jsonSchema, nullable: port.nullable })
       break
     case 'condition': {
       for (const item of node.node.cases) outputs.set(item.output, { description: item.description })
@@ -239,7 +239,6 @@ function conditionOperand(operand: ConditionOperand, context: NodeProjectionCont
 function nodeDiagnosticCount(node: ResolvedNode, diagnostics: readonly Diagnostic[]): number {
   const graphPath = `/document/graph/nodes/${node.id}`
   const paths = [graphPath]
-  if (node.kind == 'outputs') paths.push('/document/outputDefs', '/document/outputMappings')
   if (node.kind == 'task') {
     if ('moduleId' in node.node.task) paths.push(`${graphPath}/task`)
     const moduleId = node.definition != null && 'moduleId' in node.definition ? node.definition.moduleId : undefined
@@ -499,7 +498,6 @@ function groupedOutputs(resolved: ResolvedNode, outputs: readonly FlowCanvasView
 function triggerDesignerNode(
   triggerId: string,
   trigger: TriggerNode,
-  inputDefs: readonly Port[],
   position: Point,
   diagnostics: readonly Diagnostic[],
   providers: Readonly<Record<string, ConnectorProvider>>,
@@ -542,7 +540,7 @@ function triggerDesignerNode(
     id: triggerId,
     inputs: [],
     kind: 'trigger',
-    outputs: Object.entries(triggerOutputPorts(trigger, inputDefs)).map(([handle, port]) => Object.assign({ handle }, port)),
+    outputs: Object.entries(triggerOutputPorts(trigger)).map(([handle, port]) => Object.assign({ handle }, port)),
     presentation,
     position,
     title: trigger.name,
@@ -648,7 +646,7 @@ export function designerGraph(
   const entries = Object.entries(graph.nodes)
   const definitions = new Map(entries.map(([nodeId, node]) => [nodeId, revision.resolveNode(nodeId, node)]))
   const nodeIds = new Set(entries.map(([nodeId]) => nodeId))
-  const ports = new Map([...definitions].map(([nodeId, node]) => [nodeId, nodePorts(node, revision.inputDefs(), revision)]))
+  const ports = new Map([...definitions].map(([nodeId, node]) => [nodeId, nodePorts(node, revision)]))
   const edgeProjection = projectEdges(graph, nodeIds)
   const layout = layoutNodes(nodeIds, edgeProjection.dependencies, edgeProjection.dependents)
   const positions = savedPositions(presentation)
@@ -678,7 +676,7 @@ export function designerGraph(
     const resolved = definitions.get(nodeId)!
     if (resolved.kind == 'trigger') {
       nodes.push({
-        ...triggerDesignerNode(nodeId, resolved.trigger, revision.inputDefs(), position, diagnostics, providers),
+        ...triggerDesignerNode(nodeId, resolved.trigger, position, diagnostics, providers),
         contentHidden: hiddenNodeContent?.[nodeId] === true,
       })
       continue

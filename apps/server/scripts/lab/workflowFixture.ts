@@ -6,11 +6,7 @@ export async function seedWorkflowTarget(service: ServerService) {
     baseRevision: created.flow.draftRevisionId,
     requestId: 'lab-call-target',
     edits: [
-      {
-        op: 'flow.update',
-        set: { inputDefs: { amount: { schema: { type: 'number' }, nullable: false } }, outputDefs: { total: { schema: { type: 'number' }, nullable: false } } },
-      },
-      { op: 'node.add', as: 'start', type: 'start', name: 'Start' },
+      { op: 'node.add', as: 'start', type: 'start', name: 'Start', config: { inputDefs: { amount: { schema: { type: 'number' }, nullable: false } } } },
       {
         op: 'node.add',
         as: 'code',
@@ -20,7 +16,14 @@ export async function seedWorkflowTarget(service: ServerService) {
         config: { outputs: { total: { schema: { type: 'number' }, nullable: false } } },
         inputs: { amount: { kind: 'output', node: '$start', port: 'amount' } },
       },
-      { op: 'node.add', as: 'outputs', type: 'outputs', name: 'Outputs', inputs: { total: { kind: 'output', node: '$code' } } },
+      {
+        op: 'node.add',
+        as: 'outputs',
+        type: 'outputs',
+        name: 'Outputs',
+        inputs: { total: { kind: 'output', node: '$code' } },
+        config: { outputDefs: { total: { schema: { type: 'number' }, nullable: false } } },
+      },
       { op: 'edge.connect', source: '$start', target: '$code' },
       { op: 'edge.connect', source: '$code', target: '$outputs' },
     ],

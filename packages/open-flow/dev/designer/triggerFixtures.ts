@@ -49,7 +49,6 @@ const configExamples: Readonly<Record<string, Readonly<Record<string, JsonValue>
 
 export interface TriggerFixture {
   readonly id: string
-  readonly inputDefs?: readonly import('../../src/flow/common/change.ts').Port[]
   readonly trigger: TriggerNode
   readonly outputs: Readonly<Record<string, JsonValue>>
 }
@@ -62,10 +61,7 @@ export const startInputDefs: readonly import('../../src/flow/common/change.ts').
 
 const builtins: readonly TriggerNode[] = [
   { kind: 'error', name: 'Flow Error' },
-  {
-    kind: 'start',
-    name: 'Start',
-  },
+  { inputDefs: startInputDefs, kind: 'start', name: 'Start' },
   {
     kind: 'cron',
     name: 'Schedule',
@@ -90,14 +86,13 @@ export const triggerFixtures: readonly TriggerFixture[] = [
   ...builtins.map(
     (trigger): TriggerFixture => ({
       id: trigger.kind,
-      inputDefs: trigger.kind === 'start' ? startInputDefs : [],
       trigger,
       outputs:
         trigger.kind === 'start'
           ? { orderId: 'order_123', note: 'Review delivery instructions', options: { dryRun: false } }
           : trigger.kind === 'webhook'
             ? { headers: {}, query: {}, body: { event: 'order.created', orderId: 'order_123' }, webhookUrl: 'https://example.com/webhook' }
-            : Object.fromEntries(triggerOutputDefinitions(trigger, []).map((port) => [port.handle, sample(port.jsonSchema)])),
+            : Object.fromEntries(triggerOutputDefinitions(trigger).map((port) => [port.handle, sample(port.jsonSchema)])),
     }),
   ),
   ...snapshots.map((definition): TriggerFixture => {
@@ -116,17 +111,13 @@ export const triggerFixtures: readonly TriggerFixture[] = [
     return {
       id: definition.key.replaceAll('.', '-').replaceAll('_', '-'),
       trigger,
-      outputs: Object.fromEntries(triggerOutputDefinitions(trigger, []).map((port) => [port.handle, sample(port.jsonSchema)])),
+      outputs: Object.fromEntries(triggerOutputDefinitions(trigger).map((port) => [port.handle, sample(port.jsonSchema)])),
     }
   }),
 ]
 
 const timestamp = '2026-09-10T00:00:00.000Z'
-export function triggerDraft(
-  trigger: TriggerNode,
-  downstream = false,
-  inputDefs: readonly import('../../src/flow/common/change.ts').Port[] = [],
-): { flow: Flow; draft: Draft } {
+export function triggerDraft(trigger: TriggerNode, downstream = false): { flow: Flow; draft: Draft } {
   const flow: Flow = {
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -153,7 +144,6 @@ export function triggerDraft(
       modelVersion: currentFlowModelVersion,
       modules: {},
       document: {
-        inputDefs,
         bindings: {},
 
         graph: {

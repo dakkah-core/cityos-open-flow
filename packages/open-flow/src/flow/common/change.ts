@@ -458,7 +458,7 @@ interface TriggerNodeBase {
 
 export type TriggerNode =
   | (TriggerNodeBase & { readonly kind: 'manual' })
-  | (TriggerNodeBase & { readonly kind: 'start' })
+  | (TriggerNodeBase & { readonly kind: 'start'; readonly inputDefs: readonly Port[] })
   | (TriggerNodeBase & { readonly kind: 'error'; readonly sourceFlowIds?: readonly string[] })
   | (TriggerNodeBase & {
       readonly bodyFields: readonly WebhookBodyField[]
@@ -483,6 +483,8 @@ export type TriggerNode =
 
 export interface OutputsNode extends Omit<GraphNodeBase, 'inputs'> {
   readonly kind: 'outputs'
+  readonly outputDefs: readonly Port[]
+  readonly outputMappings: Readonly<Record<string, InputMapping>>
 }
 
 export function isTriggerNode(node: GraphNode): node is TriggerNode {
@@ -492,9 +494,6 @@ export function isTriggerNode(node: GraphNode): node is TriggerNode {
 export type GraphNode = OutputsNode | ApprovalNode | ConditionNode | TaskNode | TriggerNode | ValueNode | WaitNode
 
 export interface FlowDocument {
-  readonly inputDefs?: readonly Port[]
-  readonly outputDefs?: readonly Port[]
-  readonly outputMappings?: Readonly<Record<string, InputMapping>>
   readonly bindings: Readonly<Record<string, { readonly kind: 'variable'; readonly target: string }>>
   readonly graph: Graph
 }
@@ -538,7 +537,7 @@ function upgradeDecodedRevisionContent(content: RevisionContent): RevisionConten
 }
 
 export function upgradeManualTrigger(node: GraphNode): GraphNode {
-  return node.kind == 'manual' ? { ...node, kind: 'start' } : node
+  return node.kind == 'manual' ? { ...node, kind: 'start', inputDefs: [] } : node
 }
 
 export function normalizeNodeName(value: string): string {
@@ -567,13 +566,6 @@ export function nodeNameIssue(graph: Graph, nodeId: string, value: string): 'dup
 }
 
 export type ChangeOperation =
-  | { readonly kind: 'flow.output-defs.set'; readonly before?: readonly Port[]; readonly value?: readonly Port[] }
-  | {
-      readonly kind: 'flow.output-mappings.set'
-      readonly before?: Readonly<Record<string, InputMapping>>
-      readonly value?: Readonly<Record<string, InputMapping>>
-    }
-  | { readonly kind: 'flow.input-defs.set'; readonly before: readonly Port[]; readonly value: readonly Port[] }
   | { readonly kind: 'graph.node.replace'; readonly nodeId: string; readonly before: GraphNode; readonly node: GraphNode }
   | {
       readonly before?: readonly ConnectorCapability[]
@@ -707,18 +699,6 @@ export function applyFlowChanges(content: RevisionContent, operations: readonly 
   const modules = { ...source.modules }
   for (const operation of operations) {
     switch (operation.kind) {
-      case 'flow.output-defs.set':
-      case 'flow.output-mappings.set': {
-        const field = operation.kind == 'flow.output-defs.set' ? 'outputDefs' : 'outputMappings'
-        if (!dequal(document[field], operation.before)) invalid('The workflow output configuration changed before this operation was applied.')
-        if (operation.value === undefined) Reflect.deleteProperty(document, field)
-        else Object.assign(document, { [field]: operation.value })
-        break
-      }
-      case 'flow.input-defs.set':
-        if (!dequal(document.inputDefs ?? [], operation.before)) invalid('The workflow input definitions changed before this operation was applied.')
-        document.inputDefs = operation.value
-        break
       case 'graph.trigger.sources.set': {
         const graph = document.graph
         const node = graph.nodes[operation.nodeId]
@@ -859,12 +839,12 @@ export function applyFlowChanges(content: RevisionContent, operations: readonly 
         const graph = document.graph
         const node = graph.nodes[operation.nodeId]
         if (node == null || isTriggerNode(node)) invalid('The Node does not accept inputs.')
-        if (!dequal(nodeInputMappings(node, document)[operation.handle], operation.before)) invalid('The Node input changed before this operation was applied.')
-        const inputs = { ...nodeInputMappings(node, document) }
+        if (!dequal(nodeInputMappings(node)[operation.handle], operation.before)) invalid('The Node input changed before this operation was applied.')
+        const inputs = { ...nodeInputMappings(node) }
         if (operation.value == null) delete inputs[operation.handle]
         else inputs[operation.handle] = operation.value
         if (node.kind == 'outputs') {
-          document.outputMappings = inputs
+          document.graph = { ...graph, nodes: { ...graph.nodes, [operation.nodeId]: { ...node, outputMappings: inputs } } }
           break
         }
         Object.assign(document, {

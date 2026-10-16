@@ -319,13 +319,20 @@ it.each([
           modelVersion: legacy ? 6 : currentFlowModelVersion,
           modules: {},
           document: {
-            inputDefs: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: true }],
             bindings: {},
 
             graph: {
               edges: [],
               nodes: {
-                start: legacy ? { kind: 'manual', name: 'Start' } : { kind: 'start', name: 'Start' },
+                start: {
+                  ...(legacy
+                    ? { kind: 'manual', name: 'Start' }
+                    : ({ inputDefs: [], kind: 'start', name: 'Start' } as Extract<
+                        import('../../../../open-flow/src/flow/common/change.ts').GraphNode,
+                        { kind: 'start' }
+                      >)),
+                  inputDefs: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: true }],
+                },
                 ...(multiple ? { other: { kind: 'cron', name: 'Other', cronTimes: [] } } : {}),
               },
             },
@@ -828,7 +835,7 @@ it('checks a fixed Revision and changes only the observed Live publication enabl
     if (path.endsWith('/enabled')) {
       const body = JSON.parse(String(init?.body))
       expect(body).toEqual({ expectedPublicationId: 'published', enabled: expect.any(Boolean), version: 1 })
-      return Response.json({ ...flow, live: { enabled: body.enabled, publicationId: 'published', revisionId: 'historical' } })
+      return Response.json({ ...flow, live: { hasStart: true, enabled: body.enabled, publicationId: 'published', revisionId: 'historical' } })
     }
     throw new Error(path)
   }

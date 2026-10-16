@@ -139,7 +139,7 @@ function addValueNode(harness: ControlApiConformanceHarness, flowId: string, rev
 async function addStartTrigger(harness: ControlApiConformanceHarness, flowId: string, revisionId: string): Promise<string> {
   return changedRevisionId(
     await json(
-      await changeRequest(harness, flowId, revisionId, [{ kind: 'graph.node.create', node: { kind: 'start', name: 'Start' }, nodeId: 'start' }]),
+      await changeRequest(harness, flowId, revisionId, [{ kind: 'graph.node.create', node: { inputDefs: [], kind: 'start', name: 'Start' }, nodeId: 'start' }]),
       200,
       'Add Start node',
     ),
@@ -322,19 +322,16 @@ export const controlApiConformanceCases: readonly ControlApiConformanceCase[] = 
         requestId: 'start-parameters-create',
         edits: [
           {
-            op: 'flow.update',
-            set: {
+            op: 'node.add',
+            as: 'start',
+            type: 'start',
+            name: 'Start',
+            config: {
               inputDefs: {
                 message: { schema: { type: 'string' }, nullable: false, description: 'Original' },
                 note: { schema: { type: 'string' }, nullable: true },
               },
             },
-          },
-          {
-            op: 'node.add',
-            as: 'start',
-            type: 'start',
-            name: 'Start',
           },
         ],
       })
@@ -342,11 +339,11 @@ export const controlApiConformanceCases: readonly ControlApiConformanceCase[] = 
       const changed = await api.editAuthoring(flow.flowId, {
         baseRevision: created.revision,
         requestId: 'start-parameters-update',
-        edits: [{ op: 'flow.update', set: { inputDefs: { message: { description: 'Call message' } } } }],
+        edits: [{ op: 'node.update', node: nodeId, set: { config: { inputDefs: { message: { description: 'Call message' } } } } }],
       })
-      const details = await api.readAuthoring(flow.flowId)
+      const details = await api.readAuthoring(flow.flowId, { nodes: [nodeId] })
       equal(
-        details.data.inputDefs,
+        (details.data.nodes?.[0]?.config as Record<string, unknown> | undefined)?.inputDefs,
         {
           message: { schema: { type: 'string' }, nullable: false, description: 'Call message' },
           note: { schema: { type: 'string' }, nullable: true },
@@ -366,9 +363,9 @@ export const controlApiConformanceCases: readonly ControlApiConformanceCase[] = 
       equal(await json(await run({ message: 'Hello' }, 'start-call'), 200, 'Replay Start call'), admitted, 'Stable Start admission')
       await error(await run({ message: 'Hello', note: null }, 'start-call'), 409, 'run.conflict', 'Preserve original request identity before normalization')
       await json(await run({ message: 'Hello', note: null }, 'start-explicit-null'), 202, 'Admit explicit null')
-      const old = await api.readAuthoring(flow.flowId, { revision: created.revision })
+      const old = await api.readAuthoring(flow.flowId, { revision: created.revision, nodes: [nodeId] })
       equal(
-        old.data.inputDefs,
+        (old.data.nodes?.[0]?.config as Record<string, unknown> | undefined)?.inputDefs,
         {
           message: { schema: { type: 'string' }, nullable: false, description: 'Original' },
           note: { schema: { type: 'string' }, nullable: true },
@@ -1056,7 +1053,7 @@ export const publicationControlApiConformanceCases: readonly ControlApiConforman
       const first = await completePublish(harness, await publishRequest(harness, flowId, revisionId, null, 'enable-first'), 202, 'Publish')
       const publicationId = requiredString(first.publication.publicationId, 'Publication id')
       const disabled = await json(await change(false, publicationId), 200, 'Disable')
-      equal(disabled.live, { enabled: false, publicationId, revisionId }, 'Disabled summary')
+      equal(disabled.live, { enabled: false, hasStart: true, publicationId, revisionId }, 'Disabled summary')
       const page = await json(await request(harness, '/v1/flows'), 200, 'List disabled Flow')
       equal(page.flows, [disabled], 'List includes Live state')
       equal((await json(await request(harness, `/v1/flows/${flowId}/live`), 200, 'Disabled Live')).status, 'suspended', 'Disabled Live status')

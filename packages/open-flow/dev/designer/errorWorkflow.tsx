@@ -24,7 +24,7 @@ const flows: readonly Flow[] = ['source', 'handler', 'upstream-2', 'offline', 'r
   },
   status: flowId == 'retiring' ? 'retiring' : 'active',
   version: 1,
-  live: flowId == 'offline' ? undefined : { enabled: true, publicationId: 'publication', revisionId: 'revision' },
+  live: flowId == 'offline' ? undefined : { hasStart: true, enabled: true, publicationId: 'publication', revisionId: 'revision' },
 }))
 const run: RunDetails = {
   runId: 'source-run',

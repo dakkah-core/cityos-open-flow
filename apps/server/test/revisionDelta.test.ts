@@ -156,6 +156,7 @@ it('materializes a Draft Revision when admitting a Publish operation and rolls b
     revisionId: 'draft',
   })
   const input = {
+    interface: { inputs: null, outputs: null },
     closureDigest: 'closure',
     content: revision.content,
     crons: [],

@@ -55,16 +55,14 @@ export function cleanWorkflowFile(value: unknown): { readonly file: WorkflowFile
     Object.entries(graph.nodes).map(([id, source]) => {
       let node: GraphNode = source
       if ('inputs' in node) node = { ...node, inputs: Object.fromEntries(Object.entries(node.inputs).map(([key, input]) => [key, cleanInput(input)])) }
+      if (node.kind == 'outputs')
+        node = { ...node, outputMappings: Object.fromEntries(Object.entries(node.outputMappings).map(([key, input]) => [key, cleanInput(input)])) }
       if (node.kind == 'condition') node = clearConditionBindings(node)
       if (node.kind == 'error' && node.sourceFlowIds != null) node = { ...node, sourceFlowIds: [] }
       if (node.kind == 'poll' || node.kind == 'integration') node = { ...node, config: clearTriggerExternalConfig(node.definition.key, node.config) }
       return [id, node]
     }),
   )
-  const outputMappings =
-    file.content.document.outputMappings == null
-      ? undefined
-      : Object.fromEntries(Object.entries(file.content.document.outputMappings).map(([key, input]) => [key, cleanInput(input)]))
   return {
     file: {
       ...file,
@@ -73,15 +71,12 @@ export function cleanWorkflowFile(value: unknown): { readonly file: WorkflowFile
         document: {
           ...file.content.document,
           bindings: {},
-          ...(outputMappings == null ? {} : { outputMappings }),
           graph: { ...graph, nodes },
         },
       },
     },
     summary: {
-      changedNodeIds: Object.keys(nodes).filter(
-        (id) => !dequal(nodes[id], original.nodes[id]) || (nodes[id]?.kind == 'outputs' && !dequal(outputMappings, file.content.document.outputMappings)),
-      ),
+      changedNodeIds: Object.keys(nodes).filter((id) => !dequal(nodes[id], original.nodes[id])),
       removedBindings: Object.keys(file.content.document.bindings).length,
     },
   }

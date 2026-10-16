@@ -102,7 +102,7 @@ export interface FlowResources {
 }
 
 export interface Flow {
-  readonly live?: { readonly enabled: boolean; readonly publicationId: string; readonly revisionId: string }
+  readonly live?: { readonly enabled: boolean; readonly hasStart: boolean; readonly publicationId: string; readonly revisionId: string }
 
   readonly createdAt: string
   readonly draftRevisionId: string

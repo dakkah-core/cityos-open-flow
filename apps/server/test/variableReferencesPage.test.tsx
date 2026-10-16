@@ -78,8 +78,8 @@ it('shows version links and disabled publications', () => {
         result: {
           version: 1,
           references: [
-            { flowId: 'both', flowName: 'Both', draft: true, live: { publicationId: 'p', enabled: false } },
-            { flowId: 'live', flowName: 'Live only', draft: false, live: { publicationId: 'q', enabled: true } },
+            { flowId: 'both', flowName: 'Both', draft: true, live: { hasStart: true, publicationId: 'p', enabled: false } },
+            { flowId: 'live', flowName: 'Live only', draft: false, live: { hasStart: true, publicationId: 'q', enabled: true } },
           ],
         },
         loading: false,

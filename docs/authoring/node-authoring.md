@@ -26,14 +26,11 @@ A complete type does not guarantee a usable interface. Instructions for building
 Tools generate output definitions for fixed single results. Callers can omit the port name when referencing the only data output.
 When a node has multiple business outputs, the caller must select one. The tool returns available names to help correct the request.
 
-Workflow Outputs is an execution sink with workflow-owned `outputDefs` and `outputMappings`. Its public type is `outputs` with empty config. Declare the workflow fields through `flow.update.set.outputDefs`, then assign their sources through existing node input operations. Keep its business result separate from node logs and do not expose its fields as downstream data ports.
+Start owns `inputDefs`, edited through its public `config.inputDefs` named field map. Outputs owns `outputDefs` and `outputMappings`: edit definitions through `config.outputDefs` and sources through `node.add.inputs` or `input.set`. Definitions have no defaults. Configuration is removed with its node, restored by undo, and copied with source remapping. Outputs remains an execution sink with no downstream data ports; its business result is separate from node logs.
 
-Call Workflow has public type `workflow` and config `{ flowId }`. The platform obtains the current published workflow input/output contract and stores capability-derived Task ports. Ordinary updates preserve that snapshot; `node.refresh` explicitly reloads it. Server checks require its saved revision to match current Live, including publications with unchanged ports. A mismatch blocks testing and publishing, and exposes an update action in the inspector’s top status section. Refresh matches fields by exact name, removes mappings for removed inputs, and retains unresolved output references for diagnostics. Callers must not assemble executor identities or copy another workflow's graph.
+Call Workflow has public type `workflow` and config `{ flowId }`. The platform reads the target's current published interface snapshot and stores capability-derived Task ports. Ordinary updates preserve that snapshot; `node.refresh` reloads it. A changed Revision with an equal interface remains callable without mutating the caller. Changed interfaces require refresh; named schemas and nullability determine equality, while descriptions and port ordering do not. Refresh matches fields by exact name and retains unresolved output references for diagnostics. Callers do not reconstruct executor identities or inspect another workflow's graph.
 
-Workflow target selection may retain an owned unpublished or disabled Flow. Without a loaded interface,
-the call stores an empty source revision; checks report the target problem or missing interface.
-After the target becomes available, `node.refresh` loads its current Live contract. Selection and
-workflow-call checks do not validate Start presence. Start remains required at actual Live invocation.
+Selection may retain an owned unpublished, disabled or Start-less target as an incomplete draft. Interface reads and checks report the unavailable target; execution rechecks current Live admission. A missing saved snapshot requires explicit refresh. No Outputs node means no declared business outputs and does not prevent calling a Start entry.
 
 Model execution branches and data outputs separately. Only data outputs produced at runtime can be bound.
 Condition branches and other control signals cannot act as data ports. Expose Wait data and decisions according to their runtime contract.

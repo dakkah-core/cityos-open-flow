@@ -6,6 +6,7 @@ import { fieldsView } from './authoringFields.ts'
 export function triggerConfiguration(node: TriggerNode) {
   switch (node.kind) {
     case 'start':
+      return { inputDefs: fieldsView(node.inputDefs) }
     case 'manual':
       return {}
     case 'webhook':

@@ -73,6 +73,7 @@ function fixture(capacity = 10) {
         requestDigest: id,
       })
       const input = {
+        interface: { inputs: null, outputs: null },
         errorTriggers: kind == 'error' ? [{ nodeId: 'start', sourceFlowIds }] : [],
         closureDigest: digest,
         content,
@@ -121,7 +122,7 @@ it('commits one dispatch with terminal state, recovers it after restart, and nev
   expect(f.store.runViews.errorHandling(handlerId).errorSource).toEqual({ flowId: 'source', runId })
   const accepted = f.store.runs.claim()!
   expect(accepted.runId).toBe(handlerId)
-  expect(matchesTriggerOutputs({ kind: 'error', name: 'Error' }, accepted.trigger!.outputs, [])).toBe(true)
+  expect(matchesTriggerOutputs({ kind: 'error', name: 'Error' }, accepted.trigger!.outputs)).toBe(true)
   expect(accepted.trigger!.outputs.workflow).toMatchObject({ flowId: 'source' })
   f.fail(handlerId)
   f.reopen()

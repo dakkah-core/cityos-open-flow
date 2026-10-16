@@ -22,6 +22,7 @@ export function flow(stored: StoredFlow): Flow {
       : {
           live: {
             enabled: stored.liveEnabled == 1,
+            hasStart: stored.liveHasStart == 1,
             publicationId: stored.publicationId,
             revisionId: stored.publishedRevisionId,
           },

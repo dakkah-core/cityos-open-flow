@@ -187,7 +187,7 @@ const base = {
   timeoutMs: z.number().optional(),
 }
 const node = z.union([
-  z.strictObject({ ...base, kind: z.literal('outputs') }).omit({ inputs: true }),
+  z.strictObject({ ...base, kind: z.literal('outputs'), outputDefs: z.array(port.strict()), outputMappings: inputs }).omit({ inputs: true }),
   z.object({ ...base, inputs: z.record(text, z.never()), kind: z.literal('condition'), ...condition }),
   z.object({
     ...base,
@@ -202,7 +202,7 @@ const node = z.union([
   z.strictObject({ ...base, kind: z.literal('approval'), ...wait }).omit({ timeoutMs: true }),
   z.strictObject({ ...base, kind: z.literal('wait'), ...wait }).omit({ timeoutMs: true }),
   z.object({ ...trigger, kind: z.literal('manual') }),
-  z.strictObject({ ...trigger, kind: z.literal('start') }),
+  z.strictObject({ ...trigger, kind: z.literal('start'), inputDefs: workflowInputDefs }),
   z.strictObject({ ...trigger, kind: z.literal('error'), sourceFlowIds: sourceFlowIds.optional() }),
   z.object({ ...trigger, kind: z.literal('webhook'), ...webhook }),
   z.object({ ...trigger, kind: z.literal('cron'), cronTimes: triggerScheduleSchema }),
@@ -246,9 +246,6 @@ const module = z.object({ name: text, imports: strings, source: text })
 const document = z.preprocess(
   normalizeDocument,
   z.object({
-    inputDefs: workflowInputDefs.optional(),
-    outputDefs: z.array(port.strict()).optional(),
-    outputMappings: inputs.optional(),
     bindings: z.record(text, binding),
     graph,
   }),
@@ -274,32 +271,80 @@ function normalizeDocument(value: unknown): unknown {
     throw new TypeError('Subflows are no longer supported.')
   if (Object.values(record(record(candidate.graph).nodes)).some((candidateNode) => record(candidateNode).kind === 'subflow'))
     throw new TypeError('Subflow nodes are no longer supported.')
-  return upgradeStartParameters(value)
+  if (['inputDefs', 'outputDefs', 'outputMappings'].some((field) => Object.hasOwn(candidate, field)))
+    throw new TypeError('Workflow interface configuration must belong to Start and Outputs nodes.')
+  if (
+    Object.values(record(record(candidate.graph).nodes)).some(
+      (candidateNode) => record(candidateNode).kind == 'start' && Object.hasOwn(record(candidateNode), 'parameters'),
+    )
+  )
+    throw new TypeError('Legacy Start.parameters is unsupported; configure node.inputDefs.')
+  return value
+}
+
+/** Explicit storage upgrade only. Normal reads and authoring still reject retired fields. */
+export function upgradeWorkflowInterfaceDocument(value: unknown): unknown {
+  const candidate = record(value)
+  const sourceGraph = record(candidate.graph)
+  const sourceNodes = record(sourceGraph.nodes)
+  const needsUpgrade =
+    ['inputDefs', 'outputDefs', 'outputMappings'].some((field) => Object.hasOwn(candidate, field)) ||
+    Object.values(sourceNodes).some((entry) => {
+      const candidateNode = record(entry)
+      return (
+        (candidateNode.kind == 'start' && (!Object.hasOwn(candidateNode, 'inputDefs') || Object.hasOwn(candidateNode, 'parameters'))) ||
+        (candidateNode.kind == 'outputs' && (!Object.hasOwn(candidateNode, 'outputDefs') || !Object.hasOwn(candidateNode, 'outputMappings')))
+      )
+    })
+  if (!needsUpgrade) return value
+  if (candidate.graph !== sourceGraph || sourceGraph.nodes !== sourceNodes) throw new TypeError('Cannot migrate an invalid workflow graph.')
+  const starts = Object.values(sourceNodes).filter((entry) => record(entry).kind == 'start')
+  const outputs = Object.values(sourceNodes).filter((entry) => record(entry).kind == 'outputs')
+  if (starts.length > 1 || outputs.length > 1) throw new TypeError('Cannot migrate duplicate Start or Outputs nodes.')
+  const { inputDefs, outputDefs, outputMappings, ...sourceDocument } = candidate
+  if (starts.length == 0 && inputDefs !== undefined && workflowInputDefs.parse(inputDefs).length > 0)
+    throw new TypeError('Cannot migrate inputDefs without a Start node.')
+  if (
+    outputs.length == 0 &&
+    ((outputDefs !== undefined && workflowInputDefs.parse(outputDefs).length > 0) ||
+      (outputMappings !== undefined && Object.keys(inputs.parse(outputMappings)).length > 0))
+  )
+    throw new TypeError('Cannot migrate output configuration without an Outputs node.')
+  return {
+    ...sourceDocument,
+    graph: {
+      ...sourceGraph,
+      nodes: Object.fromEntries(
+        Object.entries(sourceNodes).map(([id, nodeValue]) => {
+          const candidateNode = record(nodeValue)
+          if (candidateNode.kind == 'start') {
+            const { parameters, ...rest } = candidateNode
+            return [id, { ...rest, inputDefs: workflowInputDefs.parse(mergeInterfaceConfiguration([candidateNode.inputDefs, parameters, inputDefs], [])) }]
+          }
+          if (candidateNode.kind == 'outputs')
+            return [
+              id,
+              {
+                ...candidateNode,
+                outputDefs: workflowInputDefs.parse(mergeInterfaceConfiguration([candidateNode.outputDefs, outputDefs], [])),
+                outputMappings: inputs.parse(mergeInterfaceConfiguration([candidateNode.outputMappings, outputMappings], {})),
+              },
+            ]
+          return [id, nodeValue]
+        }),
+      ),
+    },
+  }
+}
+
+function mergeInterfaceConfiguration(values: unknown[], fallback: unknown): unknown {
+  const present = values.filter((value) => value !== undefined)
+  if (present.some((value) => !dequal(value, present[0]))) throw new TypeError('Conflicting workflow interface configuration.')
+  return present.length == 0 ? fallback : present[0]
 }
 
 function record(value: unknown): Record<string, unknown> {
   return value != null && typeof value == 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
-}
-
-/** Read the legacy Start contract without discarding or overwriting definitions. */
-function upgradeStartParameters(value: unknown): unknown {
-  const candidate = record(value)
-  const sourceGraph = record(candidate.graph)
-  const sourceNodes = record(sourceGraph.nodes)
-  let inputDefs = candidate.inputDefs
-  let nodes: Record<string, unknown> | undefined
-  for (const [id, nodeValue] of Object.entries(sourceNodes)) {
-    const candidateNode = record(nodeValue)
-    if (candidateNode.kind != 'start' || !Object.hasOwn(candidateNode, 'parameters')) continue
-    const parameters = workflowInputDefs.parse(candidateNode.parameters)
-    if (inputDefs !== undefined && !dequal(inputDefs, parameters))
-      throw new TypeError('Legacy Start.parameters conflicts with workflow inputDefs or another Start node.')
-    inputDefs = parameters
-    const { parameters: _, ...upgradedNode } = candidateNode
-    nodes ??= { ...sourceNodes }
-    nodes[id] = upgradedNode
-  }
-  return nodes == null ? value : { ...candidate, inputDefs, graph: { ...sourceGraph, nodes } }
 }
 
 function upgradeLegacySources(value: unknown, resolutionIds: ReadonlySet<string>): unknown {
@@ -474,9 +519,6 @@ export function repairRevisionEnvelope(value: unknown): RevisionContent {
   return decodeRevisionContent({
     modelVersion: currentFlowModelVersion,
     document: {
-      ...(Object.hasOwn(sourceDocument, 'outputDefs') ? { outputDefs: sourceDocument.outputDefs } : {}),
-      ...(Object.hasOwn(sourceDocument, 'outputMappings') ? { outputMappings: sourceDocument.outputMappings } : {}),
-      ...(Object.hasOwn(sourceDocument, 'inputDefs') ? { inputDefs: sourceDocument.inputDefs } : {}),
       bindings: repairedEntries(sourceDocument.bindings, binding),
       graph: sourceGraph,
     },
@@ -508,9 +550,6 @@ export function decodeRevisionEnvelope(value: unknown): RevisionContent {
 }
 
 const shapes = {
-  'flow.output-defs.set': { before: z.array(port.strict()).optional(), value: z.array(port.strict()).optional() },
-  'flow.output-mappings.set': { before: inputs.optional(), value: inputs.optional() },
-  'flow.input-defs.set': { before: workflowInputDefs, value: workflowInputDefs },
   'graph.trigger.sources.set': { nodeId: text, before: sourceFlowIds.optional(), value: sourceFlowIds.optional() },
   'binding.create': { bindingId: text, binding },
   'binding.delete': { bindingId: text },
@@ -605,12 +644,7 @@ export function changeOperationsSchema(kind?: string): JsonValue {
 }
 
 function checkModelVersion(content: RevisionContent): void {
-  if (
-    content.modelVersion < 8 &&
-    (content.document.outputDefs !== undefined ||
-      content.document.outputMappings !== undefined ||
-      Object.values(content.document.graph.nodes).some((candidateNode) => candidateNode.kind == 'outputs'))
-  )
+  if (content.modelVersion < 8 && Object.values(content.document.graph.nodes).some((candidateNode) => candidateNode.kind == 'outputs'))
     throw new TypeError('Workflow outputs require Flow model version 8.')
   if (content.modelVersion < 7 && Object.values(content.document.graph.nodes).some((candidateNode) => candidateNode.kind == 'start'))
     throw new TypeError('Start Triggers require Flow model version 7.')

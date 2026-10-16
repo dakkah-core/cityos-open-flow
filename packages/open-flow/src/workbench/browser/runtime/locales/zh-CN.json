@@ -851,7 +851,9 @@
         "robot-required": "请选择 Leina 机器人，或绑定机器人标识的数据来源。"
       },
       "workflow": {
-        "revision-stale": "目标工作流的线上版本已更新。",
+        "revision-stale": "目标工作流的接口已变更。",
+        "snapshot-missing": "保存的工作流接口快照不可用，请刷新接口。",
+        "missing-start": "目标工作流没有 Start 节点。",
         "dependency-stale": "目标工作流中的调用需要更新。",
         "target-required": "请选择目标工作流。",
         "unpublished": "目标工作流尚未发布。",

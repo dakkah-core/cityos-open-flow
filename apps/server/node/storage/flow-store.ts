@@ -10,6 +10,7 @@ import { requireErrorSources } from './trigger-store.ts'
 
 export interface StoredFlow {
   readonly liveEnabled: number | null
+  readonly liveHasStart: number | null
   readonly publicationId: string | null
   readonly publishedRevisionId: string | null
 
@@ -60,7 +61,8 @@ export function presentationView(stored: StoredPresentation): Presentation {
   return { revision: stored.revision, updatedAt: new Date(stored.updatedAt).toISOString(), value: stored.value, version: 1 }
 }
 
-const flowColumns = `(SELECT enabled FROM flow_live WHERE flow_live.flow_id = flows.flow_id) AS liveEnabled,
+const flowColumns = `(SELECT json_extract(publications.interface_json, '$.inputs') IS NOT NULL FROM flow_live JOIN publications USING (publication_id) WHERE flow_live.flow_id = flows.flow_id) AS liveHasStart,
+                     (SELECT enabled FROM flow_live WHERE flow_live.flow_id = flows.flow_id) AS liveEnabled,
                      (SELECT publication_id FROM flow_live WHERE flow_live.flow_id = flows.flow_id) AS publicationId,
                      (SELECT publications.revision_id FROM flow_live JOIN publications USING (publication_id) WHERE flow_live.flow_id = flows.flow_id) AS publishedRevisionId,
                      flows.create_request_digest AS createRequestDigest, flows.created_at AS createdAt,

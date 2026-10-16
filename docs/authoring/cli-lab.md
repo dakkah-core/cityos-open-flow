@@ -128,7 +128,7 @@ attempt as mixed.
 
 `workflow-outputs` builds separate Code paths and joins them at Outputs, preserving an independent terminal Code result. It edits the output description in a later request and verifies typed business outputs, zero, nullable values, ordinary node events and retained logs. Run `bun run lab test workflow-outputs` and `bun run lab test workflow-outputs --mcp`; the existing `start-parameters` scenario remains a regression check.
 
-`start-parameters` declares workflow `inputDefs` through `flow.update`, then creates a Start node with required message and amount inputs and a nullable note. The public reference reads definitions directly from the workflow outline. The public reference edits the amount description in a later request and preserves its schema. Acceptance runs the Flow with zero, an omitted note, explicit null and an ordinary note, then checks the actual archive call. This exercises the same configuration and execution contract through CLI and MCP.
+`start-parameters` creates a Start node with `config.inputDefs` with required message and amount inputs and a nullable note. The public reference reads definitions from Start node details. The public reference edits the amount description in a later request and preserves its schema. Acceptance runs the Flow with zero, an omitted note, explicit null and an ordinary note, then checks the actual archive call. This exercises the same configuration and execution contract through CLI and MCP.
 
 ```bash
 bun run lab test start-parameters

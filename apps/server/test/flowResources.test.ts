@@ -180,9 +180,9 @@ it('backfills delta heads on upgrade and preserves unavailable summaries for dam
 
 function publishFixture(database: Database, store: Store, flowId: string, revisionId: string, publicationId: string, enabled = 1) {
   database.connection
-    .prepare(`INSERT INTO publications (publication_id, flow_id, revision_id, revision_digest, closure_digest, engine_contract,
+    .prepare(`INSERT INTO publications (interface_json, publication_id, flow_id, revision_id, revision_digest, closure_digest, engine_contract,
     idempotency_key, request_digest, actor_id, operation, model_version, created_at)
-    VALUES (?, ?, ?, 'digest', 'closure', 'engine', ?, ?, 'operator', 'publish', 6, 1)`)
+    VALUES ('{"inputs":null,"outputs":null}', ?, ?, ?, 'digest', 'closure', 'engine', ?, ?, 'operator', 'publish', 6, 1)`)
     .run(publicationId, flowId, revisionId, publicationId, publicationId)
   database.connection
     .prepare(`INSERT INTO flow_live (flow_id, publication_id, revision, updated_at, enabled) VALUES (?, ?, 1, 1, ?)

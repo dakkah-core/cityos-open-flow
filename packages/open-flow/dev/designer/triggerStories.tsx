@@ -129,9 +129,9 @@ function NodeStory({ fixture, dark, language, log, active = true, onActivate }: 
           if (sample.kind === 'poll' || sample.kind === 'integration') sample = { ...sample, config: {} }
           else if (sample.kind === 'webhook') sample = { ...sample, bodyFields: [], options: {} }
         }
-        samples.set(entry.id, { id: `${fixture.id}-${entry.id}`, trigger: sample, inputDefs: fixture.inputDefs, outputs: fixture.outputs })
+        samples.set(entry.id, { id: `${fixture.id}-${entry.id}`, trigger: sample, outputs: fixture.outputs })
         const base = designerGraph(
-          triggerDraft(sample, false, fixture.inputDefs).draft,
+          triggerDraft(sample).draft,
           {},
           entry.id === 'disconnected'
             ? [
@@ -249,7 +249,7 @@ function RunSample({
   const logRef = useRef(log)
   logRef.current = log
   useEffect(() => {
-    const { flow, draft } = triggerDraft(fixture.trigger, downstream, fixture.inputDefs)
+    const { flow, draft } = triggerDraft(fixture.trigger, downstream)
     const inputs = { flow, draft }
     const i18n = createI18n(language)
     let release: (() => void) | undefined
@@ -311,11 +311,7 @@ function RunSample({
           const trigger = fixture.trigger
           onContractChangeReady?.(() => {
             inputs.draft = {
-              ...triggerDraft(
-                trigger,
-                downstream,
-                (fixture.inputDefs ?? []).map((port) => Object.assign({}, port, { nullable: false })),
-              ).draft,
+              ...triggerDraft({ ...trigger, inputDefs: trigger.inputDefs.map((port) => Object.assign({}, port, { nullable: false })) }, downstream).draft,
               revisionId: `${draft.revisionId}-required`,
             }
             logRef.current('run.contractChanged', inputs.draft.revisionId)
@@ -384,16 +380,16 @@ function RunStory(props: StoryProps) {
     return {
       nullable: {
         ...props.fixture,
-        inputDefs: (props.fixture.inputDefs ?? []).map((port) => Object.assign({}, port, { nullable: true })),
+        trigger: { ...props.fixture.trigger, inputDefs: props.fixture.trigger.inputDefs.map((port) => Object.assign({}, port, { nullable: true })) },
       },
-      empty: { ...props.fixture, inputDefs: [], outputs: {} },
+      empty: { ...props.fixture, trigger: { ...props.fixture.trigger, inputDefs: [] }, outputs: {} },
     }
   }, [props.fixture])
   useStoryActions(startSamples == null ? [] : [{ label: 'Make parameters required', onClick: () => changeContract?.(), disabled: changeContract == null }])
   const direct =
     props.fixture.trigger.kind === 'manual' ||
     props.fixture.trigger.kind === 'cron' ||
-    (props.fixture.trigger.kind === 'start' && (props.fixture.inputDefs ?? []).length === 0)
+    (props.fixture.trigger.kind === 'start' && props.fixture.trigger.inputDefs.length === 0)
   return (
     <Gallery {...props}>
       <div className="trigger-case-grid">
@@ -468,6 +464,7 @@ function SidebarSample({ fixture, dark, language, log, state, framed = true }: S
       if (trigger.kind === 'poll' || trigger.kind === 'integration') trigger = { ...trigger, config: {} }
       else if (trigger.kind === 'cron') trigger = { ...trigger, cronTimes: [] }
       else if (trigger.kind === 'webhook') trigger = { ...trigger, bodyFields: [], options: {} }
+      else if (trigger.kind === 'start') trigger = { ...trigger, inputDefs: [] }
     }
     if (trigger.kind === 'poll' && trigger.definition.provider === 'linear') {
       if (state === 'missing-status')
@@ -485,7 +482,6 @@ function SidebarSample({ fixture, dark, language, log, state, framed = true }: S
       undefined,
       state === 'no-event-sources' ? [] : undefined,
       state === 'created-with-allowed-account' ? 'alternative' : state === 'created-without-permission' ? 'none' : undefined,
-      state.startsWith('created-') || state === 'unconfigured' ? [] : fixture.inputDefs,
     )
     setSession(next)
     void next.start()
@@ -740,7 +736,7 @@ export const triggerStories: readonly FrontendStory[] = [
             return (
               <section key={label} className="rounded-lg border p-4">
                 <h3>{label}</h3>
-                <TriggerSummary inputDefs={fixture.inputDefs ?? []} trigger={fixture.trigger} />
+                <TriggerSummary trigger={fixture.trigger} />
                 <TriggerStatus binding={binding} enabled={enabled} />
                 <ListenerHealth binding={binding} enabled={enabled} />
               </section>

@@ -60,8 +60,8 @@ consume the source definition rather than interpreting provider-specific configu
 
 Flow is a deployment-generated top-level resource with a stable identity and independent lifecycle. It does not belong to a Project.
 Each Flow has one mutable Draft head. Revisions are immutable execution definitions that store the graph, node configuration, variable references, and code.
-Workflow call inputs belong to `FlowDocument.inputDefs`; Start exposes these definitions as graph outputs and stores only node metadata.
-Workflow business outputs belong to `FlowDocument.outputDefs` and `outputMappings`. A single Outputs node consumes these mappings under ordinary execution dependency rules and stores only node metadata. It has no downstream execution or data ports. Its computed values are retained separately from the Run's node results and logs. Call Workflow consumes the successful child Run's business outputs.
+Start owns `inputDefs` and exposes them as graph outputs.
+A single Outputs node owns `outputDefs` and `outputMappings` and consumes its mappings under ordinary execution dependency rules. Interface configuration follows node creation, deletion, copying and undo. It has no downstream execution or data ports. Its computed values are retained separately from the Run's node results and logs. Call Workflow consumes the successful child Run's business outputs.
 Node identities do not change when names change. Each node owns its execution configuration. A local edit must not change other nodes' behavior.
 
 Semantic changes commit atomically with an expected Revision and a stable request identity. They must not silently overwrite concurrent changes.
@@ -133,7 +133,7 @@ The deployment limits concurrency and execution budgets and owns queuing and rec
 
 ### Workflow calls
 
-A Call Workflow Task stores a target Flow ID and a local input/output contract snapshot. Editing does not resolve the target; selection, explicit refresh and deployment checks do. The deployment admits each call against the target's current enabled Live, under the same owner, and fixes that child Run's Revision and authorization normally. Snapshot provenance is not a historical execution selector. Recursive call chains are rejected.
+A Call Workflow Task stores a target Flow ID and a local input/output contract snapshot. Editing does not resolve the target; selection, explicit refresh and deployment checks do. The deployment admits each call against the target's current enabled Live, under the same owner, and fixes that child Run's Revision and authorization normally. Each Publication fixes an interface snapshot with independently nullable inputs and outputs: null means the corresponding Start or Outputs node is absent. Interface reads use this snapshot without loading a Revision. When the saved Revision differs from current Live, compare their published interfaces by named schemas and nullability; unchanged interfaces remain callable, while changes require explicit refresh. Descriptions and port ordering do not affect interface equality. Snapshot provenance is not a historical execution selector. Recursive call chains are rejected.
 
 Each call owns a durable parent Run/node/execution to child Run association. The Scheduler suspends the calling invocation without retaining an execution slot, and the child terminal state wakes it. Waits and Agent approvals remain owned by the child. Parent cancellation or failure cancels unfinished descendants; an indeterminate child propagates an indeterminate outcome. Logs remain separate, while call provenance survives event expiry. `source` continues to mean Draft or Live.
 

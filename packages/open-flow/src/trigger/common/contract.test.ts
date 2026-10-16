@@ -17,31 +17,31 @@ const ports = [
 ] as const
 
 it('declares ordered built-in ports', () => {
-  expect(triggerOutputDefinitions({ kind: 'manual', name: 'Manual' }, [])).toEqual([])
-  expect(triggerOutputDefinitions({ kind: 'cron', name: 'Cron', cronTimes: [] }, []).map((port) => port.handle)).toEqual(['scheduledAt'])
-  expect(triggerOutputDefinitions(webhook, []).map((port) => port.handle)).toEqual(['headers', 'query', 'body', 'webhookUrl'])
-  expect(matchesTriggerOutputs({ kind: 'manual', name: 'Manual' }, {}, [])).toBe(true)
-  expect(matchesTriggerOutputs({ kind: 'manual', name: 'Manual' }, { payload: null }, [])).toBe(false)
+  expect(triggerOutputDefinitions({ kind: 'manual', name: 'Manual' })).toEqual([])
+  expect(triggerOutputDefinitions({ kind: 'cron', name: 'Cron', cronTimes: [] }).map((port) => port.handle)).toEqual(['scheduledAt'])
+  expect(triggerOutputDefinitions(webhook).map((port) => port.handle)).toEqual(['headers', 'query', 'body', 'webhookUrl'])
+  expect(matchesTriggerOutputs({ kind: 'manual', name: 'Manual' }, {})).toBe(true)
+  expect(matchesTriggerOutputs({ kind: 'manual', name: 'Manual' }, { payload: null })).toBe(false)
 })
 
 it.each(['POST', 'PUT', 'PATCH', 'DELETE'] as const)('%s exposes the request body output', (method) => {
-  expect(triggerOutputDefinitions({ ...webhook, method }, []).map((port) => port.handle)).toEqual(['headers', 'query', 'body', 'webhookUrl'])
+  expect(triggerOutputDefinitions({ ...webhook, method }).map((port) => port.handle)).toEqual(['headers', 'query', 'body', 'webhookUrl'])
 })
 
 it('omits the request body output for GET', () => {
   const get = { ...webhook, bodyFields: [], method: 'GET' as const }
-  expect(triggerOutputDefinitions(get, []).map((port) => port.handle)).toEqual(['headers', 'query', 'webhookUrl'])
-  expect(matchesTriggerOutputs(get, { headers: {}, query: {}, webhookUrl: 'https://example.com/webhook' }, [])).toBe(true)
-  expect(matchesTriggerOutputs(get, outputs, [])).toBe(false)
+  expect(triggerOutputDefinitions(get).map((port) => port.handle)).toEqual(['headers', 'query', 'webhookUrl'])
+  expect(matchesTriggerOutputs(get, { headers: {}, query: {}, webhookUrl: 'https://example.com/webhook' })).toBe(true)
+  expect(matchesTriggerOutputs(get, outputs)).toBe(false)
 })
 
 it('validates the Cron scheduled time as a direct output', () => {
   const trigger: TriggerNode = { kind: 'cron', name: 'Cron', cronTimes: [] }
-  expect(triggerOutputDefinitions(trigger, [])[0]?.jsonSchema).toEqual({ format: 'date-time', type: 'string' })
-  expect(triggerOutputDefinitions(trigger, [])[0]?.description).toBeUndefined()
-  expect(matchesTriggerOutputs(trigger, { scheduledAt: '2026-08-21T00:01:00.000Z' }, [])).toBe(true)
-  expect(matchesTriggerOutputs(trigger, { scheduledAt: 1 }, [])).toBe(false)
-  expect(matchesTriggerOutputs(trigger, { payload: { scheduledAt: '2026-08-21T00:01:00.000Z' } }, [])).toBe(false)
+  expect(triggerOutputDefinitions(trigger)[0]?.jsonSchema).toEqual({ format: 'date-time', type: 'string' })
+  expect(triggerOutputDefinitions(trigger)[0]?.description).toBeUndefined()
+  expect(matchesTriggerOutputs(trigger, { scheduledAt: '2026-08-21T00:01:00.000Z' })).toBe(true)
+  expect(matchesTriggerOutputs(trigger, { scheduledAt: 1 })).toBe(false)
+  expect(matchesTriggerOutputs(trigger, { payload: { scheduledAt: '2026-08-21T00:01:00.000Z' } })).toBe(false)
 })
 
 it.each([
@@ -54,11 +54,11 @@ it.each([
   { ...outputs, webhookUrl: 2 },
   { ...outputs, query: { x: [1] } },
 ])('rejects malformed outputs %j', (value) => {
-  expect(matchesTriggerOutputs(webhook, value, [])).toBe(false)
+  expect(matchesTriggerOutputs(webhook, value)).toBe(false)
 })
 
 it('accepts string or repeated query values and arbitrary own keys', () => {
-  expect(matchesTriggerOutputs(webhook, { ...outputs, query: JSON.parse('{"__proto__":["a","b"],"constructor":"c"}') }, [])).toBe(true)
+  expect(matchesTriggerOutputs(webhook, { ...outputs, query: JSON.parse('{"__proto__":["a","b"],"constructor":"c"}') })).toBe(true)
 })
 
 describe.each(['poll', 'integration'] as const)('%s output definitions', (kind) => {
@@ -86,12 +86,12 @@ describe.each(['poll', 'integration'] as const)('%s output definitions', (kind) 
           },
         }
   it('preserves heterogeneous ports and distinguishes missing from null', () => {
-    expect(triggerOutputDefinitions(trigger, [])).toEqual(ports)
-    expect(matchesTriggerOutputs(trigger, { text: 'ok', items: null }, [])).toBe(true)
-    expect(matchesTriggerOutputs(trigger, { text: 'ok', items: [1, 2] }, [])).toBe(true)
-    expect(matchesTriggerOutputs(trigger, { text: 'ok' }, [])).toBe(false)
-    expect(matchesTriggerOutputs(trigger, { text: null, items: [] }, [])).toBe(false)
-    expect(matchesTriggerOutputs(trigger, { text: 'ok', items: ['wrong'] }, [])).toBe(false)
+    expect(triggerOutputDefinitions(trigger)).toEqual(ports)
+    expect(matchesTriggerOutputs(trigger, { text: 'ok', items: null })).toBe(true)
+    expect(matchesTriggerOutputs(trigger, { text: 'ok', items: [1, 2] })).toBe(true)
+    expect(matchesTriggerOutputs(trigger, { text: 'ok' })).toBe(false)
+    expect(matchesTriggerOutputs(trigger, { text: null, items: [] })).toBe(false)
+    expect(matchesTriggerOutputs(trigger, { text: 'ok', items: ['wrong'] })).toBe(false)
   })
 })
 

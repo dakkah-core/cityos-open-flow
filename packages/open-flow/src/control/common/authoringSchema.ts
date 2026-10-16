@@ -90,8 +90,8 @@ const all = z.strictObject({ all: z.array(expression) })
 const when = z.union([expression, all, z.strictObject({ any: z.array(z.union([expression, all])) })])
 export const authoringConfigurations = {
   workflow: z.strictObject({ flowId: id }),
-  start: z.strictObject({}),
-  outputs: z.strictObject({}),
+  start: z.strictObject({ inputDefs: flowInputFields.default({}) }),
+  outputs: z.strictObject({ outputDefs: flowOutputFields.default({}) }),
   error: z.strictObject({ sourceFlowIds: z.array(id).optional() }),
   webhook: definitions.webhook.omit({ bodyFields: true }).extend({ body: inputFields }).strict(),
   cron: z.strictObject({ schedule: definitions.schedule }),
@@ -132,11 +132,6 @@ const updates = z.strictObject({
     ),
 })
 export const authoringEditSchema = z.discriminatedUnion('op', [
-  z.strictObject({
-    op: z.literal('flow.update'),
-    set: z.strictObject({ inputDefs: flowInputFields.optional(), outputDefs: flowOutputFields.optional() }).optional(),
-    clear: z.array(z.array(id).min(1)).optional(),
-  }),
   z.strictObject({
     op: z.literal('node.add'),
     as: id
@@ -193,7 +188,7 @@ const requestContracts = {
   read: {
     schema: authoringReadSchema,
     guidance:
-      'The outline includes workflow inputDefs, outputDefs, and outputMappings. Choose one mode: outline (omit nodes and text), node details (nodes), or text excerpt (text). nodes and text are mutually exclusive. Text defaults to 80 lines, at most 200 lines and 24000 characters. For the complete text, repeat at nextStart with the same revision until truncated is false.',
+      'Read Start and Outputs node details for their interface definitions and data sources. Choose one mode: outline (omit nodes and text), node details (nodes), or text excerpt (text). nodes and text are mutually exclusive. Text defaults to 80 lines, at most 200 lines and 24000 characters. For the complete text, repeat at nextStart with the same revision until truncated is false.',
     examples: [{}, { revision: 'REVISION', nodes: ['NODE'] }, { revision: 'REVISION', text: { node: 'NODE', field: 'prompt', start: 1, lines: 80 } }],
   },
   search: {
@@ -204,13 +199,12 @@ const requestContracts = {
   edit: {
     schema: authoringRequestSchema,
     guidance:
-      'Use flow.update set.inputDefs or set.outputDefs to edit workflow inputs or outputs; clear paths are relative to the workflow, e.g. ["inputDefs","amount"]. Start and Outputs node configs are empty. Set Outputs values with input.set. Use the observed revision as baseRevision and a stable requestId. Edits are ordered and atomic. node.add.as declares a batch-local alias without $. Every later reference to that new node must use $alias, including node, edge source/target and output source node fields; a bare alias is not the node ID. Use returned node references in later batches. Updates recursively merge objects (including schemas); {} preserves existing fields. Arrays replace as a whole. Remove fields with clear paths. Text replacement requires exactly one match. Read the target text first. A saved draft can have validation diagnostics.',
+      'Edit Start config.inputDefs and Outputs config.outputDefs through node.add or node.update; clear paths are relative to the node, e.g. ["config","inputDefs","amount"]. Set Outputs values with input.set. Use the observed revision as baseRevision and a stable requestId. Edits are ordered and atomic. node.add.as declares a batch-local alias without $. Every later reference to that new node must use $alias, including node, edge source/target and output source node fields; a bare alias is not the node ID. Use returned node references in later batches. Updates recursively merge objects (including schemas); {} preserves existing fields. Arrays replace as a whole. Remove fields with clear paths. Text replacement requires exactly one match. Read the target text first. A saved draft can have validation diagnostics.',
     examples: [
       {
         baseRevision: 'REVISION',
         requestId: 'CREATE_REQUEST',
         edits: [
-          { op: 'flow.update', set: { inputDefs: { message: { schema: { type: 'string' }, nullable: false } } } },
           { op: 'node.add', as: 'start', type: 'start', name: 'Start' },
           { op: 'node.add', as: 'step', type: 'code', name: 'Process', code: 'export default ({value}) => ({result:value})' },
           { op: 'edge.connect', source: '$start', target: '$step' },
@@ -256,9 +250,9 @@ export function authoringSchema(kind?: AuthoringType) {
         extensibleInputs: ['code', 'agent', 'llm', 'wait', 'approval'].includes(kind),
         guidance:
           kind == 'outputs'
-            ? 'Declare workflow outputDefs through flow.update. Set their values through node.add.inputs or input.set. Outputs is a singleton execution sink; it waits for its predecessors and produces workflow business outputs independently of node logs. No downstream edges or data references to Outputs are allowed.'
+            ? 'Declare output fields through config.outputDefs. Set their values through node.add.inputs or input.set. Outputs is a singleton execution sink; it waits for its predecessors and produces workflow business outputs independently of node logs. No downstream edges or data references to Outputs are allowed.'
             : kind == 'start'
-              ? 'Declare workflow inputs through flow.update set.inputDefs; read them in the flow_read outline. REST calls and manual runs supply them as trigger.outputs. Downstream nodes bind these parameters as Start outputs. Start has no input sources or defaults; non-nullable parameters are required, and omitted nullable parameters become null.'
+              ? 'Declare workflow inputs through config.inputDefs; read them in Start node details. REST calls and manual runs supply them as trigger.outputs. Downstream nodes bind these parameters as Start outputs. Start has no input sources or defaults; non-nullable parameters are required, and omitted nullable parameters become null.'
               : kind == 'condition'
                 ? 'Edit branch operands through config.branches. A branch can test one expression, all expressions, or any alternatives. Unmatched execution uses branch otherwise.'
                 : ['poll', 'integration'].includes(kind)
@@ -275,8 +269,8 @@ export function authoringSchema(kind?: AuthoringType) {
           name: 'Step',
           ...((
             {
-              start: { config: {} },
-              outputs: { config: {} },
+              start: { config: { inputDefs: {} } },
+              outputs: { config: { outputDefs: {} } },
               workflow: { config: { flowId: '<Flow ID>' } },
               connector: { config: { action: '<Action ID>', connectionId: '<Connection ID>' } },
               poll: { config: { key: '<Trigger key>', schedule: [{ type: 'every', unit: 'minute', value: 5 }] } },
@@ -349,9 +343,6 @@ export const authoringReadResponse = z.object({
   flowId: id,
   revision: id,
   data: z.object({
-    inputDefs: flowInputFieldsView.optional(),
-    outputDefs: flowInputFieldsView.optional(),
-    outputMappings: z.record(id, authoringSourceSchema).optional(),
     nodes: z.array(z.record(z.string(), json)).optional(),
     edges: z.array(json).optional(),
     text: z.record(z.string(), json).optional(),

@@ -99,10 +99,10 @@ if (typeof encoding.encodeRevision !== 'function') throw new Error('Missing Flow
 const semantics = await import('@oomol-lab/open-flow/flow-semantics')
 if (typeof semantics.prepareFlow !== 'function') throw new Error('Missing Flow semantics runtime.')
 const manual = { kind: 'manual', name: 'Manual' }
-if (!semantics.matchesTriggerOutputs(manual, {}, []) || semantics.matchesTriggerOutputs(manual, { payload: null }, [])) {
+if (!semantics.matchesTriggerOutputs(manual, {}) || semantics.matchesTriggerOutputs(manual, { payload: null })) {
   throw new Error('Invalid Trigger output validation.')
 }
-if (semantics.triggerOutputDefinitions(manual, []).length !== 0 || Object.keys(semantics.triggerOutputPorts(manual, [])).length !== 0) {
+if (semantics.triggerOutputDefinitions(manual).length !== 0 || Object.keys(semantics.triggerOutputPorts(manual)).length !== 0) {
   throw new Error('Invalid Manual Trigger output definitions.')
 }
 const flowChange = await import('@oomol-lab/open-flow/flow-change')
@@ -110,12 +110,12 @@ const inputDefs = [{ handle: 'message', jsonSchema: { type: 'string' }, nullable
 const startFlow = {
   modelVersion: flowChange.currentFlowModelVersion,
   modules: {},
-  document: { inputDefs: [], bindings: {}, graph: { nodes: { start: { kind: 'start', name: 'Start' } }, edges: [] } },
+  document: { bindings: {}, graph: { nodes: { start: { kind: 'start', name: 'Start', inputDefs: [] } }, edges: [] } },
 }
-const declared = flowChange.applyFlowChanges(startFlow, [{ kind: 'flow.input-defs.set', before: [], value: inputDefs }])
+const declared = flowChange.applyFlowChanges(startFlow, [{ kind: 'graph.node.replace', nodeId: 'start', before: startFlow.document.graph.nodes.start, node: { ...startFlow.document.graph.nodes.start, inputDefs } }])
 assert.deepEqual(encoding.decodeRevision(encoding.encodeRevision(declared)), declared)
-assert.deepEqual(semantics.triggerOutputDefinitions(declared.document.graph.nodes.start, declared.document.inputDefs), inputDefs)
-assert.equal(semantics.matchesTriggerOutputs(declared.document.graph.nodes.start, { message: 'hello' }, declared.document.inputDefs), true)
+assert.deepEqual(semantics.triggerOutputDefinitions(declared.document.graph.nodes.start), inputDefs)
+assert.equal(semantics.matchesTriggerOutputs(declared.document.graph.nodes.start, { message: 'hello' }), true)
 const localization = await import('@oomol-lab/open-flow/localization')
 if (localization.resolveUiLanguage(['zh-Hant-HK']) !== 'zh-TW') throw new Error('Missing UI language registry.')
 const workbench = await import('@oomol-lab/open-flow/workbench')

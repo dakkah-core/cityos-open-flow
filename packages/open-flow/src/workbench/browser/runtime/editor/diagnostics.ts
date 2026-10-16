@@ -5,7 +5,7 @@ import type { ResolvedSelection, RevisionView } from '../revisionView.ts'
 import { sourceOutputLabel } from '../../../../flow/common/sourceField.ts'
 import { schemaMismatchMessage } from './schemaMismatchMessage.ts'
 
-export type InspectorSection = 'account' | 'condition' | 'inputs' | 'module' | 'node' | 'task' | 'trigger' | 'workflow-status'
+export type InspectorSection = 'account' | 'condition' | 'inputs' | 'outputs' | 'module' | 'node' | 'task' | 'trigger' | 'workflow-status'
 export type DiagnosticScope = 'code' | 'flow' | 'node' | 'task'
 
 export interface DiagnosticLocation {
@@ -91,6 +91,8 @@ function scope(path: string): DiagnosticScope {
 }
 
 function nodeSection(node: GraphNode, suffix: string): InspectorSection {
+  if (node.kind == 'outputs' && (suffix.startsWith('/outputDefs') || suffix.startsWith('/outputMappings'))) return 'inputs'
+  if (node.kind == 'start' && suffix.startsWith('/inputDefs')) return 'outputs'
   if (suffix.startsWith('/inputs/')) return node.kind === 'condition' ? 'condition' : 'inputs'
   if (node.kind == 'task' && suffix.startsWith('/task')) {
     if ('executor' in node.task && node.task.executor.kind == 'connector' && suffix.startsWith('/task/executor')) return 'account'
@@ -105,10 +107,6 @@ function nodeSection(node: GraphNode, suffix: string): InspectorSection {
 
 function location(revision: RevisionView | undefined, diagnostic: Diagnostic): DiagnosticLocation | undefined {
   if (revision == null) return
-  if (within('/document/outputDefs', diagnostic.path) || within('/document/outputMappings', diagnostic.path)) {
-    const output = Object.entries(revision.graph().nodes).find(([, node]) => node.kind == 'outputs')
-    return output == null ? undefined : { nodeId: output[0], section: 'inputs' }
-  }
   const graphPrefix = '/document/graph/nodes/'
   if (diagnostic.path.startsWith(graphPrefix)) {
     const path = diagnostic.path.slice(graphPrefix.length)
@@ -146,7 +144,6 @@ export function diagnosticItems(revision: RevisionView | undefined, check: FlowC
 function diagnosticsForNode(node: ResolvedSelection, diagnostics: readonly Diagnostic[]): readonly Diagnostic[] {
   const nodePath = `/document/graph/nodes/${node.id}`
   const paths = [nodePath]
-  if (node.kind == 'outputs') paths.push('/document/outputDefs', '/document/outputMappings')
   if (node.kind == 'task') {
     if ('moduleId' in node.node.task) paths.push(`${nodePath}/task`)
     const moduleId = node.definition != null && 'moduleId' in node.definition ? node.definition.moduleId : undefined

@@ -26,6 +26,7 @@ function fixture(providerAccess?: ConnectorAccess) {
     revisionId: 'revision',
   })
   const input = {
+    interface: { inputs: null, outputs: null },
     closureDigest: 'closure',
     content: '{"modelVersion":2}',
     crons: [],

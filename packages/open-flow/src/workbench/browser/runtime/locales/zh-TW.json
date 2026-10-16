@@ -851,7 +851,9 @@
         "robot-required": "請選擇 Leina 機器人，或綁定機器人識別碼的資料來源。"
       },
       "workflow": {
-        "revision-stale": "目標工作流程的線上版本已更新。",
+        "revision-stale": "目標工作流程的介面已變更。",
+        "snapshot-missing": "儲存的工作流程介面快照無法使用，請重新整理介面。",
+        "missing-start": "目標工作流程沒有 Start 節點。",
         "dependency-stale": "目標工作流程中的呼叫需要更新。",
         "target-required": "請選擇目標工作流程。",
         "unpublished": "目標工作流程尚未發佈。",

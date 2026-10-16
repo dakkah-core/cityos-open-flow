@@ -28,10 +28,9 @@ export function createTriggerSession(
   },
   eventSources?: readonly EventSource[],
   triggerAccess?: 'alternative' | 'none',
-  inputDefs: RevisionContent['document']['inputDefs'] = [],
 ) {
   const i18n = createI18n(language)
-  const { flow, draft } = triggerDraft(trigger, false, inputDefs)
+  const { flow, draft } = triggerDraft(trigger)
   const { content: initialContent, ...revisionMetadata } = draft
   let content: RevisionContent = {
     ...initialContent,
@@ -151,7 +150,7 @@ export function createTriggerSession(
                 Object.assign({}, flow, {
                   flowId,
                   name: flowId === 'orders' ? 'Orders · Payment events and fulfillment updates' : 'Billing',
-                  live: { publicationId: `${flowId}-publication`, revisionId: `${flowId}-revision`, enabled: true },
+                  live: { hasStart: true, publicationId: `${flowId}-publication`, revisionId: `${flowId}-revision`, enabled: true },
                 }),
               ),
             ]

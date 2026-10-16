@@ -804,7 +804,7 @@ it('decodes Variable references and forwards cancellation', async () => {
     { ...result, version: 2 },
     { ...result, references: null },
     { ...result, references: [{ ...result.references[0], draft: 'yes' }] },
-    { ...result, references: [{ ...result.references[0], live: { publicationId: 'p', enabled: 1 } }] },
+    { ...result, references: [{ ...result.references[0], live: { hasStart: true, publicationId: 'p', enabled: 1 } }] },
   ]) {
     request.mockImplementation(async () => Response.json(invalid))
     await expect(client.getVariableReferences('TOKEN')).rejects.toThrow()

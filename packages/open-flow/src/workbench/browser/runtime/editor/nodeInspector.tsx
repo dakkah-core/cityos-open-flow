@@ -365,7 +365,7 @@ export function NodeInspector({
             flowId={workflowSettings.task.executor.kind == 'workflow' ? workflowSettings.task.executor.flowId : ''}
             actions={workflowActions}
             disabled={disabled}
-            stale={workflowIssue?.code == 'workflow.revision-stale'}
+            stale={workflowIssue?.code == 'workflow.revision-stale' || workflowIssue?.code == 'workflow.snapshot-missing'}
             message={workflowIssue == null ? undefined : diagnosticMessage(workflowIssue, t)}
           />
         )}
@@ -462,16 +462,15 @@ export function NodeInspector({
               output
               readOnly={readOnly}
               disabled={disabled}
-              values={revision.inputDefs()}
+              values={selection.trigger.inputDefs}
               onChange={(parameters, deletion) => {
-                void store?.saveFlowInputDefs(parameters, deletion)
+                void store?.saveStartInputDefs(selection.id, parameters, deletion)
               }}
             />
           </section>
         )}
         {selection?.kind === 'trigger' && selection.trigger.kind !== 'webhook' && selection.trigger.kind !== 'start' && (
           <TriggerSummary
-            inputDefs={revision.inputDefs()}
             trigger={selection.trigger}
             display={
               selection.trigger.kind == 'integration' || selection.trigger.kind == 'poll' ? triggerDisplays?.[selection.trigger.definition.key] : undefined
@@ -486,7 +485,7 @@ export function NodeInspector({
             method={selection.trigger.method}
             options={selection.trigger.options ?? {}}
             disabled={disabled}
-            outputSection={<TriggerSummary inputDefs={revision.inputDefs()} trigger={selection.trigger} />}
+            outputSection={<TriggerSummary trigger={selection.trigger} />}
             onChange={(settings, deletion) => {
               void store?.saveWebhook(selection.id, settings, deletion)
             }}
@@ -592,7 +591,7 @@ export function NodeInspector({
           (() => {
             const definitions: (InputPort | Group)[] =
               selection.kind === 'outputs'
-                ? [...revision.outputDefs()]
+                ? [...selection.node.outputDefs]
                 : selection.kind === 'task'
                   ? [...(selection.definition?.inputs ?? [])]
                   : [...selection.node.inputDefinitions]
@@ -660,7 +659,7 @@ export function NodeInspector({
                 onDefinitions={
                   selection.kind === 'outputs'
                     ? (outputDefinitions, deletion, values) => {
-                        void store?.saveFlowOutputDefs(
+                        void store?.saveOutputsDefs(
                           selection.id,
                           outputDefinitions.filter((port): port is InputPort => 'handle' in port),
                           deletion,

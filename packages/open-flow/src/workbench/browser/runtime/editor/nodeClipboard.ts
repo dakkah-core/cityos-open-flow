@@ -25,7 +25,7 @@ export function copyNodes(revision: RevisionView, nodeIds: readonly string[]): N
     edges: (revision.graph()?.edges ?? []).filter((edge) => copied[edge.source] != null && copied[edge.target] != null),
     bindings: Object.fromEntries(
       Object.values(copied).flatMap((node) => {
-        if (!('inputs' in node)) return []
+        if (!('inputs' in node) && node.kind != 'outputs') return []
         const inputs = Object.values(nodeInputMappings(node))
         return inputs.flatMap((mapping) =>
           mapping.kind == 'sources'
@@ -65,7 +65,7 @@ export function pasteNodes(revision: RevisionView, clipboard: NodeClipboard, ide
   const operations: ChangeOperation[] = []
   const bindingIds = new Map<string, string>()
   for (const [, node] of entries) {
-    if (!('inputs' in node)) continue
+    if (!('inputs' in node) && node.kind != 'outputs') continue
     const inputs = Object.values(nodeInputMappings(node))
     for (const mapping of inputs) {
       if (mapping.kind != 'sources') continue
@@ -81,7 +81,7 @@ export function pasteNodes(revision: RevisionView, clipboard: NodeClipboard, ide
   }
   for (const [sourceId, node] of entries) {
     const nodeId = ids.get(sourceId)!
-    if (!('inputs' in node)) {
+    if (!('inputs' in node) && node.kind != 'outputs') {
       operations.push({ kind: 'graph.node.create', node, nodeId })
       continue
     }
@@ -110,11 +110,8 @@ export function pasteNodes(revision: RevisionView, clipboard: NodeClipboard, ide
       }
       return inputs
     }
-    const inputs = remapInputs(node.inputs)
-    let copy: GraphNode = {
-      ...node,
-      inputs,
-    }
+    const inputs = remapInputs(nodeInputMappings(node))
+    let copy: GraphNode = node.kind == 'outputs' ? { ...node, outputMappings: inputs } : { ...node, inputs }
     if (node.kind == 'condition')
       copy = mapConditionSources(node, (source) =>
         source.kind == 'node'

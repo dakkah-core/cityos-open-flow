@@ -19,7 +19,7 @@ const sampleWorkflow: WorkflowFile = {
   content: {
     modelVersion: 6,
     modules: {},
-    document: { bindings: {}, graph: { nodes: { start: { kind: 'start', name: 'Start' } }, edges: [] } },
+    document: { bindings: {}, graph: { nodes: { start: { inputDefs: [], kind: 'start', name: 'Start' } }, edges: [] } },
   },
   presentation: {},
 }
@@ -90,7 +90,9 @@ function FlowBrowserStory({ dark, language, log }: { dark: boolean; language: Ui
         }
         return index == 3
           ? flow
-          : Object.assign(flow, { live: { enabled: index != 2, publicationId: `publication-${index}`, revisionId: index == 1 ? 'previous' : 'draft' } })
+          : Object.assign(flow, {
+              live: { hasStart: true, enabled: index != 2, publicationId: `publication-${index}`, revisionId: index == 1 ? 'previous' : 'draft' },
+            })
       },
     )
     let reads = 0

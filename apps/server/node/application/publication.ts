@@ -16,6 +16,7 @@ import { nextTriggerScheduledAt, validateTriggerSchedule } from '@oomol-lab/open
 import { canonicalJsonBytes, digestBytes } from '@oomol-lab/open-flow/flow-encoding'
 import { agentActions, codeActions } from '@oomol-lab/open-flow/flow-semantics'
 import { currentEngineContract } from '@oomol-lab/open-flow/runtime-contract'
+import { publishedWorkflowInterface } from '@oomol-lab/open-flow/workflow'
 import { captureConnectorAccess } from '../deployment/connector-access.ts'
 import { checkCodeActions, checkCodePermissions, ConnectorTaskError } from '../deployment/connector.ts'
 import { AcceptanceError, ControlError } from '../error.ts'
@@ -292,6 +293,7 @@ export class Publisher {
       }
     }
     return {
+      interface: publishedWorkflowInterface({ document: { ...input.revision.document, graph: fixed.prepared.graph } }),
       closureDigest: fixed.prepared.closureDigest,
       content: fixed.content,
       crons,

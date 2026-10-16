@@ -16,12 +16,11 @@ import { canonicalJsonBytes, digestBytes } from '@oomol-lab/open-flow/flow-encod
 import { agentActions, codeActions, normalizeRunTrigger, prepareFlow, validateFlowInputs, variableBindings } from '@oomol-lab/open-flow/flow-semantics'
 import { projectExecutionId } from '@oomol-lab/open-flow/run-events'
 import { currentEngineContract, findEngineContract } from '@oomol-lab/open-flow/runtime-contract'
-import { workflowCompatibility } from '@oomol-lab/open-flow/workflow'
 import { captureConnectorAccess } from '../deployment/connector-access.ts'
 import { checkCodeActions, checkCodePermissions } from '../deployment/connector.ts'
 import { ControlError, serverErrorCode } from '../error.ts'
 import { readRevisionOrRepair, revisionContent, timestamp } from './control-views.ts'
-import { workflowTarget } from './workflow.ts'
+import { workflowTarget, workflowContent, workflowCallCompatibility } from './workflow.ts'
 import { requireWorkflowCalls } from './workflow.ts'
 
 type RunInputs = NonNullable<FlowRunOptions['inputs']>
@@ -190,9 +189,10 @@ export class RunControl {
       if (expectedChild != null) throw new Error('Saved workflow call is unavailable.')
       if (this.store.runs.callAncestors(parent.runId).includes(task.executor.flowId)) throw new Error('Recursive workflow calls are not supported.')
       const owner = this.store.flows.get(parent.flowId)?.ownerId ?? ''
-      const { contract, content } = workflowTarget(this.store, owner, task.executor.flowId)
-      const issues = workflowCompatibility(node, contract)
+      const { contract } = workflowTarget(this.store, owner, task.executor.flowId)
+      const issues = workflowCallCompatibility(this.store, node, contract)
       if (issues.length) throw new Error(issues[0]!.message)
+      const content = workflowContent(this.store, contract)
       const start = Object.entries(content.document.graph.nodes).find(([, entry]) => entry.kind == 'start')
       if (start == null) throw new ControlError(controlErrorCode.runInvalid, 'Live Runs can only be started through a Start node.')
       const values = Object.fromEntries(Object.entries(input).filter(([key]) => contract.inputs.some((port) => port.handle == key)))

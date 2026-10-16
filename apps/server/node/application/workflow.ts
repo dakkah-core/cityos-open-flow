@@ -1,33 +1,35 @@
-import type { RevisionContent } from '@oomol-lab/open-flow/flow-change'
+import type { RevisionContent, TaskNode } from '@oomol-lab/open-flow/flow-change'
 import type { WorkflowContract } from '@oomol-lab/open-flow/workflow'
 import type { Store } from '../storage/store.ts'
 
 import { decodeRevision } from '@oomol-lab/open-flow/flow-encoding'
 import { flowDependencies } from '@oomol-lab/open-flow/flow-semantics'
-import { workflowCompatibility, workflowPorts, workflowCandidate } from '@oomol-lab/open-flow/workflow'
+import { workflowCompatibility, publishedWorkflowInterfaceSchema, workflowCandidate } from '@oomol-lab/open-flow/workflow'
 import { ControlError } from '../error.ts'
 
-/** Resolve availability and content once for both authoring and strict call checks. */
+/** Resolve availability and the published interface without reading Revision content. */
 function readWorkflowTarget(store: Store, ownerId: string, flowId: string) {
   const flow = store.flows.get(flowId)
   if (flow?.ownerId != ownerId) throw new ControlError('flow.not-found', 'The workflow is unavailable.')
-  const candidate = workflowCandidate({ ...flow, live: flow.publicationId == null ? null : { enabled: flow.liveEnabled == 1 } })
+  const candidate = workflowCandidate({
+    ...flow,
+    live: flow.publicationId == null ? null : { enabled: flow.liveEnabled == 1, hasStart: flow.liveHasStart == 1 },
+  })
   if (candidate.problem != null) return { kind: 'unavailable' as const, candidate }
   const publication = store.publications.publication(flowId, flow.publicationId!)
   if (publication == null) throw new ControlError('flow.invalid', 'Called workflow Publication is unavailable.')
-  const saved = store.flows.revision(flowId, publication.revisionId)
-  if (saved == null) throw new ControlError('flow.invalid', 'Called workflow Revision is unavailable.')
-  const content = decodeRevision(new TextEncoder().encode(saved.content))
+  const snapshot = publishedWorkflowInterfaceSchema.parse(JSON.parse(publication.interfaceJson))
+  if (snapshot.inputs == null) throw new ControlError('flow.invalid', 'Called workflow has no Start node.', { details: { reason: 'workflow.missing-start' } })
   const contract: WorkflowContract = {
     version: 1,
     flowId,
     name: flow.name,
-    revisionId: saved.revisionId,
+    revisionId: publication.revisionId,
     publicationId: publication.publicationId,
-    inputs: workflowPorts(content.document.inputDefs ?? []),
-    outputs: workflowPorts(content.document.outputDefs ?? []),
+    inputs: snapshot.inputs,
+    outputs: snapshot.outputs,
   }
-  return { kind: 'available' as const, contract, content }
+  return { kind: 'available' as const, contract }
 }
 
 export function workflowTarget(store: Store, ownerId: string, flowId: string) {
@@ -44,6 +46,22 @@ export function workflowAuthoringTarget(store: Store, ownerId: string, flowId: s
   return target.kind == 'available' ? target.contract : target.candidate
 }
 
+/** Full definition reads belong to dependency inspection and execution, not interface queries. */
+export function workflowContent(store: Store, contract: WorkflowContract): RevisionContent {
+  const saved = store.flows.revision(contract.flowId, contract.revisionId)
+  if (saved == null) throw new ControlError('flow.invalid', 'Called workflow Revision is unavailable.')
+  return decodeRevision(new TextEncoder().encode(saved.content))
+}
+
+export function workflowCallCompatibility(store: Store, node: TaskNode, contract: WorkflowContract) {
+  const executor = 'executor' in node.task ? node.task.executor : undefined
+  const previous =
+    executor?.kind == 'workflow' && executor.revisionId && executor.revisionId != contract.revisionId
+      ? store.publications.interfaceForRevision(contract.flowId, executor.revisionId)
+      : undefined
+  return workflowCompatibility(node, contract, previous)
+}
+
 function pointer(value: string): string {
   return value.replaceAll('~', '~0').replaceAll('/', '~1')
 }
@@ -51,6 +69,7 @@ function pointer(value: string): string {
 export function workflowDiagnostics(store: Store, flowId: string, content: RevisionContent, triggerId?: string) {
   const owner = store.flows.get(flowId)?.ownerId
   const cache = new Map<string, ReturnType<typeof workflowTarget> | Error>()
+  const contents = new Map<string, RevisionContent>()
   const diagnostics: { code: string; message: string; path: string; line: number; column: number; values: Record<string, string> }[] = []
   const visit = (revision: RevisionContent, entry: string | undefined, ancestors: ReadonlySet<string>, rootNode?: string, expanded?: Set<string>) => {
     for (const nodeId of flowDependencies(revision, entry).nodes) {
@@ -82,7 +101,7 @@ export function workflowDiagnostics(store: Store, flowId: string, content: Revis
         }
         const target = cache.get(targetId)!
         if (target instanceof Error) throw target
-        for (const issue of workflowCompatibility(node, target.contract)) {
+        for (const issue of workflowCallCompatibility(store, node, target.contract)) {
           const location =
             rootNode != null
               ? path
@@ -95,16 +114,14 @@ export function workflowDiagnostics(store: Store, flowId: string, content: Revis
             code:
               issue.side == 'revision'
                 ? rootNode == null
-                  ? node.task.executor.revisionId
-                    ? 'workflow.revision-stale'
-                    : 'workflow.interface-required'
+                  ? `workflow.${issue.reason ?? 'revision-stale'}`
                   : 'workflow.dependency-stale'
                 : rootNode == null
                   ? 'workflow.interface'
                   : 'workflow.dependency-invalid',
             message:
               issue.side == 'revision' && rootNode != null
-                ? 'A nested workflow call references an outdated Live revision. Update the called workflow and publish it again.'
+                ? 'A nested workflow call has an outdated interface. Update the called workflow and publish it again.'
                 : issue.message,
             path: location,
             line: 0,
@@ -116,7 +133,8 @@ export function workflowDiagnostics(store: Store, flowId: string, content: Revis
         // The read cache above remains shared across the whole check.
         const visited = expanded ?? new Set<string>()
         if (!visited.has(targetId)) {
-          visit(target.content, undefined, new Set([...ancestors, targetId]), at, visited)
+          if (!contents.has(targetId)) contents.set(targetId, workflowContent(store, target.contract))
+          visit(contents.get(targetId)!, undefined, new Set([...ancestors, targetId]), at, visited)
           visited.add(targetId)
         }
       } catch (error) {

@@ -64,7 +64,7 @@ function createSession(language: UiLanguage, scenario: Scenario, log: LogAction)
     },
     status: 'active',
     version: 1,
-    ...(current == null ? {} : { live: { enabled, publicationId: current.publicationId, revisionId: current.revisionId } }),
+    ...(current == null ? {} : { live: { hasStart: true, enabled, publicationId: current.publicationId, revisionId: current.revisionId } }),
   })
   const live = (): Live => ({
     flowId,

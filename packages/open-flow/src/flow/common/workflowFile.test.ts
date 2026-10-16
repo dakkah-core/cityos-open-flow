@@ -236,9 +236,18 @@ it('preserves workflow input definitions and node-only Start metadata through po
       modelVersion: 7,
       modules: {},
       document: {
-        inputDefs: [{ handle: 'message', jsonSchema: { type: 'string', minLength: 1 }, nullable: false, description: 'Call message' }],
         bindings: {},
-        graph: { nodes: { start: { kind: 'start', name: 'Start', description: 'Entry' } }, edges: [] },
+        graph: {
+          nodes: {
+            start: {
+              kind: 'start',
+              name: 'Start',
+              description: 'Entry',
+              inputDefs: [{ handle: 'message', jsonSchema: { type: 'string', minLength: 1 }, nullable: false, description: 'Call message' }],
+            },
+          },
+          edges: [],
+        },
       },
     },
   }

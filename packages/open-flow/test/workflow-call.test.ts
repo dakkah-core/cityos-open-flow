@@ -10,7 +10,14 @@ import { currentEngineContract } from '../src/execution/common/engineContract.ts
 import { decodeFlowRunCheckpoint, runFlow } from '../src/execution/common/scheduler.ts'
 import { currentFlowModelVersion } from '../src/flow/common/change.ts'
 import { prepareFlow } from '../src/flow/common/semantics.ts'
-import { workflowCompatibility, workflowSelectionTask, workflowCandidate, workflowTask } from '../src/workflow/common/workflow.ts'
+import {
+  sameWorkflowInterface,
+  publishedWorkflowInterface,
+  workflowCompatibility,
+  workflowSelectionTask,
+  workflowCandidate,
+  workflowTask,
+} from '../src/workflow/common/workflow.ts'
 const port = { handle: 'answer', jsonSchema: { type: 'number' }, nullable: false } as const
 const contract: WorkflowContract = {
   version: 1,
@@ -117,7 +124,7 @@ it('accepts additive interfaces and catches breaking output contracts', async ()
     workflowCompatibility(node, {
       ...contract,
       inputs: [...contract.inputs, { ...port, handle: 'optional', nullable: true }],
-      outputs: [...contract.outputs, { ...port, handle: 'extra' }],
+      outputs: [...(contract.outputs ?? []), { ...port, handle: 'extra' }],
     }),
   ).toEqual([])
   expect(workflowCompatibility(node, { ...contract, outputs: [] })).toMatchObject([{ field: 'answer' }])
@@ -164,12 +171,14 @@ it('checks nullable independently of an unrestricted target input schema', async
   expect(workflowCompatibility(withNull, { ...target, inputs: [{ ...target.inputs[0]!, nullable: true }] })).toEqual([])
 })
 
-it('rejects a different Live revision even when its interface is identical', async () => {
+it('compares changed revisions using their published interfaces and diagnoses missing snapshots', async () => {
   const created = await create()
   const node = created.content.document.graph.nodes[created.nodes.call!]!
   if (node.kind != 'task') throw new Error('Expected task')
   expect(workflowCompatibility(node, contract)).toEqual([])
-  expect(workflowCompatibility(node, { ...contract, revisionId: 'r2' })).toMatchObject([{ side: 'revision', field: 'revisionId' }])
+  expect(workflowCompatibility(node, { ...contract, revisionId: 'r2' }, contract)).toEqual([])
+  expect(workflowCompatibility(node, { ...contract, revisionId: 'r2' })).toMatchObject([{ reason: 'snapshot-missing' }])
+  expect(workflowCompatibility(node, { ...contract, revisionId: 'r2', outputs: [] }, contract)).toMatchObject([{ reason: 'revision-stale' }])
 })
 
 it('keeps unavailable target selections and preserves an existing snapshot when rechecking', async () => {
@@ -193,10 +202,43 @@ it('keeps unavailable target selections and preserves an existing snapshot when 
 })
 
 it('classifies targets using only publication metadata', () => {
-  const flow = { flowId: 'target', name: 'Target', status: 'active', live: { enabled: true } }
+  const flow = { flowId: 'target', name: 'Target', status: 'active', live: { hasStart: true, enabled: true } }
   expect(workflowCandidate(flow).problem).toBeNull()
   expect(workflowCandidate({ ...flow, live: null }).problem).toBe('unpublished')
-  expect(workflowCandidate({ ...flow, live: { enabled: false } }).problem).toBe('disabled')
+  expect(workflowCandidate({ ...flow, live: { hasStart: true, enabled: false } }).problem).toBe('disabled')
   expect(workflowCandidate({ ...flow, status: 'retiring' }).problem).toBe('retiring')
   expect(workflowCandidate(flow, 'target').problem).toBe('recursive')
+})
+
+it('compares named interface fields independently of ordering and descriptions while retaining null', () => {
+  const first = { inputs: [port, { ...port, handle: 'other', jsonSchema: { type: 'object', properties: { x: { type: 'number' } } } }], outputs: null }
+  const reordered = {
+    inputs: [
+      { ...first.inputs[1]!, jsonSchema: { properties: { x: { type: 'number' } }, type: 'object' } },
+      { ...port, description: 'New text' },
+    ],
+    outputs: null,
+  }
+  expect(sameWorkflowInterface(first, reordered)).toBe(true)
+  expect(sameWorkflowInterface(first, { ...first, outputs: [] })).toBe(false)
+  expect(sameWorkflowInterface(first, { ...first, inputs: [{ ...port, nullable: true }, first.inputs[1]!] })).toBe(false)
+  expect(sameWorkflowInterface(first, { ...first, inputs: [...first.inputs, { ...port, handle: 'extra' }] })).toBe(false)
+})
+
+it('extracts absent, empty and declared interfaces from the owning nodes', () => {
+  expect(publishedWorkflowInterface(empty)).toEqual({ inputs: null, outputs: null })
+  const content = {
+    ...empty,
+    document: {
+      ...empty.document,
+      graph: {
+        nodes: {
+          start: { kind: 'start' as const, name: 'Start', inputDefs: [port] },
+          outputs: { kind: 'outputs' as const, name: 'Outputs', outputDefs: [], outputMappings: {} },
+        },
+        edges: [],
+      },
+    },
+  }
+  expect(publishedWorkflowInterface(content)).toEqual({ inputs: [port], outputs: [] })
 })
