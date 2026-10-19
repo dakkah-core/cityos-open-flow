@@ -120,6 +120,7 @@ it('materializes a Draft Revision atomically when admitting a Run', () => {
   expect(database.connection.prepare("SELECT 1 FROM revision_deltas WHERE revision_id = 'draft'").get()).toBeDefined()
   expect(
     store.runs.acceptControlRun({
+      initiator: { channel: 'api' },
       closureDigest: 'closure',
       flowId: 'flow',
       idempotencyKey: 'run',
@@ -207,6 +208,7 @@ it('rejects a damaged delta without accepting a Run', () => {
   expect(() => store.flows.draft('flow')).toThrow(RevisionIntegrityError)
   expect(() =>
     store.runs.acceptControlRun({
+      initiator: { channel: 'api' },
       closureDigest: 'closure',
       flowId: 'flow',
       idempotencyKey: 'run',

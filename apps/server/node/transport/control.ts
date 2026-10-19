@@ -624,7 +624,7 @@ export function createControlApp(service: ControlService, resolveActor?: Resolve
       body.inputs,
       idempotencyKey(context.req.raw, controlErrorCode.runInvalid),
       body.trigger,
-      context.get('actorId'),
+      { actorId: context.get('actorId'), channel: clientChannel(context.req.raw) },
     )
     return response(accepted.created ? 202 : 200, accepted.run)
   })
@@ -653,7 +653,7 @@ export function createControlApp(service: ControlService, resolveActor?: Resolve
       body.inputs,
       idempotencyKey(context.req.raw, controlErrorCode.runInvalid),
       body.trigger,
-      context.get('actorId'),
+      { initiator: { actorId: context.get('actorId'), channel: clientChannel(context.req.raw) } },
     )
     return response(accepted.created ? 202 : 200, accepted.run)
   })
@@ -867,4 +867,10 @@ async function decodeRequest<Value>(request: Request, code: InvalidCode, decode:
       cause: error,
     })
   }
+}
+
+function clientChannel(request: Request): 'workbench' | 'cli' | 'api' {
+  const channel = request.headers.get('x-open-flow-client') ?? 'api'
+  if (channel == 'workbench' || channel == 'cli' || channel == 'api') return channel
+  throw new ControlError(controlErrorCode.runInvalid, 'Invalid Run client channel.')
 }

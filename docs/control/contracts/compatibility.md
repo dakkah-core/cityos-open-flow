@@ -147,3 +147,7 @@ Engine Contract remains `open-flow-engine/v5`, and Scheduler checkpoints remain 
 ## Workflow calls
 
 The managed `workflow` executor adds independent Live Run invocation without restoring embedded Subflows or historical publication admission. Existing Flow model and Engine identifiers are retained for this unpublished addition. Checkpoint v5 accepts optional pending `calls`; existing Wait/Agent checkpoints remain readable. Control API version 1 adds the call contract, indexed Flow references, durable caller/callee projections and entry `triggerNodeId` for Draft and ordinary Start runs. Missing `calledFlowIds` in old resource summaries means no workflow-call references; no historical graphs are rescanned to seed this new relation kind.
+
+Run details add optional `initiator` audit metadata without changing `source: draft | live`, Run
+request versions, or existing `caller/calls` associations. Older Runs and deployments may omit it.
+Server migration 50 adds nullable audit columns without backfilling inferred identities or channels.

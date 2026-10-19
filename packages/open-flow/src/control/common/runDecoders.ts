@@ -1,6 +1,6 @@
 import type { RunStatus } from '../../execution/common/runLifecycle.ts'
 import type { JsonValue, WaitAction } from '../../flow/common/change.ts'
-import type { Run, RunCancellation, RunDetails, RunPage, RunResult } from './api.ts'
+import type { Run, RunCancellation, RunChannel, RunDetails, RunInitiator, RunPage, RunResult } from './api.ts'
 
 import { runStatuses } from '../../execution/common/runLifecycle.ts'
 import { requiredFields, integer, invalidResponse, record, string } from './decoding.ts'
@@ -57,6 +57,16 @@ function workflowIdentity(value: unknown) {
   return { flowId: string(ref.flowId), runId: string(ref.runId), nodeId: string(ref.nodeId), executionId: string(ref.executionId) }
 }
 
+function runInitiator(value: unknown): RunInitiator {
+  const source = record(value)
+  const channels: readonly RunChannel[] = ['workbench', 'cli', 'mcp', 'api', 'trigger', 'workflow']
+  if (!channels.includes(source.channel as RunChannel)) return invalidResponse()
+  return {
+    channel: source.channel as RunChannel,
+    ...(source.actorId === undefined ? {} : { actorId: string(source.actorId) }),
+  }
+}
+
 export function runDetails(value: unknown): RunDetails {
   const source = record(value)
   const summary = run(source)
@@ -75,6 +85,7 @@ export function runDetails(value: unknown): RunDetails {
   if (source.calls !== undefined && !Array.isArray(source.calls)) return invalidResponse()
   const details = {
     ...summary,
+    ...(source.initiator === undefined ? {} : { initiator: runInitiator(source.initiator) }),
     ...errorHandling(source),
     ...(source.triggerNodeId === undefined ? {} : { triggerNodeId: string(source.triggerNodeId) }),
     ...(source.caller === undefined ? {} : { caller: workflowIdentity(source.caller) }),

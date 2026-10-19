@@ -664,6 +664,18 @@
     "resolving": "適用中…",
     "runId": "実行 ID：{{id}}",
     "selectRun": "実行記録を選択すると、タイムラインと出力を確認できます。",
+    "initiatorUser": "実行ユーザー",
+    "initiatorChannel": "呼び出し経路",
+    "initiatorUnknown": "不明",
+    "initiatorSystem": "システム",
+    "channelLabels": {
+      "workbench": "Workbench",
+      "cli": "CLI",
+      "mcp": "MCP",
+      "api": "外部 API",
+      "trigger": "トリガー",
+      "workflow": "ワークフロー呼び出し"
+    },
     "sourceDraft": "ドラフト",
     "sourceLive": "本番",
     "statusCanceled": "キャンセル済み",

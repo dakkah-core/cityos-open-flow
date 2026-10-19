@@ -664,6 +664,18 @@
     "resolving": "Application…",
     "runId": "ID d'exécution : {{id}}",
     "selectRun": "Sélectionnez une exécution pour inspecter sa chronologie et sa sortie.",
+    "initiatorUser": "Lancé par",
+    "initiatorChannel": "Canal",
+    "initiatorUnknown": "Inconnu",
+    "initiatorSystem": "Système",
+    "channelLabels": {
+      "workbench": "Workbench",
+      "cli": "CLI",
+      "mcp": "MCP",
+      "api": "API externe",
+      "trigger": "Déclencheur",
+      "workflow": "Appel de workflow"
+    },
     "sourceDraft": "Brouillon",
     "sourceLive": "En ligne",
     "statusCanceled": "Annulée",

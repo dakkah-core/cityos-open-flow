@@ -56,6 +56,7 @@ const migrations = [
   migrateFlowResourceReferences,
   '0048_workflow_calls.sql',
   migrateWorkflowInterfaces,
+  '0050_run_initiator.sql',
 ] as const
 const migrationsDirectory = new URL(import.meta.url.endsWith('.ts') ? '../../migrations/' : '../migrations/', import.meta.url)
 

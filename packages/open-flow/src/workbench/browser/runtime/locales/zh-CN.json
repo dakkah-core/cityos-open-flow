@@ -664,6 +664,18 @@
     "resolving": "正在提交…",
     "runId": "运行 ID：{{id}}",
     "selectRun": "选择一条运行记录以查看时间线和输出。",
+    "initiatorUser": "发起用户",
+    "initiatorChannel": "调用渠道",
+    "initiatorUnknown": "未知",
+    "initiatorSystem": "系统",
+    "channelLabels": {
+      "workbench": "Workbench",
+      "cli": "CLI",
+      "mcp": "MCP",
+      "api": "外部 API",
+      "trigger": "触发器",
+      "workflow": "工作流调用"
+    },
     "sourceDraft": "草稿",
     "sourceLive": "线上",
     "statusCanceled": "已取消",

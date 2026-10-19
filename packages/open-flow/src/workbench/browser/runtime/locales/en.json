@@ -664,6 +664,18 @@
     "resolving": "Applying…",
     "runId": "Run ID: {{id}}",
     "selectRun": "Select a run to inspect its timeline and output.",
+    "initiatorUser": "Initiated by",
+    "initiatorChannel": "Channel",
+    "initiatorUnknown": "Unknown",
+    "initiatorSystem": "System",
+    "channelLabels": {
+      "workbench": "Workbench",
+      "cli": "CLI",
+      "mcp": "MCP",
+      "api": "External API",
+      "trigger": "Trigger",
+      "workflow": "Workflow"
+    },
     "sourceDraft": "Draft",
     "sourceLive": "Live",
     "statusCanceled": "Canceled",

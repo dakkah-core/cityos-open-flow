@@ -134,7 +134,7 @@ export async function runCli(args: readonly string[], host: CommandHost, runtime
       mutation =
         key == null ? undefined : { path, idempotencyKey: key, ...(typeof init?.body == 'string' ? { request: JSON.parse(init.body) as unknown } : {}) }
       return await host.request(path, init)
-    })
+    }, 'cli')
     if (parsed.positionals[0] == 'schema' && parsed.flow != null) {
       const query =
         parsed.input == null ? { type: parsed.positionals[1] } : JSON.parse(await argumentText(parsed.input, 'input', 'flow.authoring-unreadable', runtime))

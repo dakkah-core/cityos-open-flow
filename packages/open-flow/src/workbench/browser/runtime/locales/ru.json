@@ -664,6 +664,18 @@
     "resolving": "Применение…",
     "runId": "ID запуска: {{id}}",
     "selectRun": "Выберите запуск, чтобы посмотреть его хронологию и выходные данные.",
+    "initiatorUser": "Инициатор",
+    "initiatorChannel": "Канал",
+    "initiatorUnknown": "Неизвестно",
+    "initiatorSystem": "Система",
+    "channelLabels": {
+      "workbench": "Workbench",
+      "cli": "CLI",
+      "mcp": "MCP",
+      "api": "Внешний API",
+      "trigger": "Триггер",
+      "workflow": "Вызов процесса"
+    },
     "sourceDraft": "Черновик",
     "sourceLive": "Рабочая",
     "statusCanceled": "Отменено",

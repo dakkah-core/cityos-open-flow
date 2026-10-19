@@ -463,6 +463,24 @@ describe('ControlClient Wait API', () => {
     ],
   } as const
 
+  it.each([
+    { actorId: 'user-1', channel: 'workbench' },
+    { actorId: 'user-1', channel: 'cli' },
+    { actorId: 'user-1', channel: 'mcp' },
+    { actorId: 'user-1', channel: 'api' },
+    { channel: 'trigger' },
+    { actorId: 'user-1', channel: 'workflow' },
+  ])('decodes Run initiators: %j', async (initiator) => {
+    const response = { ...waiting, initiator }
+    const client = new ControlClient(async () => Response.json(response))
+    await expect(client.getRun(waiting.runId)).resolves.toEqual(response)
+  })
+
+  it.each([null, {}, { channel: 'other' }, { channel: 'cli', actorId: 42 }])('rejects invalid Run initiators: %j', async (initiator) => {
+    const client = new ControlClient(async () => Response.json({ ...waiting, initiator }))
+    await expect(client.getRun(waiting.runId)).rejects.toMatchObject({ code: 'response.invalid' })
+  })
+
   it.each([false, true])('decodes Live runs with occurrence metadata: %s', async (automatic) => {
     const response = {
       ...waiting,

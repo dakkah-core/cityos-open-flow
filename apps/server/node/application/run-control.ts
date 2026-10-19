@@ -1,4 +1,4 @@
-import type { FlowChangeEvent, ResultQuery, Run, RunCancellation, RunDetails, RunEvents, RunResult } from '@oomol-lab/open-flow/control-api'
+import type { FlowChangeEvent, ResultQuery, Run, RunCancellation, RunDetails, RunEvents, RunResult, RunInitiator } from '@oomol-lab/open-flow/control-api'
 import type { ConnectorAccessSnapshot } from '@oomol-lab/open-flow/control-api'
 import type { TaskNode } from '@oomol-lab/open-flow/flow-change'
 import type { JsonValue, RevisionContent, WaitAction } from '@oomol-lab/open-flow/flow-change'
@@ -7,7 +7,7 @@ import type { RunStatus } from '@oomol-lab/open-flow/run-lifecycle'
 import type { FlowRunOptions, TriggerSeed } from '@oomol-lab/open-flow/scheduler'
 import type { ConnectorAccessHost } from '../deployment/connector-access.ts'
 import type { ConnectorHost } from '../deployment/connector.ts'
-import type { StoredRun, WorkflowCallAdmission } from '../storage/run-store.ts'
+import type { StoredRun, LiveRunOrigin } from '../storage/run-store.ts'
 import type { StoredControlRun } from '../storage/run-view-store.ts'
 import type { Store } from '../storage/store.ts'
 
@@ -70,8 +70,9 @@ export class RunControl {
     inputs: RunInputs,
     idempotencyKey: string,
     trigger: TriggerSeed,
-    actorId?: string,
+    initiator: RunInitiator = { channel: 'api' },
   ): Promise<{ readonly created: boolean; readonly run: RunDetails }> {
+    const actorId = initiator.actorId
     if (actorId != null) idempotencyKey = JSON.stringify([actorId, idempotencyKey])
     const sharedAccess = this.connectorAccess.current(flowId)
     const requestDigest = await digestBytes(
@@ -102,6 +103,7 @@ export class RunControl {
       throw new ControlError(controlErrorCode.connectorAccessConflict, 'Connector access changed while the Run was being accepted.')
     }
     const accepted = this.store.runs.acceptControlRun({
+      initiator,
       closureDigest: fixed.flow.closureDigest,
       flowId,
       idempotencyKey,
@@ -122,9 +124,9 @@ export class RunControl {
     inputs: RunInputs,
     idempotencyKey: string,
     trigger: TriggerSeed,
-    actorId?: string,
-    call?: WorkflowCallAdmission,
+    origin: LiveRunOrigin = { initiator: { channel: 'api' } },
   ): Promise<{ readonly created: boolean; readonly run: RunDetails }> {
+    const actorId = origin.initiator?.actorId
     if (actorId != null) idempotencyKey = JSON.stringify([actorId, idempotencyKey])
     const requestDigest = await digestBytes(canonicalJsonBytes({ inputs, trigger: { ...trigger }, kind: 'live', publicationId }))
     const existing = this.replayRun(idempotencyKey, requestDigest, 'live')
@@ -164,7 +166,7 @@ export class RunControl {
     if (providerAccess == null) throw new ControlError(serverErrorCode.flowRevisionStorageConflict, 'The Publication access snapshot is unavailable.')
     await this.checkRunActions(fixed.flow, flowId, providerAccess, 'publication')
     const accepted = this.store.runs.acceptLiveControlRun({
-      call,
+      ...origin,
       closureDigest: livePublication.closureDigest,
       expectedPublicationId: livePublication.publicationId,
       flowId,
@@ -201,14 +203,15 @@ export class RunControl {
         {},
         JSON.stringify(['workflow', parent.runId, jobId]),
         { nodeId: start[0], outputs: values },
-        undefined,
         {
-          parentRunId: parent.runId,
-          parentFlowId: parent.flowId,
-          nodeId,
-          jobId,
-          executionId: await projectExecutionId(parent.runId, parent.runId, jobId),
-          ...(node.timeoutMs == null ? {} : { deadlineAt: startedAt + node.timeoutMs }),
+          call: {
+            parentRunId: parent.runId,
+            parentFlowId: parent.flowId,
+            nodeId,
+            jobId,
+            executionId: await projectExecutionId(parent.runId, parent.runId, jobId),
+            ...(node.timeoutMs == null ? {} : { deadlineAt: startedAt + node.timeoutMs }),
+          },
         },
       )
       call = this.store.runs.workflowCalls(parent.runId, jobId).find((row) => row.runId == accepted.run.runId)
@@ -491,6 +494,7 @@ export class RunControl {
     const caller = this.store.runs.workflowOrigin(stored.runId)
     const details = {
       ...run(stored),
+      ...(stored.initiator == null ? {} : { initiator: stored.initiator }),
       ...this.store.runViews.errorHandling(stored.runId),
       ...state,
       calls: this.store.runs.workflowCalls(stored.runId).map(({ deadlineAt: _deadline, jobId: _jobId, ...call }) => call),

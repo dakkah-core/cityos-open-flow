@@ -450,6 +450,13 @@ export interface PublicationPage {
   readonly version: 1
 }
 
+export type RunChannel = 'workbench' | 'cli' | 'mcp' | 'api' | 'trigger' | 'workflow'
+
+export interface RunInitiator {
+  readonly actorId?: string
+  readonly channel: RunChannel
+}
+
 export interface Run {
   readonly createdAt: string
   readonly finishedAt?: string
@@ -487,6 +494,7 @@ export interface WorkflowRunCall extends WorkflowCaller {
 }
 
 type RunDetailsBase = Run & {
+  readonly initiator?: RunInitiator
   readonly caller?: WorkflowCaller
   readonly calls?: readonly WorkflowRunCall[]
   readonly triggerNodeId?: string
@@ -755,7 +763,10 @@ export type ConditionalResult<T> =
 export class ControlClient {
   private readonly requestControl: ControlRequest
 
-  constructor(requestControl: ControlRequest) {
+  constructor(
+    requestControl: ControlRequest,
+    private readonly channel: 'workbench' | 'cli' | 'api' = 'api',
+  ) {
     this.requestControl = requestControl
   }
 
@@ -1265,7 +1276,7 @@ export class ControlClient {
     const created = runDetails(
       await this.request(`/v1/flows/${segment(flowId)}/revisions/${segment(revisionId)}/runs`, {
         body: JSON.stringify({ engineContract: 'open-flow-engine/v5', inputs: options.inputs ?? {}, trigger: options.trigger, version: 2 }),
-        headers: { 'idempotency-key': options.idempotencyKey ?? operationKey('run') },
+        headers: { 'idempotency-key': options.idempotencyKey ?? operationKey('run'), 'x-open-flow-client': this.channel },
         method: 'POST',
       }),
     )
@@ -1276,7 +1287,7 @@ export class ControlClient {
     const created = runDetails(
       await this.request('/v1/runs', {
         body: JSON.stringify({ inputs: options.inputs ?? {}, trigger: options.trigger, publicationId, version: 2 }),
-        headers: { 'idempotency-key': options.idempotencyKey ?? operationKey('run') },
+        headers: { 'idempotency-key': options.idempotencyKey ?? operationKey('run'), 'x-open-flow-client': this.channel },
         method: 'POST',
       }),
     )

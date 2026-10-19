@@ -31,6 +31,7 @@ import {
   RunLogClearHighlight,
   RunTooltipButton,
 } from './runDrawer.tsx'
+import { RunInitiator } from './runInitiator.tsx'
 import { RunResultView } from './runOutput.tsx'
 import { duration, runLabel, statusClass } from './runPresentation.ts'
 import { canCancelRun, hasRunFilter } from './runStore.ts'
@@ -525,6 +526,7 @@ export function RunsView({
                   </IdTooltip>
                 </div>
               </header>
+              <RunInitiator run={run} />
               <ErrorHandling run={run} />
               <WorkflowCalls run={run} />
               <ActiveWait

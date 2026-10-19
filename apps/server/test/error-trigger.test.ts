@@ -151,6 +151,7 @@ it.each(['draft', 'live'] as const)('does not dispatch manually admitted %s fail
   const source = await f.flow('source')
   await f.flow('handler', 'error', ['source'])
   const input = {
+    initiator: { channel: 'api' as const },
     ...source,
     expectedPublicationId: source.publicationId,
     idempotencyKey: 'manual',

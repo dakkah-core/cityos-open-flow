@@ -28,6 +28,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../../../../ui/browser/
 import { Icon } from '../icons.tsx'
 import { ErrorHandling } from './errorHandling.tsx'
 import { continuesLog, executionKey, executionOverview, agentSummary, eventSubject, savedToolResults } from './runGroups.ts'
+import { RunInitiator } from './runInitiator.tsx'
 import { downloadRunLog } from './runLogExport.ts'
 import { eventHasDetails, RunEventDetail, RunResultContent, RunText } from './runOutput.tsx'
 import { duration } from './runPresentation.ts'
@@ -937,6 +938,7 @@ export function RunDrawer({
         </RunTooltipButton>
       </header>
       <div className="run-content">
+        {run != null && <RunInitiator run={run} />}
         <ErrorHandling run={run} />
         {run != null && <WorkflowCalls run={run} />}
         {run != null && <ActiveWait onLocate={onLocateWait} onResolve={onResolve} resolvingActions={resolvingActions} run={run} />}

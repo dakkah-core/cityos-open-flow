@@ -1,3 +1,4 @@
+import type { RunInitiator } from '@oomol-lab/open-flow/control-api'
 import type { RunEventKind } from '@oomol-lab/open-flow/control-api'
 import type { ConnectorAccessSnapshot } from '@oomol-lab/open-flow/control-api'
 import type { JsonValue, WaitAction } from '@oomol-lab/open-flow/flow-change'
@@ -34,6 +35,9 @@ export interface WorkflowCallAdmission {
   readonly jobId: string
   readonly deadlineAt?: number
 }
+
+/** Direct calls supply their authenticated initiator; workflow calls derive it from the parent. */
+export type LiveRunOrigin = { readonly initiator: RunInitiator; readonly call?: never } | { readonly call: WorkflowCallAdmission; readonly initiator?: never }
 
 export interface StoredRun {
   readonly bindingValues?: Readonly<Record<string, string>>
@@ -117,6 +121,7 @@ export class RunStore {
   }
 
   acceptControlRun(input: {
+    readonly initiator: RunInitiator
     readonly closureDigest: string
     readonly flowId: string
     readonly idempotencyKey: string
@@ -160,20 +165,21 @@ export class RunStore {
     })
   }
 
-  acceptLiveControlRun(input: {
-    readonly call?: WorkflowCallAdmission
-    readonly closureDigest: string
-    readonly expectedPublicationId: string
-    readonly flowId: string
-    readonly idempotencyKey: string
-    readonly inputs: RunInputs
-    readonly modelVersion: number
-    readonly requestDigest: string
-    readonly revisionDigest: string
-    readonly revisionId: string
-    readonly trigger: TriggerSeed
-    readonly variableNames: readonly string[]
-  }): RunAdmission | { readonly kind: 'binding-unresolved' | 'busy' | 'live-conflict' | 'not-found' } {
+  acceptLiveControlRun(
+    input: LiveRunOrigin & {
+      readonly closureDigest: string
+      readonly expectedPublicationId: string
+      readonly flowId: string
+      readonly idempotencyKey: string
+      readonly inputs: RunInputs
+      readonly modelVersion: number
+      readonly requestDigest: string
+      readonly revisionDigest: string
+      readonly revisionId: string
+      readonly trigger: TriggerSeed
+      readonly variableNames: readonly string[]
+    },
+  ): RunAdmission | { readonly kind: 'binding-unresolved' | 'busy' | 'live-conflict' | 'not-found' } {
     return this.#transaction(() => {
       const existing = this.#database
         .prepare('SELECT run_id AS runId, request_digest AS requestDigest, source, status FROM runs WHERE idempotency_key = ?')
@@ -184,6 +190,7 @@ export class RunStore {
         if (existing.requestDigest != input.requestDigest || existing.source != 'live') return { kind: 'conflict' }
         return { created: false, kind: 'accepted', runId: existing.runId, status: existing.status }
       }
+      let initiator: RunInitiator
       if (input.call != null) {
         const parent = this.#deps.views.controlRun(input.call.parentRunId)
         if (
@@ -193,7 +200,8 @@ export class RunStore {
         )
           return { kind: 'conflict' }
         if (this.callAncestors(parent.runId).includes(input.flowId)) return { kind: 'conflict' }
-      }
+        initiator = { channel: 'workflow', ...(parent.initiator?.actorId == null ? {} : { actorId: parent.initiator.actorId }) }
+      } else initiator = input.initiator
       const flow = this.#deps.flows.get(input.flowId)
       if (flow == null) return { kind: 'not-found' }
       if (flow.status != 'active') return { kind: 'busy' }
@@ -213,6 +221,7 @@ export class RunStore {
 
       const runId = this.#queueRun({
         ...input,
+        initiator,
         publicationId: publication.publicationId,
         providerAccess: this.#deps.publications.providerAccess(publication.publicationId)!,
         source: 'live',
@@ -311,6 +320,7 @@ export class RunStore {
     this.#deps.revisions.ensure(input)
     const runId = this.#queueRun({
       ...input,
+      initiator: { channel: 'trigger' },
       idempotencyKey: `trigger:${randomUUID()}`,
       source: 'live',
       inputs: {},
@@ -1085,6 +1095,7 @@ export class RunStore {
   }
 
   #queueRun(input: {
+    readonly initiator: RunInitiator
     readonly closureDigest: string
     readonly flowId: string
     readonly idempotencyKey: string
@@ -1106,8 +1117,8 @@ export class RunStore {
         `INSERT INTO runs (
            run_id, idempotency_key, request_digest, revision_id, revision_digest, flow_id,
            engine_contract, engine_digest, inputs, status, source, closure_digest,
-           model_version, created_at, publication_id, connector_team_id, trigger_node_id, trigger_outputs, llm_config, binding_values, provider_access_snapshot
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           model_version, created_at, publication_id, connector_team_id, trigger_node_id, trigger_outputs, llm_config, binding_values, provider_access_snapshot, initiator_actor_id, initiator_channel
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         runId,
@@ -1130,6 +1141,8 @@ export class RunStore {
         JSON.stringify(snapshot?.model) ?? null,
         JSON.stringify(snapshot?.bindings) ?? null,
         JSON.stringify(input.providerAccess),
+        input.initiator.actorId ?? null,
+        input.initiator.channel,
       )
     this.#database.prepare('INSERT INTO work (run_id) VALUES (?)').run(runId)
     const payload = {}

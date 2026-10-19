@@ -26,6 +26,7 @@ function fixture() {
     revisionId: 'revision',
   })
   const accepted = store.runs.acceptControlRun({
+    initiator: { channel: 'api' },
     closureDigest: 'closure',
     flowId: 'flow',
     idempotencyKey: 'run',
@@ -221,6 +222,7 @@ it('fails closed on corrupt stored checkpoint bytes', () => {
 it('releases the same-flow queue after freezing while honoring active worker exclusions', () => {
   const f = fixture()
   const accepted = f.store.runs.acceptControlRun({
+    initiator: { channel: 'api' },
     closureDigest: 'closure',
     flowId: 'flow',
     idempotencyKey: 'next',

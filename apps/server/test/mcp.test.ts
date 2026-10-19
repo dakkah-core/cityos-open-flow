@@ -385,6 +385,7 @@ it('serves discovery and an atomic authoring, validation and execution workflow 
   expect(await call('flow_check', { flowId, revisionId })).toMatchObject({ valid: true, revisionId })
   const runArgs = { source: 'draft', flowId, revisionId, trigger: { nodeId: startId, outputs: {} }, idempotencyKey: 'run' }
   const run = await call('flow_run', runArgs)
+  expect(run.initiator).toEqual({ actorId: 'operator', channel: 'mcp' })
   const runId = z.string().parse(run.runId)
   expect(await call('flow_run', runArgs)).toEqual(run)
   await startService(service)

@@ -572,6 +572,18 @@ interface Run {
 }
 ```
 
+Run details include optional `initiator: { actorId?: string, channel: 'workbench' | 'cli' | 'mcp' | 'api' | 'trigger' | 'workflow' }`.
+`actorId` is the authenticated initiating account ID, fixed at admission. The HTTP adapter accepts
+`X-Open-Flow-Client: workbench | cli | api`, defaulting to `api`; Workbench and CLI clients set their
+own channel. This client-declared channel describes the caller and grants no authority. MCP assigns
+`mcp` on the server and does not accept client-supplied actor identities or internal channels.
+Background event admissions use `trigger` without an actor. Workflow calls use `workflow` and retain
+the parent's initiating actor, reusing `caller/calls` for lineage. No new parent/root association is
+introduced. Historical Runs omit `initiator` when the audit data is unavailable; clients show unknown
+rather than infer an actor from Flow ownership. Idempotent replay retains the original initiator even
+when retried through another channel; channel is not part of the execution request digest. Run list
+summaries retain their existing shape. Audit facts are retained independently of Run event logs.
+
 Run details add pinned `closureDigest`, `engineContract`, `engineDigest`, `modelVersion`, `sharedAccessDigest`, and `revisionDigest`. Live Runs add `publicationId`. Automatically triggered Runs are also Live and include `occurrenceId` and `triggerNodeId`.
 
 `RunStatus` includes `queued | starting | running | waiting | canceled | completed | failed | indeterminate`. Every Run detail must return its pending decision collection:
@@ -1416,7 +1428,7 @@ An unavailable selection remains saveable and reports its reason, including `wor
 
 Each invocation checks current Live and interface compatibility before admitting a child Run. Accepted calls retain their fixed child Run across publication changes. Recursive dependency inspection and execution load complete Revisions independently of interface reads. A successful child without business outputs behaves like Code returning `{}`. Parent and child permissions and recursion checks remain enforced. Workbench excludes the current Flow and groups targets using list metadata: callable (always shown, with an empty-state message), published without Start, then unpublished or unavailable (the latter two appear only when populated); target links and interface refresh remain in the selected node's status section.
 
-Run details expose optional `triggerNodeId` for all entry types, optional `caller: { flowId, runId, nodeId, executionId }`, and `calls: [{ flowId, runId, nodeId, executionId, status }]`. Call status is null if the retained target Run is unavailable. Each loop invocation has its own execution identity and child association. Parent and child logs are independent. The parent Run records the call node's normal input/output and lifecycle; the child records its internal execution. Call associations remain available independently of event logs. No client-channel audit is added, and `source` remains `draft | live`.
+Run details expose optional `triggerNodeId` for all entry types, optional `caller: { flowId, runId, nodeId, executionId }`, and `calls: [{ flowId, runId, nodeId, executionId, status }]`. Call status is null if the retained target Run is unavailable. Each loop invocation has its own execution identity and child association. Parent and child logs are independent. The parent Run records the call node's normal input/output and lifecycle; the child records its internal execution. Call associations remain available independently of event logs. `source` remains `draft | live`.
 
 Waiting calls are saved in the optional `calls` member of the version 5 checkpoint; old checkpoints without it remain valid. A pending call freezes as soon as no ordinary task is active, without the manual-Wait in-memory retention delay. Its child may use ordinary Wait and Agent approval recovery. An explicit call `timeoutMs` covers queueing, execution and waiting; otherwise child execution and wait limits apply. Parent cancellation/failure cancels unfinished children; an indeterminate child makes the caller indeterminate. No interrupted unconfirmed side effect is replayed.
 

@@ -33,6 +33,7 @@ function pause(store: Store, clock: () => number, flowId: string, notify = false
     revisionId,
   })
   const accepted = store.runs.acceptControlRun({
+    initiator: { channel: 'api' },
     closureDigest: 'closure',
     flowId,
     idempotencyKey: `run:${flowId}`,

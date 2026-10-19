@@ -664,6 +664,18 @@
     "resolving": "正在提交…",
     "runId": "執行 ID：{{id}}",
     "selectRun": "選擇一筆執行紀錄以檢視它的時間軸與輸出。",
+    "initiatorUser": "發起使用者",
+    "initiatorChannel": "呼叫管道",
+    "initiatorUnknown": "未知",
+    "initiatorSystem": "系統",
+    "channelLabels": {
+      "workbench": "Workbench",
+      "cli": "CLI",
+      "mcp": "MCP",
+      "api": "外部 API",
+      "trigger": "觸發器",
+      "workflow": "工作流程呼叫"
+    },
     "sourceDraft": "草稿",
     "sourceLive": "線上",
     "statusCanceled": "已取消",

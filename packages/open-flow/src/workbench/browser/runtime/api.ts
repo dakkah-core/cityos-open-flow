@@ -89,7 +89,7 @@ export class WorkbenchClient extends ControlClient {
     private readonly subscribeFlow: FlowSubscriber = () => ({ ready: Promise.resolve(), stop() {} }),
     private readonly subscribeFlowCatalog: FlowCatalogSubscriber = () => ({ ready: Promise.resolve(), stop() {} }),
   ) {
-    super(fetcher)
+    super(fetcher, 'workbench')
   }
 
   async readProxyCatalog<T>(

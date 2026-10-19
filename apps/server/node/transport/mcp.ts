@@ -151,8 +151,11 @@ function createServer(service: ServerService, actorId: string, logger: Logger, e
   register('flow_run', mcpTools.flow_run, async (args) => {
     return (
       args.source == 'draft'
-        ? await control.runs.createDraftRun(args.flowId, args.revisionId, currentEngineContract, args.inputs, args.idempotencyKey, args.trigger, actorId)
-        : await control.runs.createLiveRun(args.publicationId, args.inputs, args.idempotencyKey, args.trigger, actorId)
+        ? await control.runs.createDraftRun(args.flowId, args.revisionId, currentEngineContract, args.inputs, args.idempotencyKey, args.trigger, {
+            actorId,
+            channel: 'mcp',
+          })
+        : await control.runs.createLiveRun(args.publicationId, args.inputs, args.idempotencyKey, args.trigger, { initiator: { actorId, channel: 'mcp' } })
     ).run
   })
   register('run_list', mcpTools.run_list, ({ flowId, status, cursor, limit, pendingWait }) => {

@@ -80,7 +80,15 @@ it('calls current Live with one execution slot, preserves separate events and du
   const parent = await caller(service, child.flowId)
   const refs = service.control.getFlowReferences('operator', child.flowId, 'incoming', 0, 50)
   expect(refs.references).toMatchObject([{ flowId: parent.flowId, draft: true, live: null }])
-  const accepted = await service.control.runs.createDraftRun(parent.flowId, parent.revisionId, engine, {}, 'call', { nodeId: 'start', outputs: {} })
+  const accepted = await service.control.runs.createDraftRun(
+    parent.flowId,
+    parent.revisionId,
+    engine,
+    {},
+    'call',
+    { nodeId: 'start', outputs: {} },
+    { actorId: 'operator', channel: 'cli' },
+  )
   await expect.poll(() => service.control.runs.getRun(accepted.run.runId).status).toBe('completed')
   const run = service.control.runs.getRun(accepted.run.runId)
   expect(run.triggerNodeId).toBe('start')
@@ -91,6 +99,7 @@ it('calls current Live with one execution slot, preserves separate events and du
   const call = run.calls![0]!
   expect(service.control.runs.getRun(call.runId)).toMatchObject({
     source: 'live',
+    initiator: { actorId: 'operator', channel: 'workflow' },
     triggerNodeId: 'start',
     caller: { runId: run.runId, flowId: parent.flowId, nodeId: 'call', executionId: call.executionId },
   })
@@ -100,6 +109,8 @@ it('calls current Live with one execution slot, preserves separate events and du
   const store = (service.control as unknown as { store: Store }).store
   store.runs.maintain(Date.now() + 31 * 24 * 60 * 60 * 1000, 100, 1000)
   expect(service.events(run.runId)).toEqual([])
+  expect(service.control.runs.getRun(run.runId).initiator).toEqual({ actorId: 'operator', channel: 'cli' })
+  expect(service.control.runs.getRun(call.runId).initiator).toEqual({ actorId: 'operator', channel: 'workflow' })
   expect(service.control.runs.getRun(call.runId).caller?.executionId).toBe(call.executionId)
   expect(service.control.runs.getRun(run.runId).calls).toHaveLength(1)
 })

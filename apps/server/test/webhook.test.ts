@@ -115,6 +115,7 @@ describe('Server Webhook Trigger admission', () => {
     ])
     if (first == null || second == null) throw new Error('Concurrent matching occurrences lost their current target.')
     if (first.kind != 'accepted' || second.kind != 'accepted') throw new Error('Concurrent matching occurrences unexpectedly conflicted.')
+    expect(service.control.runs.getRun(first.runId).initiator).toEqual({ channel: 'trigger' })
     const acceptedRuns = [first, second]
     expect(new Set(acceptedRuns.map((accepted) => accepted.runId)).size).toBe(1)
     const accepted = acceptedRuns.find((candidate) => candidate.created)

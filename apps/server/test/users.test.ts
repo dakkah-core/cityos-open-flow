@@ -214,7 +214,7 @@ it('rejects another owner’s run, publication and error subscription through RE
     {},
     'run',
     { nodeId: 'start', outputs: {} },
-    account.user.userId,
+    { actorId: account.user.userId, channel: 'api' },
   )
   const runId = accepted.run.runId
   for (const suffix of ['', '/events', '/results', '/result']) {
@@ -576,7 +576,15 @@ it('publishes and runs with the Flow owner’s variables without falling back to
   expect((await f.request('/v1/variables/TOKEN', administrator, 'PUT', { version: undefined, value: 'operator-secret' })).status).toBe(200)
   const publish = () => f.service.control.publishFlow(account.user.userId, flow.flowId, revisionId, currentEngineContract, null, 'publish')
   const run = () =>
-    f.service.control.runs.createDraftRun(flow.flowId, revisionId, currentEngineContract, {}, 'run', { nodeId: 'start', outputs: {} }, account.user.userId)
+    f.service.control.runs.createDraftRun(
+      flow.flowId,
+      revisionId,
+      currentEngineContract,
+      {},
+      'run',
+      { nodeId: 'start', outputs: {} },
+      { actorId: account.user.userId, channel: 'api' },
+    )
   await expect(publish()).rejects.toMatchObject({ code: 'binding.unresolved' })
   await expect(run()).rejects.toMatchObject({ code: 'binding.unresolved' })
   expect((await f.request('/v1/variables/TOKEN', headers, 'PUT', { version: undefined, value: 'owner-value' })).status).toBe(200)
@@ -606,7 +614,14 @@ it('publishes and runs with the Flow owner’s variables without falling back to
     status: 'completed',
     result: { nodes: [{ nodeId: 'task', outputs: { token: 'owner-value' } }] },
   })
-  const liveRun = () => f.service.control.runs.createLiveRun(publication.publicationId, {}, 'live', { nodeId: 'start', outputs: {} }, account.user.userId)
+  const liveRun = () =>
+    f.service.control.runs.createLiveRun(
+      publication.publicationId,
+      {},
+      'live',
+      { nodeId: 'start', outputs: {} },
+      { initiator: { actorId: account.user.userId, channel: 'api' } },
+    )
   expect((await f.request('/v1/variables/TOKEN', headers, 'DELETE')).status).toBe(200)
   await expect(liveRun()).rejects.toMatchObject({ code: 'binding.unresolved' })
   expect((await f.request('/v1/variables/TOKEN', headers, 'PUT', { version: undefined, value: 'live-owner-value' })).status).toBe(200)
