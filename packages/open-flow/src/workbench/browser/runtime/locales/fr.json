@@ -520,7 +520,7 @@
     "fromPublication": "Depuis {{id}}",
     "history": "Historique des Publications",
     "historyCount": "{{count}} Publications",
-    "historyEmpty": "Aucune Publication pour l'instant",
+    "historyEmpty": "Aucune publication",
     "historyEmptyDescription": "Publiez ce workflow pour créer sa première version.",
     "live": "Version en ligne",
     "liveDescription": "La version en ligne pointe vers une seule Publication immuable. Publier ou restaurer crée une nouvelle entrée d'historique.",

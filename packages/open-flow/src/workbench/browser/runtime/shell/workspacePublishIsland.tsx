@@ -41,8 +41,7 @@ export function WorkspacePublishIsland({
   const [exporting, setExporting] = useState(false)
   const cancelButton = useRef<HTMLButtonElement>(null)
   const publishLabel = t(state == 'publishing' ? 'workspace.publishing' : 'publication.publishDraft')
-  const historyLabel = t('workspace.publications')
-  const historyHint = hasPublications === true ? undefined : t(hasPublications === false ? 'publication.historyEmpty' : 'publication.loading')
+  const historyLabel = t(hasPublications === true ? 'workspace.publications' : hasPublications === false ? 'publication.historyEmpty' : 'publication.loading')
   const runsLabel = t('workspace.runs')
   const menuLabel = t('sidebar.moreActions')
   const statusTooltip =
@@ -140,10 +139,7 @@ export function WorkspacePublishIsland({
           )}
           <DropdownMenuItem className="gap-2 px-2 py-[5px]" disabled={hasPublications !== true} onClick={onOpenPublications}>
             <i aria-hidden="true" className="i-lucide-light:cloud-upload size-4 shrink-0 text-foreground/70" />
-            <span className="grid gap-0.5">
-              <span>{historyLabel}</span>
-              {historyHint != null && <span className="text-[11px] text-muted-foreground">{historyHint}</span>}
-            </span>
+            <span className="whitespace-nowrap">{historyLabel}</span>
           </DropdownMenuItem>
           <DropdownMenuItem className="gap-2 px-2 py-[5px]" onClick={onOpenRuns}>
             <i aria-hidden="true" className="i-lucide-light:history size-4 shrink-0 text-foreground/70" />

@@ -520,7 +520,7 @@
     "fromPublication": "取得元 {{id}}",
     "history": "公開履歴",
     "historyCount": "公開記録 {{count}} 件",
-    "historyEmpty": "公開記録がまだありません",
+    "historyEmpty": "公開記録なし",
     "historyEmptyDescription": "このワークフローを公開して最初のバージョンを作成します。",
     "live": "現在の公開状態",
     "liveDescription": "本番は、変更できない 1 件の公開記録を指します。公開やロールバックを行うと、履歴が新しく追加されます。",

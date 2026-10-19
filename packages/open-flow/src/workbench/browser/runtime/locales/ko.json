@@ -520,7 +520,7 @@
     "fromPublication": "출처: {{id}}",
     "history": "게시 이력",
     "historyCount": "게시 기록 {{count}}건",
-    "historyEmpty": "아직 게시 기록이 없습니다",
+    "historyEmpty": "게시 기록 없음",
     "historyEmptyDescription": "이 워크플로를 게시하여 첫 번째 버전을 만드세요.",
     "live": "현재 라이브 상태",
     "liveDescription": "라이브는 변경할 수 없는 게시 기록 하나를 가리킵니다. 게시하거나 롤백하면 새 이력 항목이 생성됩니다.",
