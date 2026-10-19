@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
@@ -40,6 +40,38 @@ test('Node and Bun selectors agree with package and container consumers', async 
   assert.ok(dockerfile.includes(`FROM node:${node}-bookworm-slim AS runtime`))
   const { buildBunVersion } = await import('../../command/src/cli/common/version.ts')
   assert.equal(buildBunVersion, bun)
+})
+
+test('the approved browser API binding cannot become a build compiler or spread into other source consumers', async () => {
+  const selected = manifest.catalogs['typescript-compat']['typescript-lsp']
+  assert.match(selected, /^npm:typescript@6\.\d+\.\d+$/)
+  assert.match(manifest.catalog.typescript, /^7\.\d+\.\d+$/)
+  const allowed = new Set([
+    'packages/open-flow/src/workbench/browser/typeScriptWorker.ts',
+    'packages/open-flow/src/workbench/browser/typeScriptShadow.ts',
+    'packages/open-flow/src/workbench/browser/typeScriptShadow.test.ts',
+    'packages/open-flow/src/workbench/browser/typeScriptDiagnostics.ts',
+    'packages/open-flow/src/workbench/browser/codeActionsTyping.test.ts',
+  ])
+  async function inspect(directory) {
+    for (const entry of await readdir(path.join(root, directory), { withFileTypes: true })) {
+      const relative = `${directory}/${entry.name}`
+      if (entry.isDirectory()) await inspect(relative)
+      else if (/\.[cm]?[jt]sx?$/.test(entry.name)) {
+        const source = await readFile(path.join(root, relative), 'utf8')
+        if (/(?:from\s*|import\s*\(|require\s*\()\s*['"]typescript-lsp['"]/.test(source)) {
+          assert.ok(allowed.has(relative), `Unapproved browser API consumer: ${relative}`)
+        }
+      }
+    }
+  }
+  for (const directory of ['packages/open-flow/src', 'packages/command/src', 'apps/server/src']) await inspect(directory)
+  for (const member of members) {
+    const pkg = await readJson(path.join(root, member))
+    for (const [name, command] of Object.entries(pkg.scripts ?? {})) {
+      assert.doesNotMatch(command, /typescript-lsp/, `${member}/${name}`)
+    }
+  }
 })
 
 test('package staging emits concrete stable peers from the owning catalog', async t => {
