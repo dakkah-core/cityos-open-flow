@@ -1,13 +1,29 @@
-import type { ReactElement, ReactNode } from 'react'
+import type { ComponentProps, ElementType, ReactElement, ReactNode } from 'react'
 
 import { Children, isValidElement } from 'react'
 import { val } from 'value-enhancer'
 import { describe, expect, it, vi } from 'vitest'
 import { nodeInputMappings } from '../../../../flow/common/condition.ts'
+import { ValueEditorFeedback } from '../../../../form/browser/fieldControl.tsx'
+import { Button } from '../../../../ui/browser/button.tsx'
+import { Input } from '../../../../ui/browser/input.tsx'
+import { Select, SelectItem } from '../../../../ui/browser/select.tsx'
+import { Switch } from '../../../../ui/browser/switch.tsx'
+import { Textarea } from '../../../../ui/browser/textarea.tsx'
+import { TooltipTrigger } from '../../../../ui/browser/tooltip.tsx'
+import { ActionSelectionDialog } from './actionSelectionDialog.tsx'
+import { CodeEditor } from './codeEditor.tsx'
 import { CodeTaskSection } from './codeTaskSection.tsx'
-import { ConnectorAccount, TriggerConnection } from './connectionSettings.tsx'
+import { AccountSelect, ConnectorAccount, TriggerConnection } from './connectionSettings.tsx'
+import { FeishuTriggerConfig } from './feishuTriggerConfig.tsx'
+import { GeneralSettings } from './generalSettings.tsx'
+import { LlmTaskSection } from './llmTaskSection.tsx'
+import { NodeInputs } from './nodeInputs.tsx'
 import { NodeInspector } from './nodeInspector.tsx'
 import { OpenApiSection } from './openApiSection.tsx'
+import { ResolutionDefinition } from './resolutionDefinition.tsx'
+import { TriggerSummary } from './triggerSummary.tsx'
+import { WebhookEditor } from './webhookEditor.tsx'
 
 vi.mock('use-value-enhancer', () => ({ useVal: (value: { value: unknown }) => value.value }))
 
@@ -25,11 +41,20 @@ vi.mock('val-i18n-react', async (importOriginal) => ({
   useTranslate: () => (key: string) => key,
 }))
 
-function find(element: ReactElement, predicate: (item: ReactElement) => boolean): ReactElement | undefined {
-  if (predicate(element)) return element
-  for (const child of Children.toArray((element.props as { readonly children?: ReactNode }).children)) {
-    if (!isValidElement(child)) continue
-    const match = find(child, predicate)
+function isElement<T extends ElementType>(element: unknown, type: T): element is ReactElement<ComponentProps<T>, T> {
+  return isValidElement(element) && element.type === type
+}
+
+function find<T extends ElementType>(
+  element: ReactNode,
+  type: T,
+  predicate: (item: ReactElement<ComponentProps<T>, T>) => boolean = () => true,
+): ReactElement<ComponentProps<T>, T> | undefined {
+  if (!isValidElement<{ readonly children?: ReactNode }>(element)) return
+  const children = element.props.children
+  if (isElement(element, type) && predicate(element)) return element
+  for (const child of Children.toArray(children)) {
+    const match = find(child, type, predicate)
     if (match != null) return match
   }
 }
@@ -64,9 +89,9 @@ function resolutionDefinition(
     triggerConnectionLoading: false,
     triggers: {} as never,
   })
-  const resolution = find(element, (item) => typeof item.type == 'function' && item.type.name == 'ResolutionDefinition')
+  const resolution = find(element, ResolutionDefinition)
   if (resolution == null || typeof resolution.type != 'function') throw new Error('Expected resolution settings.')
-  return (resolution.type as (props: unknown) => ReactElement)(resolution.props)
+  return ResolutionDefinition(resolution.props)
 }
 
 describe('Provider account section', () => {
@@ -90,7 +115,7 @@ describe('Provider account section', () => {
       nodeId: 'task',
       onConfigureAccess: configure,
     })
-    const button = find(rendered, (item) => typeof item.props.onClick == 'function')
+    const button = find(rendered, Button, (item) => typeof item.props.onClick == 'function')
     ;(button!.props.onClick as () => void)()
     expect(configure).toHaveBeenCalledOnce()
     expect(connect).not.toHaveBeenCalled()
@@ -108,7 +133,7 @@ describe('Provider account section', () => {
       triggers: { connect } as never,
       onConfigureAccess: configure,
     })!
-    const button = find(rendered, (item) => typeof item.props.onClick == 'function')
+    const button = find(rendered, Button, (item) => typeof item.props.onClick == 'function')
     ;(button!.props.onClick as () => void)()
     expect(configure).toHaveBeenCalledWith('slack')
     expect(connect).not.toHaveBeenCalled()
@@ -143,19 +168,19 @@ describe('Provider account section', () => {
       triggerConnectionLoading: false,
       triggers: {} as never,
     })
-    const account = find(element, (item) => typeof item.type == 'function' && item.type.name == 'ConnectorAccount')
+    const account = find(element, ConnectorAccount)
     if (account == null || typeof account.type != 'function') throw new Error('Expected Provider account section.')
-    const rendered = (account.type as (props: unknown) => ReactElement)(account.props)
-    const manage = find(rendered, (item) => item.props.children == 'inspector.account.manageAccount')
-    const accountSelect = find(rendered, (item) => typeof item.type == 'function' && item.type.name == 'AccountSelect')
+    const rendered = ConnectorAccount(account.props)
+    const manage = find(rendered, Button, (item) => item.props.children == 'inspector.account.manageAccount')
+    const accountSelect = find(rendered, AccountSelect)
     if (accountSelect == null || typeof accountSelect.type != 'function') throw new Error('Expected account selector.')
-    const renderedSelect = (accountSelect.type as (props: unknown) => ReactElement)(accountSelect.props)
-    const addAccount = find(renderedSelect, (item) => item.props.children == 'inspector.account.addAccount')
-    const select = find(renderedSelect, (item) => typeof item.props.onValueChange == 'function')
+    const renderedSelect = AccountSelect(accountSelect.props)
+    const addAccount = find(renderedSelect, SelectItem, (item) => item.props.children == 'inspector.account.addAccount')
+    const select = find(renderedSelect, Select, (item) => typeof item.props.onValueChange == 'function')
 
     expect(manage?.props.children).toBe('inspector.account.manageAccount')
     expect(addAccount?.props.children).toBe('inspector.account.addAccount')
-    expect(find(rendered, (item) => item.type == 'p' && item.props.children == 'inspector.account.pinned')).toBeUndefined()
+    expect(find(rendered, 'p', (item) => item.props.children == 'inspector.account.pinned')).toBeUndefined()
 
     ;(manage!.props.onClick as () => void)()
     ;(select!.props.onValueChange as (value: string) => void)(addAccount!.props.value as string)
@@ -203,8 +228,8 @@ describe('Provider Trigger sections', () => {
       triggers: {} as never,
     })
 
-    const connection = find(element, (item) => typeof item.type == 'function' && item.type.name == 'TriggerConnection')
-    const config = find(element, (item) => typeof item.type == 'function' && item.type.name == 'FeishuTriggerConfig')
+    const connection = find(element, TriggerConnection)
+    const config = find(element, FeishuTriggerConfig)
 
     expect(connection).toBeDefined()
     expect(config?.props.connectionId).toBe('feishu-account')
@@ -241,9 +266,9 @@ describe('Provider Trigger sections', () => {
       triggerConnectionLoading: false,
       triggers: {} as never,
     })
-    const content = find(element, (item) => item.props.className == 'inspector-content')
+    const content = find(element, 'div', (item) => item.props.className == 'inspector-content')
     if (content == null) throw new Error('Expected inspector content.')
-    const sections = Children.toArray((content.props as { readonly children?: ReactNode }).children)
+    const sections = Children.toArray(content.props.children)
       .filter(isValidElement)
       .map((item) => (typeof item.type == 'function' ? item.type.name : item.type))
 
@@ -269,9 +294,10 @@ describe('Webhook Trigger sections', () => {
       triggerConnectionLoading: false,
       triggers: {} as never,
     })
-    const editor = find(element, (item) => typeof item.type == 'function' && item.type.name == 'WebhookEditor')
+    const editor = find(element, WebhookEditor)
     expect(isValidElement(editor?.props.outputSection)).toBe(true)
-    expect(typeof editor?.props.outputSection.type == 'function' ? editor.props.outputSection.type.name : undefined).toBe('TriggerSummary')
+    const outputSection = editor?.props.outputSection
+    expect(isElement(outputSection, TriggerSummary) ? outputSection.type.name : undefined).toBe('TriggerSummary')
   })
 })
 
@@ -283,7 +309,7 @@ describe('Resolution Inspector', () => {
       {},
       saveResolution,
     )
-    const input = find(definition, (item) => (item.props as { readonly id?: string }).id == 'wait-wait-prompt')
+    const input = find(definition, Textarea, (item) => item.props.id == 'wait-wait-prompt')
     if (input == null) throw new Error('Expected prompt.')
     const blur = (input.props as { readonly onBlur: (event: { currentTarget: { value: string } }) => void }).onBlur
     blur({ currentTarget: { value: 'Continue?' } })
@@ -329,12 +355,13 @@ describe('Node execution settings', () => {
       triggerConnectionLoading: false,
       triggers: {} as never,
     })
-    const settings = find(element, (item) => typeof item.type == 'function' && item.type.name == 'GeneralSettings')
+    const settings = find(element, GeneralSettings)
     if (settings == null || typeof settings.type != 'function') throw new Error('Expected general settings.')
-    const rendered = (settings.type as (props: unknown) => ReactElement)(settings.props)
+    const rendered = GeneralSettings(settings.props)
     expect(rendered.type).toBe('details')
+    if (!isElement(rendered, 'details')) throw new Error('Expected general settings details.')
     expect(rendered.props.open).toBeUndefined()
-    const input = find(rendered, (item) => (item.props as { readonly id?: string }).id == 'node-current-timeout')
+    const input = find(rendered, Input, (item) => item.props.id == 'node-current-timeout')
     if (input == null) throw new Error('Expected timeout input.')
     const blur = (input.props as { readonly onBlur: (event: { currentTarget: { value: string } }) => void }).onBlur
     for (const value of ['100', '0', '-1', '1.5', 'Infinity']) blur({ currentTarget: { value } })
@@ -343,7 +370,7 @@ describe('Node execution settings', () => {
     expect(saveNodeSettings).toHaveBeenLastCalledWith('current', { name: 'Review', timeoutMs: 200, maxExecutions: 25 })
     blur({ currentTarget: { value: '' } })
     expect(saveNodeSettings).toHaveBeenLastCalledWith('current', { name: 'Review', maxExecutions: 25 })
-    const limit = find(rendered, (item) => (item.props as { readonly id?: string }).id == 'node-current-limit')
+    const limit = find(rendered, Input, (item) => item.props.id == 'node-current-limit')
     if (limit == null) throw new Error('Expected execution limit input.')
     const saveLimit = (limit.props as { readonly onBlur: (event: { currentTarget: { value: string } }) => void }).onBlur
     saveNodeSettings.mockClear()
@@ -388,10 +415,10 @@ describe('Code task sections', () => {
       theme: 'light',
     })!
     expect(actions).not.toHaveBeenCalled()
-    const feedback = find(rendered, (item) => typeof item.props.children == 'function')!
-    const editor = feedback.props.children(undefined)
+    const feedback = find(rendered, ValueEditorFeedback, (item) => typeof item.props.children == 'function')!
+    const editor = find(feedback.props.children(undefined), CodeEditor)!
     expect(editor.props.value).toBe('')
-    const typing = await editor.props.prepareCompletion()
+    const typing = await editor.props.prepareCompletion!()
     expect(typing).toContain('TaskContext')
     if (mode == 'shared') {
       expect(actions).toHaveBeenCalledTimes(2)
@@ -422,7 +449,7 @@ describe('Code task sections', () => {
       theme: 'light',
     })
     if (rendered == null) throw new Error('Expected Code settings.')
-    const picker = find(rendered, (item) => item.props.title == 'actionPicker.configureActions')
+    const picker = find(rendered, ActionSelectionDialog, (item) => item.props.title == 'actionPicker.configureActions')
     if (picker == null) throw new Error('Expected Action selection dialog.')
     expect(setCodeActions).not.toHaveBeenCalled()
     const selected = [{ action: 'github.read', connectionId: 'work' }, { action: 'public.read' }]
@@ -481,11 +508,10 @@ describe('Code task sections', () => {
       triggerConnectionLoading: false,
       triggers: {} as never,
     })
-    const task = find(element, (item) => typeof item.type == 'function' && item.type.name == 'CodeTaskSection')
+    const task = find(element, CodeTaskSection)
     if (task == null || typeof task.type != 'function') throw new Error('Expected task definition.')
     const rendered = renderCodeSection(task.props)
-    const actionsButton = (section: ReactElement) =>
-      find(section, (item) => typeof item.type == 'function' && item.type.name == 'ActionSelectionDialog')?.props.trigger
+    const actionsButton = (section: ReactElement) => find(find(section, ActionSelectionDialog)?.props.trigger, Button)
     expect(actionsButton(rendered)?.props.variant).toBe('ghost')
     const actionError = renderCodeSection({
       ...task.props,
@@ -500,21 +526,21 @@ describe('Code task sections', () => {
       ],
     })
     expect(actionsButton(actionError)?.props).toMatchObject({ 'variant': 'destructive', 'aria-invalid': true })
-    const feedback = find(rendered, (item) => typeof item.type == 'function' && item.type.name == 'ValueEditorFeedback')
-    expect(feedback?.props.error[0].props.children).toBe('Invalid JavaScript syntax.')
-    expect(feedback?.props.children('syntax-error').props).toMatchObject({ ariaDescribedBy: 'syntax-error', invalid: true })
+    const feedback = find(rendered, ValueEditorFeedback)
+    expect(find(Children.toArray(feedback?.props.error)[0], 'div')?.props.children).toBe('Invalid JavaScript syntax.')
+    expect(find(feedback?.props.children('syntax-error'), CodeEditor)?.props).toMatchObject({ ariaDescribedBy: 'syntax-error', invalid: true })
     const valid = renderCodeSection({ ...task.props, diagnostics: diagnostics.slice(1) })
-    const validFeedback = find(valid, (item) => typeof item.type == 'function' && item.type.name == 'ValueEditorFeedback')
+    const validFeedback = find(valid, ValueEditorFeedback)
     expect(validFeedback?.props.error).toBeUndefined()
-    expect(validFeedback?.props.children(undefined).props.invalid).toBe(false)
-    const modeSwitch = find(rendered, (item) => item.props.id == 'task-shared-permissions')
+    expect(find(validFeedback?.props.children(undefined), CodeEditor)?.props.invalid).toBe(false)
+    const modeSwitch = find(rendered, Switch, (item) => item.props.id == 'task-shared-permissions')
     expect(modeSwitch).toBeUndefined()
     expect(setCodeActions).not.toHaveBeenCalled()
-    expect(find(rendered, (item) => item.props.children == 'inspector.actions.flowAccess')).toBeUndefined()
+    expect(find(rendered, TooltipTrigger, (item) => item.props.children == 'inspector.actions.flowAccess')).toBeUndefined()
     expect(configureAccess).not.toHaveBeenCalled()
 
-    expect(find(element, (item) => typeof item.type == 'function' && item.type.name == 'GeneralSettings')).toBeDefined()
-    const codeActions = (section: ReactElement) => find(section, (item) => String(item.props.className).includes('code-actions'))
+    expect(find(element, GeneralSettings)).toBeDefined()
+    const codeActions = (section: ReactElement) => find(section, 'div', (item) => String(item.props.className).includes('code-actions'))
     expect(codeActions(rendered)).toBeUndefined()
 
     moduleEditor.value = { ...moduleEditor.value, status: 'failed' }
@@ -545,11 +571,11 @@ describe('Code task sections', () => {
       triggerConnectionLoading: false,
       triggers: {} as never,
     })
-    const task = find(element, (item) => typeof item.type == 'function' && item.type.name == 'LlmTaskSection')
+    const task = find(element, LlmTaskSection)
     if (task == null || typeof task.type != 'function') throw new Error('Expected task definition.')
-    const rendered = (task.type as (props: unknown) => ReactElement)(task.props)
-    expect(find(rendered, (item) => item.type == 'details')).toBeUndefined()
-    expect(find(element, (item) => typeof item.type == 'function' && item.type.name == 'GeneralSettings')).toBeDefined()
+    const rendered = LlmTaskSection(task.props)
+    expect(find(rendered, 'details')).toBeUndefined()
+    expect(find(element, GeneralSettings)).toBeDefined()
   })
 })
 
@@ -592,8 +618,8 @@ describe('Node input ownership', () => {
       triggerConnectionLoading: false,
       triggers: {} as never,
     })
-    const inputs = find(element, (item) => typeof item.type === 'function' && item.type.name === 'NodeInputs')
-    const upstream = (inputs!.props as { renderSource: (handle: string) => { current: unknown[] } }).renderSource('message')
+    const inputs = find(element, NodeInputs)
+    const upstream = inputs!.props.renderSource!('message')!
 
     expect(upstream.current).toEqual([
       {
@@ -635,8 +661,8 @@ describe('Node input ownership', () => {
       triggerConnectionLoading: false,
       triggers: {} as never,
     })
-    const inputs = find(element, (item) => typeof item.type === 'function' && item.type.name === 'NodeInputs')
-    const upstream = (inputs!.props as { renderSource: (handle: string) => { current: { nodeName?: string }[] } }).renderSource('message')
+    const inputs = find(element, NodeInputs)
+    const upstream = inputs!.props.renderSource!('message')!
 
     expect(upstream.current[0]?.nodeName).toBeUndefined()
   })
@@ -682,28 +708,20 @@ describe('Node input ownership', () => {
       triggerConnectionLoading: false,
       triggers: {} as never,
     })
-    const input = find(element, (item) => typeof item.type === 'function' && item.type.name === 'NodeInputs')
+    const input = find(element, NodeInputs)
     expect(input).toBeDefined()
-    const props = input!.props as {
-      allowAddGroup: boolean
-      renderSource: (handle: string) => {
-        groups: unknown[]
-        describeGroups: (outputs: Record<string, { output: string; check: { kind: 'available' } }[]>) => unknown[]
-        onChange: (source: { nodeId: string; output: string }) => void
-      }
-      entries: { variableName: string; connected: boolean }[]
-      onValue: (handle: string, value: unknown) => void
-      onVariable: (handle: string, name: string | undefined) => void
-    }
+    const props = input!.props
     expect(props.allowAddGroup).toBe(kind !== 'wait' && kind !== 'approval')
-    const upstream = props.renderSource('message')
+    const upstream = props.renderSource!('message')!
     expect(upstream.groups).toEqual([])
     const outputs = [{ output: 'text', check: { kind: 'available' as const } }]
-    expect(upstream.describeGroups({ upstream: outputs })).toEqual([{ icon: undefined, nodeId: 'upstream', nodeName: 'Source', outputs }])
-    upstream.onChange({ nodeId: 'upstream', output: 'text' })
+    expect(upstream.describeGroups!({ upstream: outputs })).toEqual([{ icon: undefined, nodeId: 'upstream', nodeName: 'Source', outputs }])
+    upstream.onChange!({ nodeId: 'upstream', output: 'text' })
     expect(setInputSource).toHaveBeenCalledWith('condition', 'message', { nodeId: 'upstream', output: 'text' })
-    expect(props.entries[0]!.variableName).toBe('API_TOKEN')
-    expect(props.entries[0]!.connected).toBe(false)
+    const entry = props.entries[0]!
+    if ('group' in entry) throw new Error('Expected input field.')
+    expect(entry.variableName).toBe('API_TOKEN')
+    expect(entry.connected).toBe(false)
     props.onValue('message', null)
     props.onVariable('message', undefined)
     expect(setInputValue).toHaveBeenCalledWith('condition', 'message', null, undefined)
@@ -720,12 +738,12 @@ describe('OpenAPI configuration feedback', () => {
       load,
       onSave: vi.fn(),
     })
-    const feedback = find(panel, (item) => typeof item.type == 'function' && item.type.name == 'ValueEditorFeedback')!
+    const feedback = find(panel, ValueEditorFeedback)!
     expect(feedback.props.error).toBe(sourceUrl ? 'openapi.loadRequired' : 'openapi.urlRequired')
-    const input = feedback.props.children('error-id')
+    const input = find(feedback.props.children('error-id'), Input)!
     expect(input.props['aria-invalid']).toBe(true)
     expect(input.props['aria-describedby']).toBe('error-id')
-    expect(find(panel, (item) => item.props['aria-expanded'] != null)).toBeUndefined()
+    expect(find(panel, Button, (item) => item.props['aria-expanded'] != null)).toBeUndefined()
     expect(load).not.toHaveBeenCalled()
   })
 })

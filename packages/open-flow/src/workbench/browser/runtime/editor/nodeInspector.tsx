@@ -278,7 +278,7 @@ export function NodeInspector({
   const isLlm = task != null && 'executor' in task && task.executor.kind == 'llm'
   const connector = task != null && 'executor' in task && task.executor.kind == 'connector' ? task.executor : undefined
   const nodeId = selection?.kind == 'task' ? selection.id : undefined
-  const locatedRequest = useRef<number>()
+  const locatedRequest = useRef<number>(undefined)
   useEffect(() => {
     if (focus == null) return
     if (locatedRequest.current == focus.requestId) return

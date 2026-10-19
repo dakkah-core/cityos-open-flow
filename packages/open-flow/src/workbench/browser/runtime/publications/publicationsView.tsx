@@ -74,7 +74,7 @@ export function PublicationsView({
   const root = useRef<HTMLElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
   const sidebarHeading = useRef<HTMLHeadingElement>(null)
-  const opener = useRef<HTMLButtonElement>()
+  const opener = useRef<HTMLButtonElement>(undefined)
   const rollbackButton = useRef<HTMLButtonElement>(null)
   const cancelRollback = useRef<HTMLButtonElement>(null)
   const confirmationId = useId()

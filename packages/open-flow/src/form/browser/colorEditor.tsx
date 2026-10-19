@@ -18,7 +18,7 @@ interface ScreenColorPicker {
 export function ColorEditor({ value, schema, label, disabled, onChange, path, onDraftIssue, invalid: schemaInvalid }: ValueControlProps) {
   const t = useTranslate()
   const [container, setContainer] = useState<HTMLDivElement | null>(null)
-  const picker = useRef<AbortController>()
+  const picker = useRef<AbortController>(undefined)
   const mode = objectValue(objectValue(schema)?.['ui:options'])?.colorType
   const alpha = mode === 'HEX8'
   const lastValue = useRef(value)
@@ -83,7 +83,9 @@ export function ColorEditor({ value, schema, label, disabled, onChange, path, on
               <fieldset disabled={disabled} className="flex flex-col gap-2 border-0 p-0">
                 <div
                   className={disabled ? 'pointer-events-none opacity-50' : undefined}
-                  ref={(element) => element?.toggleAttribute('inert', disabled === true)}
+                  ref={(element) => {
+                    element?.toggleAttribute('inert', disabled === true)
+                  }}
                 >
                   {alpha ? (
                     <HexAlphaColorPicker color={valid ? color.toHex8String() : '#7d7fe9ff'} onChange={commit} />

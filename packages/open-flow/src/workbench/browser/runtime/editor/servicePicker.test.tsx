@@ -1,9 +1,9 @@
-import type { ReactElement, ReactNode } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 import type { ConnectorStore } from '../stores/connectorStore.ts'
-import type { BlockLibraryProps } from './blockLibrary.tsx'
 
 import { Children, isValidElement } from 'react'
 import { expect, it, vi } from 'vitest'
+import { BlockLibrary } from './blockLibrary.tsx'
 import { ServicePicker } from './servicePicker.tsx'
 
 vi.mock('react', async (importOriginal) => ({
@@ -16,10 +16,10 @@ vi.mock('val-i18n-react', async (importOriginal) => ({
   useTranslate: () => (key: string) => key,
 }))
 
-function library(element: ReactElement): BlockLibraryProps | undefined {
-  if ('browseOptions' in element.props) return element.props as BlockLibraryProps
-  for (const child of Children.toArray((element.props as { children?: ReactNode }).children)) {
-    if (!isValidElement(child)) continue
+function library(element: ReactNode): ComponentProps<typeof BlockLibrary> | undefined {
+  if (!isValidElement<{ readonly children?: ReactNode }>(element)) return
+  if (element.type === BlockLibrary && isValidElement<ComponentProps<typeof BlockLibrary>>(element)) return element.props
+  for (const child of Children.toArray(element.props.children)) {
     const found = library(child)
     if (found != null) return found
   }

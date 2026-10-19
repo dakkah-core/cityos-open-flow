@@ -12,7 +12,7 @@ let nextComponentId = 1
 const generateNextId = () => nextComponentId++
 
 export function useComponentId(): string {
-  const componentIdReference = useRef<string>()
+  const componentIdReference = useRef<string>(undefined)
   if (componentIdReference.current === undefined) {
     componentIdReference.current = `:ooj:${generateNextId()}:`
   }

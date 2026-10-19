@@ -1,5 +1,6 @@
 import type { InputSourceCheck } from '../../../../flow/common/graph.ts'
 
+import { Window } from 'happy-dom'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nProvider } from 'val-i18n-react'
 import { describe, expect, it, vi } from 'vitest'
@@ -179,7 +180,16 @@ describe('Independent node inputs', () => {
     )
     expect(markup).toContain('Add message')
     expect(markup).toContain('<mark>{{topic}}</mark>')
-    expect(markup).toMatch(/<textarea[^>]*readonly/)
+    const window = new Window()
+    try {
+      window.document.body.innerHTML = markup
+      const textarea = window.document.querySelector('textarea')
+      expect(textarea).not.toBeNull()
+      expect(textarea?.readOnly).toBe(true)
+      expect(textarea?.disabled).toBe(false)
+    } finally {
+      window.close()
+    }
     expect(onValue).not.toHaveBeenCalled()
   })
 

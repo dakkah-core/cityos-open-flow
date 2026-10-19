@@ -50,7 +50,7 @@ function DecisionField({
   const [draft, setDraft] = useState(value)
   const current = useRef(draft)
   const saved = useRef(value)
-  const request = useRef<AbortController>()
+  const request = useRef<AbortController>(undefined)
   const [invalid, setInvalid] = useState(false)
   const t = useTranslate()
   useEffect(() => {

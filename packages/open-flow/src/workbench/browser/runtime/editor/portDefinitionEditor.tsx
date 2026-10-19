@@ -111,7 +111,7 @@ export function PortDefinitionEditor(props: PortEditorProps) {
   const update = (index: number, port: InputPort | Group) => onChange(values.map((entry, i) => (i === index ? port : entry)))
   const list = useRef<HTMLDivElement>(null)
   const heading = useRef<HTMLDivElement>(null)
-  const pendingName = useRef<string>()
+  const pendingName = useRef<string>(undefined)
   useEffect(() => {
     if (!pendingName.current) return
     const row = Array.from(list.current?.querySelectorAll<HTMLElement>('[data-port]') ?? []).find((element) => element.dataset.port === pendingName.current)
@@ -141,8 +141,8 @@ export function PortDefinitionEditor(props: PortEditorProps) {
     values: typeof values
     x: number
     y: number
-  }>()
-  const dropTarget = useRef<{ index: number; after: boolean }>()
+  }>(undefined)
+  const dropTarget = useRef<{ index: number; after: boolean }>(undefined)
   const [dragIndex, setDragIndex] = useState<number>()
   const [drop, setDrop] = useState<{ index: number; after: boolean }>()
   const [announcement, setAnnouncement] = useState('')

@@ -22,7 +22,7 @@ export function SortableFieldList({
   const sorting = useContext(FieldSorting)
   const t = useTranslate()
   const list = useRef<HTMLDivElement>(null)
-  const drag = useRef<{ name: string; x: number; y: number; order: string; insertion?: number }>()
+  const drag = useRef<{ name: string; x: number; y: number; order: string; insertion?: number }>(undefined)
   const [active, setActive] = useState<string>()
   const [insertion, setInsertion] = useState<number>()
   const cancel = () => {

@@ -35,10 +35,10 @@ export function FlowCanvasView(props: FlowCanvasViewProps): ReactElement {
   )
   const previousStore = useRef(store)
   const propsRef = useRef(props)
-  const selectedEdge = useRef<string>()
+  const selectedEdge = useRef<string>(undefined)
   propsRef.current = props
 
-  const lastMove = useRef<{ viewport: Parameters<OnMove>[1]; remote: boolean }>()
+  const lastMove = useRef<{ viewport: Parameters<OnMove>[1]; remote: boolean }>(undefined)
   const onMove = useCallback<OnMove>(
     (_, viewport) => {
       lastMove.current = { viewport, remote: store.rfCommand.remoteViewportChange }

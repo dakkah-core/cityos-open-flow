@@ -1,4 +1,5 @@
 import styles from './CommentNodeContent.module.scss'
+import type { JSX } from 'react'
 import type { Components } from 'react-markdown'
 import type { CommentNodeStore } from '../../../stores/node/commentNode.store.ts'
 

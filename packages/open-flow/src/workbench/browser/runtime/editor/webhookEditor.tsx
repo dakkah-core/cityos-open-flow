@@ -62,7 +62,7 @@ function DraftTextField({
   const [draft, setDraft] = useState(value)
   const [previous, setPrevious] = useState(value)
   const [inspection, setInspection] = useState<{ readonly draft: string; readonly result: DraftInspection }>()
-  const commitController = useRef<AbortController>()
+  const commitController = useRef<AbortController>(undefined)
   const inspectRef = useRef(inspect)
   inspectRef.current = inspect
   if (previous !== value) {

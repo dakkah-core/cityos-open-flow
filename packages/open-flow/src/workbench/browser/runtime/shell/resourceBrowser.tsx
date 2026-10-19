@@ -462,7 +462,7 @@ export const FlowBrowser = forwardRef<OpenFlowWorkbenchHandle, FlowBrowserProps>
   const normalized = filter.trim().toLocaleLowerCase()
   const visible = flows.filter((flow) => flow.name.toLocaleLowerCase().includes(normalized))
 
-  const command = useRef<OpenFlowWorkbenchHandle['openImport']>()
+  const command = useRef<OpenFlowWorkbenchHandle['openImport']>(undefined)
   useImperativeHandle(ref, () => ({ openImport: (input) => command.current?.(input) ?? 'unavailable' }), [])
   useLayoutEffect(() => {
     command.current = openImport

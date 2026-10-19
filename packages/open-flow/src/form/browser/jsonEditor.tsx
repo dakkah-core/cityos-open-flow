@@ -32,7 +32,7 @@ export function JsonEditor({
   }, [value, path, onDraftIssue])
   useEffect(() => () => onDraftIssue(path, false), [path, onDraftIssue])
   const host = useRef<HTMLDivElement>(null)
-  const editor = useRef<Awaited<ReturnType<typeof createCodeEditor>>>()
+  const editor = useRef<Awaited<ReturnType<typeof createCodeEditor>>>(undefined)
   const [ready, setReady] = useState(false)
   const fallback = useRef<HTMLTextAreaElement>(null)
   useEffect(() => {

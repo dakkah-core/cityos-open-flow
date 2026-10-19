@@ -60,7 +60,7 @@ function ScheduleText({
   const [draft, setDraft] = useState(value)
   const [previous, setPrevious] = useState(value)
   const [inspection, setInspection] = useState<{ readonly draft: string; readonly result: ScheduleInspection }>()
-  const commitController = useRef<AbortController>()
+  const commitController = useRef<AbortController>(undefined)
   if (previous !== value) {
     setPrevious(value)
     setDraft(value)

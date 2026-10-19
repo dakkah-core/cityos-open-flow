@@ -1,4 +1,5 @@
-import type { ReactElement, ReactNode } from 'react'
+import type { ComponentProps, ElementType, MemoExoticComponent, ReactElement, ReactNode } from 'react'
+import type { AddNodeOption } from './editor/addNodeOptions.ts'
 import type { NavigationStore } from './navigation.ts'
 import type { WorkbenchStore } from './stores/workbenchStore.ts'
 
@@ -7,12 +8,17 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nProvider } from 'val-i18n-react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ConnectorAccount } from './editor/connectionSettings.tsx'
+import { EditorContextPanel } from './editor/editorContextPanel.tsx'
+import { FlowNodeList } from './editor/flowNodeList.tsx'
 import { NodeInspector } from './editor/nodeInspector.tsx'
 import { WorkbenchCanvas } from './editor/workbenchCanvas.tsx'
 import FlowWorkspace, { FlowEditor } from './flowWorkspace.tsx'
 import { createI18n } from './i18n.ts'
 import { RevisionView } from './revisionView.ts'
 import { runDrawerPreferenceKey } from './runs/runDrawerPreference.ts'
+import { RunControl } from './runs/runControl.tsx'
+import { WorkspaceDiagnosticsIsland } from './shell/workspaceDiagnosticsIsland.tsx'
+import { WorkspacePublishIsland } from './shell/workspacePublishIsland.tsx'
 
 const mocks = vi.hoisted(() => ({
   preferences: new Map<string, string>(),
@@ -49,13 +55,39 @@ vi.mock('./editor/workbenchCanvas.tsx', () => ({ WorkbenchCanvas: () => null }))
 
 const value = <T,>(current: T): { readonly value: T } => ({ value: current })
 
-function find(element: ReactElement, predicate: (item: ReactElement) => boolean): ReactElement | undefined {
-  if (predicate(element)) return element
-  for (const child of Children.toArray((element.props as { children?: ReactNode }).children)) {
-    if (!isValidElement(child)) continue
-    const match = find(child, predicate)
+function isElement<T extends ElementType>(element: unknown, type: T): element is ReactElement<ComponentProps<T>, T> {
+  return isValidElement(element) && element.type === type
+}
+
+function find<T extends ElementType>(
+  element: ReactNode,
+  type: T,
+  predicate: (item: ReactElement<ComponentProps<T>, T>) => boolean = () => true,
+): ReactElement<ComponentProps<T>, T> | undefined {
+  if (!isValidElement<{ readonly children?: ReactNode }>(element)) return
+  const children = element.props.children
+  if (isElement(element, type) && predicate(element)) return element
+  for (const child of Children.toArray(children)) {
+    const match = find(child, type, predicate)
     if (match != null) return match
   }
+}
+
+type InspectorContainerProps = Pick<ComponentProps<typeof NodeInspector>, 'focus' | 'disabled' | 'revision' | 'selection' | 'theme'> & {
+  readonly store: WorkbenchStore
+}
+
+function isInspectorContainer(
+  element: ReactNode,
+): element is ReactElement<InspectorContainerProps, MemoExoticComponent<(props: InspectorContainerProps) => ReactElement>> {
+  const type: unknown = isValidElement(element) ? element.type : undefined
+  return (
+    typeof type == 'object' &&
+    type != null &&
+    'type' in type &&
+    typeof type.type == 'function' &&
+    type.type.name == 'NodeInspectorContainer'
+  )
 }
 
 function renderWorkspace(busy?: string, withTrigger = true, invalid = false, selectedNodeIds: readonly string[] = [], hasUnpublishedChanges = true) {
@@ -176,8 +208,7 @@ function renderWorkspace(busy?: string, withTrigger = true, invalid = false, sel
     store,
     theme: 'light',
   })
-  const main = element.props.children.props.children as ReactElement
-  const editor = (main.props.children as ReactElement[]).find((child) => child.type == FlowEditor)!
+  const editor = find(element, FlowEditor)!
   return { editor, navigation, store }
 }
 
@@ -225,10 +256,10 @@ describe('FlowWorkspace run drawer', () => {
   it('passes the current Draft and unsaved code state into the production canvas boundary', () => {
     const { editor, store } = renderWorkspace()
     const context = () => {
-      const tree = FlowEditor(editor.props as Parameters<typeof FlowEditor>[0])
-      const canvas = find(tree, (item) => item.type == WorkbenchCanvas)
+      const tree = FlowEditor(editor.props)
+      const canvas = find(tree, WorkbenchCanvas)
       expect(canvas).toBeDefined()
-      return (canvas!.props as { annotationContext?: unknown }).annotationContext
+      return canvas!.props.annotationContext
     }
     expect(context()).toMatchObject({ flowId: 'flow', revisionId: 'revision', syncState: 'saved' })
     Object.assign(store.workspace.$.moduleEditor, { value: { status: 'dirty' } })
@@ -263,15 +294,16 @@ describe('FlowWorkspace run drawer', () => {
     Object.assign(store.connectors.$.selectedConnection, {
       value: { connectionId: 'expired', displayName: 'Saved Gmail account', serviceId: 'gmail', isDefault: false, status: 'reauth_required' },
     })
-    const view = (editor.type as (props: typeof editor.props) => ReactElement)(editor.props)
-    const container = find(view, (item) => item.props.selection?.id == 'mail')!
-    const renderInspector = (container.type as unknown as { type: (props: unknown) => ReactElement }).type
+    const view = FlowEditor(editor.props)
+    const container = Children.toArray(find(view, EditorContextPanel)!.props.children).find(isInspectorContainer)!
+    if (container.props.selection?.id != 'mail') throw new Error('Expected selected mail inspector.')
+    const renderInspector = container.type.type
     for (const candidates of [undefined, [], [{ connectionId: 'other', permissions: { allActions: true } }]]) {
       Object.assign(store.connectorAccess.$, {
         value: { access: { mode: 'selectable', bindings: [] }, candidates: { gmail: candidates == null ? undefined : { candidates } } },
       })
       const inspector = renderInspector(container.props)
-      const account = find(NodeInspector(inspector.props), (item) => item.type == ConnectorAccount)!
+      const account = find(NodeInspector(find(inspector, NodeInspector)!.props), ConnectorAccount)!
       const markup = renderToStaticMarkup(<I18nProvider i18n={createI18n()}>{account}</I18nProvider>)
       expect(markup).toContain('Saved Gmail account')
       expect(markup).toContain('inspector.account.status.reauth_required')
@@ -282,10 +314,10 @@ describe('FlowWorkspace run drawer', () => {
 
   it.each([false, true])('runs from the canvas and opens logs despite unrelated diagnostics (invalid: %s)', async (invalid) => {
     const { editor, store } = renderWorkspace(undefined, true, invalid)
-    const view = (editor.type as (props: typeof editor.props) => ReactElement)(editor.props)
-    const designer = (view.props.children as ReactElement[])[0]!
-    expect(designer.props.runControl.props.disabled).toBe(false)
-    designer.props.runControl.props.onRun()
+    const view = FlowEditor(editor.props)
+    const designer = find(view, WorkbenchCanvas)!
+    expect(find(designer.props.runControl, RunControl)!.props.disabled).toBe(false)
+    find(designer.props.runControl, RunControl)!.props.onRun()
     await Promise.resolve()
     expect(store.requestDraftRun).toHaveBeenCalledWith('start')
     expect(mocks.setRunDrawerOpen).toHaveBeenCalledWith(true)
@@ -354,19 +386,19 @@ describe('FlowWorkspace run drawer', () => {
 
   it('keeps the test button enabled while ordinary edits save', () => {
     const { editor } = renderWorkspace('designer')
-    const view = (editor.type as (props: typeof editor.props) => ReactElement)(editor.props)
-    const designer = (view.props.children as ReactElement[])[0]!
-    expect(designer.props.runControl.props.disabled).toBe(false)
-    expect(designer.props.runControl.props.starting).toBe(false)
+    const view = FlowEditor(editor.props)
+    const designer = find(view, WorkbenchCanvas)!
+    expect(find(designer.props.runControl, RunControl)!.props.disabled).toBe(false)
+    expect(find(designer.props.runControl, RunControl)!.props.starting).toBe(false)
   })
 
   it.each(['new-node', undefined])('preserves inspector state when adding a node: %s', async (nodeId) => {
     const { editor, store } = renderWorkspace()
     vi.mocked(store.addNode).mockResolvedValue(nodeId)
-    const view = (editor.type as (props: typeof editor.props) => ReactElement)(editor.props)
-    const designer = (view.props.children as ReactElement[])[0]!
+    const view = FlowEditor(editor.props)
+    const designer = find(view, WorkbenchCanvas)!
     mocks.setOpen.mockClear()
-    const option = { kind: 'new-task', executor: 'llm' }
+    const option: AddNodeOption = { kind: 'new-task', id: 'new-task', label: 'Code', description: '', inputs: [], outputs: [] }
     const position = { x: 92, y: 92 }
 
     expect(await designer.props.onAddNode(option, position)).toBe(nodeId)
@@ -378,9 +410,9 @@ describe('FlowWorkspace run drawer', () => {
     mocks.stateValues.set(3, true)
     mocks.stateValues.set(4, 'outline')
     const { editor, store } = renderWorkspace()
-    const view = (editor.type as (props: typeof editor.props) => ReactElement)(editor.props)
-    const designer = (view.props.children as ReactElement[])[0]!
-    const option = { kind: 'new-task', executor: 'llm' }
+    const view = FlowEditor(editor.props)
+    const designer = find(view, WorkbenchCanvas)!
+    const option: AddNodeOption = { kind: 'new-task', id: 'new-task', label: 'Code', description: '', inputs: [], outputs: [] }
     const position = { x: 92, y: 92 }
 
     mocks.setOpen.mockClear()
@@ -392,8 +424,8 @@ describe('FlowWorkspace run drawer', () => {
 
   it('hides execution when the graph has no trigger', () => {
     const { editor } = renderWorkspace(undefined, false)
-    const view = (editor.type as (props: typeof editor.props) => ReactElement)(editor.props)
-    const designer = (view.props.children as ReactElement[])[0]!
+    const view = FlowEditor(editor.props)
+    const designer = find(view, WorkbenchCanvas)!
     expect(designer.props.runControl).toBeUndefined()
   })
 
@@ -408,19 +440,19 @@ describe('FlowWorkspace run drawer', () => {
         viewport: { x: 0, y: 0, zoom: 1 },
       },
     })
-    const view = (editor.type as (props: typeof editor.props) => ReactElement)(editor.props)
-    const designer = (view.props.children as ReactElement[])[0]!
-    expect(designer.props.runControl.props.selectedTriggerId).toBe('start')
-    designer.props.runControl.props.onRun()
+    const view = FlowEditor(editor.props)
+    const designer = find(view, WorkbenchCanvas)!
+    expect(find(designer.props.runControl, RunControl)!.props.selectedTriggerId).toBe('start')
+    find(designer.props.runControl, RunControl)!.props.onRun()
     expect(store.requestDraftRun).toHaveBeenCalledWith('start')
   })
 
   it('switches the test trigger without navigating or starting a run', () => {
     const { editor, navigation, store } = renderWorkspace()
-    const view = (editor.type as (props: typeof editor.props) => ReactElement)(editor.props)
-    const designer = (view.props.children as ReactElement[])[0]!
+    const view = FlowEditor(editor.props)
+    const designer = find(view, WorkbenchCanvas)!
 
-    designer.props.runControl.props.onSelectTrigger('another-trigger')
+    find(designer.props.runControl, RunControl)!.props.onSelectTrigger('another-trigger')
 
     expect(store.runRequests.dismissInputs).toHaveBeenCalledOnce()
     expect(store.requestDraftRun).not.toHaveBeenCalled()
@@ -429,17 +461,17 @@ describe('FlowWorkspace run drawer', () => {
 
   it('keeps the Designer editable while preparing a run', () => {
     const { editor } = renderWorkspace('run')
-    const view = (editor.type as (props: typeof editor.props) => ReactElement)(editor.props)
-    const designer = (view.props.children as ReactElement[])[0]!
+    const view = FlowEditor(editor.props)
+    const designer = find(view, WorkbenchCanvas)!
 
     expect(designer.props.disabled).toBe(false)
   })
 
   it('publishes from the corner island and opens publication or run history from its menu', () => {
     const { editor, navigation, store } = renderWorkspace()
-    const view = (editor.type as (props: typeof editor.props) => ReactElement)(editor.props)
-    const designer = (view.props.children as ReactElement[])[0]!
-    const publishIsland = designer.props.cornerLeading.props.children[1]
+    const view = FlowEditor(editor.props)
+    const designer = find(view, WorkbenchCanvas)!
+    const publishIsland = find(designer.props.cornerLeading, WorkspacePublishIsland)!
 
     expect(publishIsland.props.state).toBe('ready')
     publishIsland.props.onPublish()
@@ -456,9 +488,9 @@ describe('FlowWorkspace run drawer', () => {
 
   it('keeps publication history available when publishing is blocked', () => {
     const { editor, navigation } = renderWorkspace(undefined, true, true)
-    const view = (editor.type as (props: typeof editor.props) => ReactElement)(editor.props)
-    const designer = (view.props.children as ReactElement[])[0]!
-    const publishIsland = designer.props.cornerLeading.props.children[1]
+    const view = FlowEditor(editor.props)
+    const designer = find(view, WorkbenchCanvas)!
+    const publishIsland = find(designer.props.cornerLeading, WorkspacePublishIsland)!
 
     expect(publishIsland.props.state).toBe('issues')
     publishIsland.props.onOpenPublications()
@@ -470,9 +502,10 @@ describe('FlowWorkspace run drawer', () => {
     mocks.stateValues.set(4, 'outline')
     const { editor, store } = renderWorkspace(undefined, true, true)
     vi.mocked(store.workspace.locateNode).mockReturnValue(true)
-    const view = (editor.type as (props: typeof editor.props) => ReactElement)(editor.props)
-    const designer = (view.props.children as ReactElement[])[0]!
-    const [issues, publish] = designer.props.cornerLeading.props.children
+    const view = FlowEditor(editor.props)
+    const designer = find(view, WorkbenchCanvas)!
+    const issues = find(designer.props.cornerLeading, WorkspaceDiagnosticsIsland)!
+    const publish = find(designer.props.cornerLeading, WorkspacePublishIsland)!
 
     expect(issues.props.items).toHaveLength(1)
     expect(publish.props.state).toBe('issues')
@@ -486,9 +519,9 @@ describe('FlowWorkspace run drawer', () => {
   it('keeps the sidebar and issues unchanged when the diagnostic node cannot be located', () => {
     const { editor, store } = renderWorkspace(undefined, true, true)
     vi.mocked(store.workspace.locateNode).mockReturnValue(false)
-    const view = (editor.type as (props: typeof editor.props) => ReactElement)(editor.props)
-    const designer = (view.props.children as ReactElement[])[0]!
-    const issues = designer.props.cornerLeading.props.children[0]
+    const view = FlowEditor(editor.props)
+    const designer = find(view, WorkbenchCanvas)!
+    const issues = find(designer.props.cornerLeading, WorkspaceDiagnosticsIsland)!
     mocks.setOpen.mockClear()
 
     issues.props.onSelectNode('missing')
@@ -502,18 +535,18 @@ describe('FlowWorkspace run drawer', () => {
     ['run', 'busy'],
   ])('identifies why publishing is unavailable during %s', (busy, state) => {
     const { editor } = renderWorkspace(busy)
-    const view = (editor.type as (props: typeof editor.props) => ReactElement)(editor.props)
-    const designer = (view.props.children as ReactElement[])[0]!
+    const view = FlowEditor(editor.props)
+    const designer = find(view, WorkbenchCanvas)!
 
-    expect(designer.props.cornerLeading.props.children[1].props.state).toBe(state)
+    expect(find(designer.props.cornerLeading, WorkspacePublishIsland)!.props.state).toBe(state)
   })
 
   it('marks an unchanged draft as current', () => {
     const { editor } = renderWorkspace(undefined, true, false, [], false)
-    const view = (editor.type as (props: typeof editor.props) => ReactElement)(editor.props)
-    const designer = (view.props.children as ReactElement[])[0]!
+    const view = FlowEditor(editor.props)
+    const designer = find(view, WorkbenchCanvas)!
 
-    expect(designer.props.cornerLeading.props.children[1].props.state).toBe('current')
+    expect(find(designer.props.cornerLeading, WorkspacePublishIsland)!.props.state).toBe('current')
   })
 
   it.each([
@@ -523,10 +556,10 @@ describe('FlowWorkspace run drawer', () => {
     mocks.stateValues.set(3, true)
     mocks.stateValues.set(4, page)
     const { editor, store } = renderWorkspace(undefined, true, false, selectedNodeIds)
-    const view = (editor.type as (props: typeof editor.props) => ReactElement)(editor.props)
-    const contextPanel = (view.props.children as ReactElement[])[1]!
-    const panelChildren = contextPanel.props.children as ReactElement[]
-    const nodeList = page == 'outline' ? panelChildren[0]!.props.children.props.children : panelChildren[1]!
+    const view = FlowEditor(editor.props)
+    const contextPanel = find(view, EditorContextPanel)!
+    const panelChildren = Children.toArray(contextPanel.props.children)
+    const nodeList = find(page == 'outline' ? panelChildren[0] : panelChildren[1], FlowNodeList)!
 
     nodeList.props.onSelect('start')
 
@@ -541,10 +574,10 @@ describe('FlowWorkspace run drawer', () => {
     mocks.stateValues.set(3, true)
     mocks.stateValues.set(4, page)
     const { editor, store } = renderWorkspace(undefined, true, false, selectedNodeIds)
-    const view = (editor.type as (props: typeof editor.props) => ReactElement)(editor.props)
-    const contextPanel = (view.props.children as ReactElement[])[1]!
-    const panelChildren = contextPanel.props.children as ReactElement[]
-    const nodeList = page == 'outline' ? panelChildren[0]!.props.children.props.children : panelChildren[1]!
+    const view = FlowEditor(editor.props)
+    const contextPanel = find(view, EditorContextPanel)!
+    const panelChildren = Children.toArray(contextPanel.props.children)
+    const nodeList = find(page == 'outline' ? panelChildren[0] : panelChildren[1], FlowNodeList)!
 
     nodeList.props.onFocusNode('start')
 

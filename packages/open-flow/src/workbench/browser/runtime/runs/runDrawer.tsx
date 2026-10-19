@@ -476,7 +476,7 @@ export function RunLog({
   const language = useLang()
   const t = useTranslate()
   const virtualList = useRef<VListHandle>(null)
-  const followedRun = useRef<string>()
+  const followedRun = useRef<string>(undefined)
   const followEvents = useRef(true)
   const manualScroll = useRef(false)
   const nodeTitles = useMemo(() => nodeTitleIndex(events), [events])
@@ -487,7 +487,7 @@ export function RunLog({
   const overview = useMemo(() => (view == 'overview' ? executionOverview(events, run?.status) : []), [events, run?.status, view])
   const executions = useMemo(() => overview.filter((item) => statusFilter == 'all' || item.status == statusFilter), [overview, statusFilter])
   const focusElement = useRef<HTMLDivElement>(null)
-  const located = useRef<typeof focus>()
+  const located = useRef<typeof focus>(undefined)
   const sources = useMemo(() => new Map(events.filter((event) => event.kind == 'run.started').map((event) => [event.payload.scopeId, event.payload])), [events])
   const lastEventSequence = events.at(-1)?.sequence
   const completedEvent = events.findLast((event) => event.kind == 'run.completed')
@@ -836,7 +836,7 @@ export function RunDrawer({
   const t = useTranslate()
   const presentation = useRunLogPresentation(eventFilter, run?.runId)
   const drawer = useRef<HTMLElement>(null)
-  const resize = useRef<{ height: number; pointerId: number; y: number }>()
+  const resize = useRef<{ height: number; pointerId: number; y: number }>(undefined)
   const [resized, setResized] = useState<{ height: number; runId: string | undefined }>()
   const preferredHeight = resized != null && resized.runId == run?.runId ? resized.height : undefined
   const height = preferredHeight ?? defaultHeight

@@ -59,7 +59,7 @@ export function ContextPanel({
   const titleId = useId()
   const [width, setWidth] = useState<number>()
   const [availableWidth, setAvailableWidth] = useState(0)
-  const drag = useRef<{ x: number; width: number }>()
+  const drag = useRef<{ x: number; width: number }>(undefined)
   const maximumWidth = Math.max(320, Math.min(960, availableWidth - 320))
   const panelWidth = Math.min(maximumWidth, Math.max(320, width ?? Math.min(520, Math.max(400, availableWidth * 0.34))))
   useEffect(() => {

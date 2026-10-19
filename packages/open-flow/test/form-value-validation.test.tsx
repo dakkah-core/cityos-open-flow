@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react'
 import type { FieldValueEditorProps } from '../src/form/browser/fieldValueEditor.tsx'
 
+import { Window } from 'happy-dom'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nProvider } from 'val-i18n-react'
 import { describe, expect, it, vi } from 'vitest'
@@ -317,17 +318,20 @@ describe('Read-only value controls', () => {
     ['date', { type: 'string', format: 'date' }, '2026-09-14'],
   ])('keeps %s selectable while preventing edits', (_name, schema, value) => {
     const i18n = createI18n('en')
+    const window = new Window()
     try {
       const markup = renderToStaticMarkup(
         <I18nProvider i18n={i18n}>
           <FieldValueEditor label="sample" schema={schema} value={value} disabled path="/sample" onChange={vi.fn()} onDraftIssue={vi.fn()} />
         </I18nProvider>,
       )
-      const input = markup.match(/<(?:input|textarea)\b[^>]*(?:aria-label="sample"|id="[^"]+")[^>]*>/)?.[0]
-      expect(input).toBeDefined()
-      expect(input).toContain('readonly=""')
-      expect(input).not.toContain('disabled=""')
+      window.document.body.innerHTML = markup
+      const input = window.document.querySelector('input[aria-label="sample"], input[id], textarea[aria-label="sample"], textarea[id]')
+      expect(input).not.toBeNull()
+      expect(input?.hasAttribute('readonly')).toBe(true)
+      expect(input?.hasAttribute('disabled')).toBe(false)
     } finally {
+      window.close()
       i18n.dispose()
     }
   })

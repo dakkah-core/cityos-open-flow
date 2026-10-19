@@ -186,7 +186,7 @@ function LibraryItem({ disabled, draggable, item, onAdd, onDrag, onDragEnd, onLo
   const t = useTranslate()
   const details = useRef<HTMLDetailsElement>(null)
   const connectionChoices = item.type == 'trigger'
-  const controller = useRef<AbortController>()
+  const controller = useRef<AbortController>(undefined)
   const [choices, setChoices] = useState(item.choices)
   const [error, setError] = useState(false)
   const [loaded, setLoaded] = useState(item.choices == null || item.choices.length > 0)

@@ -334,7 +334,7 @@ export function FlowEditor({
   }, [store])
 
   const focusInspectorOnOpen = useRef(false)
-  const opener = useRef<HTMLElement>()
+  const opener = useRef<HTMLElement>(undefined)
 
   useEffect(() => {
     setStartId(undefined)
@@ -677,7 +677,7 @@ export default function FlowWorkspace({
     setRunDrawerOpen(open)
     writeRunDrawerOpen(store.preferences, open)
   }
-  const handledExternalRun = useRef<string>()
+  const handledExternalRun = useRef<string>(undefined)
   const view = useVal(navigation.$.view)
   const draft = useVal(store.workspace.$.draft)
   const saveStatus = useVal(store.workspace.$.status)

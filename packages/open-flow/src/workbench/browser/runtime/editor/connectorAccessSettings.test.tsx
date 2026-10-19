@@ -1,6 +1,7 @@
 import type { RevisionView } from '../revisionView.ts'
 import type { WorkbenchStore } from '../stores/workbenchStore.ts'
 
+import { Window } from 'happy-dom'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nProvider } from 'val-i18n-react'
 import { val } from 'value-enhancer'
@@ -350,7 +351,23 @@ describe('Connector access settings', () => {
     )
 
     expect(markup).toContain('Authorized accounts: 3 across 2 services')
-    expect(markup).not.toContain('aria-expanded=')
+    const window = new Window()
+    try {
+      window.document.body.innerHTML = markup
+      const document = window.document
+      for (const name of ['Work Slack', 'Work Mail', 'Personal Mail']) {
+        const account = [...document.querySelectorAll('label')].find((label) => label.textContent.includes(name))
+        if (!account) throw new Error(`Missing account control: ${name}`)
+        expect(account.closest('details, [hidden], [aria-hidden="true"]')).toBeNull()
+        for (const disclosure of document.querySelectorAll('[aria-expanded][aria-controls]')) {
+          for (const id of disclosure.getAttribute('aria-controls')!.split(/\s+/)) {
+            expect(document.getElementById(id)?.contains(account) ?? false).toBe(false)
+          }
+        }
+      }
+    } finally {
+      window.close()
+    }
     expect(markup).toContain('Add service</button>')
     expect(markup).toContain('Work Slack')
     expect(markup).toContain('Work Mail')

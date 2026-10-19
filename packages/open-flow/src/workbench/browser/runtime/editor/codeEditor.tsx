@@ -64,8 +64,8 @@ export function CodeEditor({
   value,
 }: Props): ReactElement {
   const host = useRef<HTMLDivElement>(null)
-  const editor = useRef<Editor>()
-  const darkMode = useRef<ReturnType<typeof val<boolean>>>()
+  const editor = useRef<Editor>(undefined)
+  const darkMode = useRef<ReturnType<typeof val<boolean>>>(undefined)
   const syncing = useRef(false)
   const valueRef = useRef(value)
   const diagnosticsRef = useRef(diagnostics)

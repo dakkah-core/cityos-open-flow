@@ -1,3 +1,6 @@
+import type { ComponentProps, FocusEvent } from 'react'
+
+import { isValidElement } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { CodeEditor } from './codeEditor.tsx'
 
@@ -23,13 +26,14 @@ describe('CodeEditor focus', () => {
       uri: 'file:///modules/main.js',
       value: 'export default () => {}',
     })
+    if (element.type !== 'div' || !isValidElement<ComponentProps<'div'>>(element)) throw new Error('Expected editor container.')
     const completion = {}
     const currentTarget = { contains: (target: unknown) => target === completion }
 
-    element.props.onBlur({ currentTarget, relatedTarget: completion })
+    element.props.onBlur!({ currentTarget, relatedTarget: completion } as FocusEvent<HTMLDivElement>)
     expect(onBlur).not.toHaveBeenCalled()
 
-    element.props.onBlur({ currentTarget, relatedTarget: null })
+    element.props.onBlur!({ currentTarget, relatedTarget: null } as FocusEvent<HTMLDivElement>)
     expect(onBlur).toHaveBeenCalledOnce()
   })
 })

@@ -16,7 +16,7 @@ it('generates a self-contained local skill and removes obsolete output without t
     expect(await readFile(path.join(directory, 'unrelated.md'), 'utf8')).toBe('keep')
     await expect(readFile(path.join(output, 'obsolete.md'))).rejects.toMatchObject({ code: 'ENOENT' })
     const entry = await readFile(path.join(output, 'SKILL.md'), 'utf8')
-    expect(entry).toMatch(/^---\nname: open-flow\ndescription: .+\n---/)
+    expect(entry).toMatch(/^---\r?\nname: open-flow\r?\ndescription: [^\r\n]+\r?\n---/)
     for (const [, reference] of entry.matchAll(/\]\((references\/[^)]+)\)/g)) {
       const content = await readFile(path.join(output, reference!), 'utf8')
       expect(content).toContain('bun run flow --')

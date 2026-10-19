@@ -1,7 +1,10 @@
-import type { ReactElement, ReactNode } from 'react'
+import type { ComponentProps, ElementType, ReactElement, ReactNode } from 'react'
 
 import { Children, isValidElement } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import { Button } from '../../../../ui/browser/button.tsx'
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuTrigger } from '../../../../ui/browser/dropdown-menu.tsx'
+import { Select, SelectItem, SelectTrigger } from '../../../../ui/browser/select.tsx'
 import { StatusSelect, TeamSelect } from './linearTriggerConfig.tsx'
 
 vi.mock('react', async (importOriginal) => ({
@@ -18,11 +21,20 @@ vi.mock('val-i18n-react', async (importOriginal) => ({
   useTranslate: () => (key: string, parameters?: Record<string, unknown>) => (parameters == null ? key : `${key} ${Object.values(parameters).join(' ')}`),
 }))
 
-function find(element: ReactElement, predicate: (item: ReactElement) => boolean): ReactElement | undefined {
-  if (predicate(element)) return element
-  for (const child of Children.toArray((element.props as { readonly children?: ReactNode }).children)) {
-    if (!isValidElement(child)) continue
-    const match = find(child, predicate)
+function isElement<T extends ElementType>(element: unknown, type: T): element is ReactElement<ComponentProps<T>, T> {
+  return isValidElement(element) && element.type === type
+}
+
+function find<T extends ElementType>(
+  element: ReactNode,
+  type: T,
+  predicate: (item: ReactElement<ComponentProps<T>, T>) => boolean = () => true,
+): ReactElement<ComponentProps<T>, T> | undefined {
+  if (!isValidElement<{ readonly children?: ReactNode }>(element)) return
+  const children = element.props.children
+  if (isElement(element, type) && predicate(element)) return element
+  for (const child of Children.toArray(children)) {
+    const match = find(child, type, predicate)
     if (match != null) return match
   }
 }
@@ -51,8 +63,8 @@ describe('Linear Team select', () => {
     const source = options()
     const onChange = vi.fn()
     const element = TeamSelect({ disabled: false, missing: false, onChange, options: source, value: 'engineering' })
-    const select = find(element, (item) => typeof item.props.onOpenChange == 'function' && typeof item.props.onValueChange == 'function')
-    const trigger = find(element, (item) => item.props['aria-label'] == 'linearTrigger.team')
+    const select = find(element, Select, (item) => typeof item.props.onOpenChange == 'function' && typeof item.props.onValueChange == 'function')
+    const trigger = find(element, SelectTrigger, (item) => item.props['aria-label'] == 'linearTrigger.team')
 
     expect(trigger?.props.size).toBe('field')
     ;(select!.props.onOpenChange as (open: boolean) => void)(true)
@@ -64,8 +76,8 @@ describe('Linear Team select', () => {
 
   it('keeps an unavailable selection visible and marks the trigger invalid', () => {
     const element = TeamSelect({ disabled: false, missing: true, onChange: vi.fn(), options: options(), value: 'missing-team' })
-    const trigger = find(element, (item) => item.props['aria-label'] == 'linearTrigger.team')
-    const unavailable = find(element, (item) => item.props.value == 'missing-team' && item.props.disabled === true)
+    const trigger = find(element, SelectTrigger, (item) => item.props['aria-label'] == 'linearTrigger.team')
+    const unavailable = find(element, SelectItem, (item) => item.props.value == 'missing-team' && item.props.disabled === true)
 
     expect(trigger?.props['aria-invalid']).toBe(true)
     expect(unavailable?.props.disabled).toBe(true)
@@ -80,7 +92,7 @@ describe('Linear Team select', () => {
       options: options({ failed: true, options: undefined }),
       value: 'saved-team',
     })
-    const select = find(element, (item) => Array.isArray(item.props.items))
+    const select = find(element, Select, (item) => Array.isArray(item.props.items))
 
     expect(select?.props.items).toContainEqual({ label: 'saved-team', value: 'saved-team' })
   })
@@ -106,10 +118,16 @@ describe('Linear status select', () => {
       selected,
       teamSelected,
     })
-    const trigger = find(element, (item) => isValidElement(item.props.render) && item.props.render.props['aria-label'] == 'linearTrigger.statuses')
+    const trigger = find(
+      element,
+      DropdownMenuTrigger,
+      (item) => isElement(item.props.render, Button) && item.props.render.props['aria-label'] == 'linearTrigger.statuses',
+    )
+    const button = trigger?.props.render
+    if (!isElement(button, Button)) throw new Error('Expected status button.')
 
     expect(text(trigger!)).toContain(expected)
-    expect(trigger!.props.render.props.disabled).toBe(!teamSelected)
+    expect(button.props.disabled).toBe(!teamSelected)
   })
 
   it('refreshes on open and adds or removes status values', () => {
@@ -128,9 +146,9 @@ describe('Linear status select', () => {
       selected: ['done'],
       teamSelected: true,
     })
-    const popover = find(element, (item) => typeof item.props.onOpenChange == 'function')
-    const progress = find(element, (item) => item.props.checked === false && text(item).includes('In Progress'))
-    const done = find(element, (item) => item.props.checked === true && text(item).includes('Done'))
+    const popover = find(element, DropdownMenu, (item) => typeof item.props.onOpenChange == 'function')
+    const progress = find(element, DropdownMenuCheckboxItem, (item) => item.props.checked === false && text(item).includes('In Progress'))
+    const done = find(element, DropdownMenuCheckboxItem, (item) => item.props.checked === true && text(item).includes('Done'))
 
     ;(popover!.props.onOpenChange as (open: boolean) => void)(true)
     ;(progress!.props.onCheckedChange as (checked: boolean) => void)(true)
@@ -151,10 +169,16 @@ describe('Linear status select', () => {
       selected: ['missing-status'],
       teamSelected: true,
     })
-    const trigger = find(element, (item) => isValidElement(item.props.render) && item.props.render.props['aria-label'] == 'linearTrigger.statuses')
-    const unavailable = find(element, (item) => item.props.checked === true && text(item).includes('missing-status'))
+    const trigger = find(
+      element,
+      DropdownMenuTrigger,
+      (item) => isElement(item.props.render, Button) && item.props.render.props['aria-label'] == 'linearTrigger.statuses',
+    )
+    const button = trigger?.props.render
+    if (!isElement(button, Button)) throw new Error('Expected status button.')
+    const unavailable = find(element, DropdownMenuCheckboxItem, (item) => item.props.checked === true && text(item).includes('missing-status'))
 
-    expect(trigger!.props.render.props['aria-invalid']).toBe(true)
+    expect(button.props['aria-invalid']).toBe(true)
     ;(unavailable!.props.onCheckedChange as (checked: boolean) => void)(false)
     expect(onChange).toHaveBeenCalledWith([])
   })

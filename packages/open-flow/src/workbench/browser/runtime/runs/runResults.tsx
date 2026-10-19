@@ -24,7 +24,7 @@ export function RunResults({
   const [open, setOpen] = useState(false)
   const [root, setRoot] = useState<HTMLElement | null>(null)
   const portal = useCallback((element: HTMLDivElement | null) => setRoot(element?.closest<HTMLElement>('.open-flow-workbench') ?? null), [])
-  const request = useRef<AbortController>()
+  const request = useRef<AbortController>(undefined)
   const [selection, setSelection] = useState<{ readonly resultId: string; readonly page: ResultPage }>()
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)

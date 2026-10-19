@@ -27,8 +27,8 @@ export function PromptEditor({
 }) {
   const t = useTranslate()
   const host = useRef<HTMLDivElement>(null)
-  const editor = useRef<Awaited<ReturnType<typeof createCodeEditor>>>()
-  const darkMode = useRef<ReturnType<typeof val<boolean>>>()
+  const editor = useRef<Awaited<ReturnType<typeof createCodeEditor>>>(undefined)
+  const darkMode = useRef<ReturnType<typeof val<boolean>>>(undefined)
   const latest = useRef({ ariaDescribedBy, invalid, value, inputs, disabled, onChange, onSave })
   latest.current = { ariaDescribedBy, invalid, value, inputs, disabled, onChange, onSave }
   const syncing = useRef(false)
