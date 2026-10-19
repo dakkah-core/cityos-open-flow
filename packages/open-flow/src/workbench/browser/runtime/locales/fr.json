@@ -413,6 +413,8 @@
       "sort": "Réordonner",
       "finishSorting": "Terminer",
       "inputsTitle": "Entrées",
+      "requiredInputs": "Obligatoires",
+      "optionalInputs": "Facultatifs",
       "noInputs": "Ce nœud ne nécessite pas de données d’entrée.",
       "noOutputs": "Ce nœud ne fournit pas de données de sortie.",
       "outputsTitle": "Sorties",

@@ -27,6 +27,19 @@ const taskInputValues = Object.fromEntries(
   taskFields.flatMap((port) => (port.value === undefined ? [] : [[port.handle, { kind: 'value' as const, value: port.value }]])),
 )
 const taskInputDefinitions = taskFields.map(({ value: _value, ...definition }) => definition)
+const providerInputs: readonly InputPort[] = [
+  { ...field('cc'), nullable: true },
+  field('to'),
+  { ...field('replyTo'), nullable: true },
+  field('subject'),
+  field('body'),
+  { ...field('bcc'), nullable: true },
+  { ...field('priority'), nullable: true, value: 'normal', jsonSchema: { type: 'string', enum: ['low', 'normal', 'high'] } },
+  { ...field('trackOpens', 'boolean'), nullable: true, value: false },
+  { ...field('tags', 'array'), nullable: true, jsonSchema: { type: 'array', items: { type: 'string' } } },
+  { ...field('metadata', 'object'), nullable: true, jsonSchema: { type: 'object', properties: { campaign: { type: 'string' } } } },
+  { ...field('scheduledAt'), nullable: true },
+]
 
 type Fixture = {
   id: string
@@ -36,6 +49,46 @@ type Fixture = {
   transport?: Parameters<typeof createInspectorSession>[3]
 }
 const fixtures: readonly Fixture[] = [
+  {
+    id: 'provider-inputs',
+    group: 'Task',
+    transport: {
+      providers: [{ service: 'mail', displayName: 'Mail', authTypes: ['no_auth'] }],
+      actions: [
+        {
+          actionId: 'mail.send',
+          authenticated: false,
+          description: 'Send email with optional delivery settings.',
+          inputs: Object.fromEntries(providerInputs.map(({ handle, ...definition }) => [handle, definition])),
+          outputs: { messageId: { jsonSchema: { type: 'string' }, nullable: false } },
+          inputSchema: {
+            type: 'object',
+            properties: Object.fromEntries(providerInputs.map(({ handle, jsonSchema }) => [handle, jsonSchema])),
+            required: providerInputs.filter((input) => !input.nullable).map((input) => input.handle),
+          },
+          outputSchema: { type: 'object', properties: { messageId: { type: 'string' } }, required: ['messageId'] },
+          name: 'Send email',
+          serviceId: 'mail',
+          serviceName: 'Mail',
+        },
+      ],
+    },
+    node: {
+      kind: 'task',
+      name: 'Send email',
+      inputs: {
+        to: { kind: 'value', value: 'ada@example.com' },
+        subject: { kind: 'value', value: 'Release notes' },
+        cc: { kind: 'value', value: 'team@example.com' },
+      },
+      task: {
+        name: 'Send email',
+        executor: { kind: 'connector', action: 'mail.send' },
+        inputs: providerInputs,
+        outputs: [field('messageId')],
+      },
+    },
+  },
   {
     id: 'code-actions-loading',
     group: 'Task',
@@ -210,6 +263,7 @@ function PropertySample({
     if (reload > 0) void session?.start().then(() => session.store.selectNodes(['sample']))
   }, [reload, session])
   const revision = useVal(session?.store.$.revision)
+  const action = useVal(session?.connectors.$.selectedAction)
   const selection = revision?.selection('sample')
   if (!session || !revision) return null
   return (
@@ -219,6 +273,8 @@ function PropertySample({
         <InspectorSamplePanel disabled={disabled} revision={revision} selection={selection} store={session.store} theme={dark ? 'dark' : 'light'}>
           <NodeInspector
             key={mount}
+            connectorAction={action}
+            activeConnectorConnections={[]}
             variables={{ enabled: true, names: ['API_TOKEN', 'TEAM_NAME'], loaded: true, loading: false, onOpen: () => {} }}
             connectorAuthorizationPending={false}
             connectorLoading={false}
@@ -287,17 +343,26 @@ function PropertiesStory({ fixture, dark, language, log }: { fixture: Fixture; d
 export const nodePropertiesStories: readonly FrontendStory[] = fixtures.map((fixture) => ({
   group: `Node ${fixture.group}`,
   id: `node-${fixture.id}-properties`,
-  title: fixture.id == 'code-actions-loading' ? 'Code · Slow actions' : fixture.id == 'execution-limit' ? 'Execution limit' : 'Properties',
+  title:
+    fixture.id == 'provider-inputs'
+      ? 'Provider inputs'
+      : fixture.id == 'code-actions-loading'
+        ? 'Code · Slow actions'
+        : fixture.id == 'execution-limit'
+          ? 'Execution limit'
+          : 'Properties',
   standalone: true,
   description:
-    fixture.id == 'code-actions-loading'
-      ? 'Opening the editor makes no shared Action requests. Trigger completion with Ctrl+Space; Actions take four seconds to load while editing remains available. Reset samples to repeat.'
-      : fixture.id == 'execution-limit'
-        ? 'Per-run node execution limits. Change the limit, test invalid values, or clear it to restore the default of 1000; reload verifies persistence.'
-        : fixture.id === 'value'
-          ? 'Editable and read-only properties, including typed dates, calendar selection, and time editing with timezone preservation. Use Sort to reorder fields and nested object properties; Done sorting restores disclosure arrows. Samples save independently.'
-          : fixture.id === 'task'
-            ? 'Editable and read-only task properties. Toggle the code issue to inspect its attached error above Node settings.'
-            : 'Editable, read-only and fixed-type value panels. Inspector samples save independently; reload verifies saved values.',
+    fixture.id == 'provider-inputs'
+      ? 'Provider inputs group required fields before optional fields. Optional starts collapsed, including configured values. Expand it, edit values and sources, then reload saved data; reopening panels restores the default expansion.'
+      : fixture.id == 'code-actions-loading'
+        ? 'Opening the editor makes no shared Action requests. Trigger completion with Ctrl+Space; Actions take four seconds to load while editing remains available. Reset samples to repeat.'
+        : fixture.id == 'execution-limit'
+          ? 'Per-run node execution limits. Change the limit, test invalid values, or clear it to restore the default of 1000; reload verifies persistence.'
+          : fixture.id === 'value'
+            ? 'Editable and read-only properties, including typed dates, calendar selection, and time editing with timezone preservation. Use Sort to reorder fields and nested object properties; Done sorting restores disclosure arrows. Samples save independently.'
+            : fixture.id === 'task'
+              ? 'Editable and read-only task properties. Toggle the code issue to inspect its attached error above Node settings.'
+              : 'Editable, read-only and fixed-type value panels. Inspector samples save independently; reload verifies saved values.',
   render: (log, dark, language) => <PropertiesStory fixture={fixture} dark={dark} language={language} log={log} />,
 }))

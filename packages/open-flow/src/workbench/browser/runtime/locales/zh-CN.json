@@ -413,6 +413,8 @@
       "sort": "排序",
       "finishSorting": "完成排序",
       "inputsTitle": "输入",
+      "requiredInputs": "必填",
+      "optionalInputs": "选填",
       "noInputs": "此节点不需要输入数据",
       "noOutputs": "此节点不提供输出数据",
       "outputsTitle": "输出",

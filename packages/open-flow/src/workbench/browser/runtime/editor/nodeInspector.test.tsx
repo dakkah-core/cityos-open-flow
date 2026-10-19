@@ -7,6 +7,7 @@ import { nodeInputMappings } from '../../../../flow/common/condition.ts'
 import { CodeTaskSection } from './codeTaskSection.tsx'
 import { ConnectorAccount, TriggerConnection } from './connectionSettings.tsx'
 import { InspectorStatusSection } from './inspectorStatusSection.tsx'
+import { NodeInputs } from './nodeInputs.tsx'
 import { NodeInspector } from './nodeInspector.tsx'
 import { OpenApiSection } from './openApiSection.tsx'
 import { WorkflowInterfaceAlert } from './workflowSection.tsx'
@@ -71,6 +72,52 @@ function resolutionDefinition(
   if (resolution == null || typeof resolution.type != 'function') throw new Error('Expected resolution settings.')
   return (resolution.type as (props: unknown) => ReactElement)(resolution.props)
 }
+
+describe('Provider input presentation', () => {
+  it.each(['connector', 'code', 'grouped-connector', 'required-only', 'optional-only'] as const)(
+    'groups only mixed, ungrouped Provider inputs and preserves value updates (%s)',
+    (kind) => {
+      const optional = { handle: 'cc', jsonSchema: { type: 'string' }, nullable: true, value: 'default@example.com' }
+      const required = { handle: 'to', jsonSchema: { type: 'string' }, nullable: false }
+      const inputs = kind === 'required-only' ? [required] : kind === 'optional-only' ? [optional] : [optional, required]
+      const definitions = kind === 'grouped-connector' ? [{ group: 'Recipients', collapsed: true }, ...inputs] : inputs
+      const task = {
+        name: 'Send email',
+        ...(kind === 'code' ? { moduleId: 'module' } : { executor: { kind: 'connector', action: 'mail.send' } }),
+        inputs: definitions,
+        outputs: [],
+      }
+      const editedHandle = kind === 'required-only' ? 'to' : 'cc'
+      const node = { kind: 'task', task, inputs: { [editedHandle]: { kind: 'value', value: 'saved@example.com' } } }
+      const setInputValue = vi.fn()
+      const setInputVariable = vi.fn()
+      const element = NodeInspector({
+        variables: { enabled: true, names: ['EMAIL'], loaded: true, loading: false, onOpen: vi.fn() },
+        connectors: {} as never,
+        triggers: {} as never,
+        revision: { inputMappings: nodeInputMappings, graph: () => ({ nodes: { provider: node } }) } as never,
+        selection: { definition: task, id: 'provider', kind: 'task', node } as never,
+        store: { $: { flowId: { value: 'flow' }, moduleEditor: { value: undefined } }, setInputValue, setInputVariable } as never,
+        theme: 'light',
+      })
+      const fields = find(element, (item) => item.type === NodeInputs)
+      if (fields == null) throw new Error('Expected node inputs.')
+      const props = fields.props as Parameters<typeof NodeInputs>[0]
+      const displayed = props.entries.map((entry) => ('group' in entry ? entry : entry.definition))
+      expect(displayed).toEqual(
+        kind === 'connector'
+          ? [{ group: 'inspector.ports.requiredInputs' }, required, { group: 'inspector.ports.optionalInputs', collapsed: true }, optional]
+          : definitions,
+      )
+      expect(props.entries.find((entry) => !('group' in entry) && entry.definition.handle === editedHandle)).toMatchObject({ value: 'saved@example.com' })
+      props.onValue(editedHandle, 'edited@example.com')
+      props.onVariable(editedHandle, 'EMAIL')
+      expect(setInputValue).toHaveBeenCalledWith('provider', editedHandle, 'edited@example.com', undefined)
+      expect(setInputVariable).toHaveBeenCalledWith('provider', editedHandle, 'EMAIL')
+      expect(task.inputs).toBe(definitions)
+    },
+  )
+})
 
 describe('Provider account section', () => {
   it.each(['empty', 'invalid'] as const)('routes %s account authorization to the supplied account management entry', (state) => {

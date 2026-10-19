@@ -32,6 +32,7 @@ import {
 import { CodeTaskSection } from './codeTaskSection.tsx'
 import { ConditionBranchesEditor } from './conditionBranchesEditor.tsx'
 import { ConnectorAccount, TriggerConnection, SavedConnectionReference } from './connectionSettings.tsx'
+import { presentConnectorInputs } from './connectorInputPresentation.ts'
 import { DecisionSection } from './decisionSection.tsx'
 import { diagnosticMessage } from './diagnostics.ts'
 import { ErrorTriggerSources, ErrorTriggerSourcesEditor } from './errorTriggerSources.tsx'
@@ -600,7 +601,7 @@ export function NodeInspector({
               if (!handles.has(handle) && !(selection.kind === 'task' && selection.node.additionalInputs?.some((port) => port.handle === handle)))
                 definitions.push({ handle, jsonSchema: {}, nullable: true })
             }
-            const entries = definitions
+            const entries = (connector == null ? definitions : presentConnectorInputs(definitions, t))
               .filter((definition) => !isOpenApi || !('handle' in definition) || !definition.handle.startsWith('auth.'))
               .map((definition): Group | NodeInputField => {
                 if ('group' in definition) return definition

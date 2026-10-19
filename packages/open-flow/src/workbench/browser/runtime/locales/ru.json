@@ -413,6 +413,8 @@
       "sort": "Изменить порядок",
       "finishSorting": "Готово",
       "inputsTitle": "Входы",
+      "requiredInputs": "Обязательные",
+      "optionalInputs": "Необязательные",
       "noInputs": "Этому узлу не требуются входные данные.",
       "noOutputs": "Этот узел не предоставляет выходных данных.",
       "outputsTitle": "Выходы",

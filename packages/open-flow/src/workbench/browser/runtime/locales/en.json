@@ -413,6 +413,8 @@
       "sort": "Sort",
       "finishSorting": "Done sorting",
       "inputsTitle": "Inputs",
+      "requiredInputs": "Required",
+      "optionalInputs": "Optional",
       "noInputs": "This node does not require input data.",
       "noOutputs": "This node does not provide output data.",
       "outputsTitle": "Outputs",

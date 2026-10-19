@@ -413,6 +413,8 @@
       "sort": "並べ替え",
       "finishSorting": "並べ替えを完了",
       "inputsTitle": "入力",
+      "requiredInputs": "必須",
+      "optionalInputs": "任意",
       "noInputs": "このノードには入力データが必要ありません。",
       "noOutputs": "このノードは出力データを提供しません。",
       "outputsTitle": "出力",
