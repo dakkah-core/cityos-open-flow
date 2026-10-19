@@ -496,15 +496,15 @@ export const controlApiConformanceCases: readonly ControlApiConformanceCase[] = 
       await error(await createFlowRequest(harness, 'Different flow', 'flow-lifecycle'), 409, 'flow.conflict', 'Conflicting Flow')
       equal(await json(await request(harness, `/v1/flows/${flowId}`), 200, 'Read Flow'), created, 'Read Flow')
       const page = await json(await request(harness, '/v1/flows?includeTotal=true'), 200, 'List Flows')
-      equal(page.flows, [created], 'Listed Flows')
+      equal(page.flows, [{ ...created, referenceCount: 0 }], 'Listed Flows')
       equal(page.total, 1, 'Flow total')
       const second = await createFlow(harness, 'Second control flow', 'flow-lifecycle-second')
       const firstPage = await json(await request(harness, '/v1/flows?limit=1'), 200, 'List first Flow page')
-      equal(firstPage.flows, [created], 'First Flow page')
+      equal(firstPage.flows, [{ ...created, referenceCount: 0 }], 'First Flow page')
       const cursor = requiredString(firstPage.nextCursor, 'Flow cursor')
       equal(
         (await json(await request(harness, `/v1/flows?limit=1&cursor=${encodeURIComponent(cursor)}`), 200, 'List second Flow page')).flows,
-        [second],
+        [{ ...second, referenceCount: 0 }],
         'Second Flow page',
       )
       const renamed = await json(
@@ -1055,7 +1055,7 @@ export const publicationControlApiConformanceCases: readonly ControlApiConforman
       const disabled = await json(await change(false, publicationId), 200, 'Disable')
       equal(disabled.live, { enabled: false, hasStart: true, publicationId, revisionId }, 'Disabled summary')
       const page = await json(await request(harness, '/v1/flows'), 200, 'List disabled Flow')
-      equal(page.flows, [disabled], 'List includes Live state')
+      equal(page.flows, [{ ...disabled, referenceCount: 0 }], 'List includes Live state')
       equal((await json(await request(harness, `/v1/flows/${flowId}/live`), 200, 'Disabled Live')).status, 'suspended', 'Disabled Live status')
       await error(await liveRunRequest(harness, publicationId, 'disabled-run'), 412, 'live.conflict', 'Disabled Live rejects Run')
       await json(

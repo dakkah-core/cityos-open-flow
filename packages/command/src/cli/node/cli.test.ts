@@ -62,7 +62,7 @@ describe('CLI', () => {
       ]) {
         const output = runtime()
         const request = vi.fn(async (path: string, init?: RequestInit) => {
-          if (path == '/v1/flows?limit=100') return Response.json({ flows: [flow], version: 1 })
+          if (path == '/v1/flows?limit=100') return Response.json({ flows: [{ ...flow, referenceCount: 0 }], version: 1 })
           if (path == '/v1/flows/Main') return Response.json({ version: 1, error: { code: 'flow.not-found', message: 'Not found' } }, { status: 404 })
           if (path == `/v1/flows/${flow.flowId}`) return Response.json(flow)
           expect(path).toBe(`/v1/flows/${flow.flowId}/canvas`)
@@ -183,12 +183,12 @@ describe('CLI', () => {
     const output = runtime()
     const request = vi.fn(async (path: string) => {
       expect(path).toBe('/v1/flows?limit=100')
-      return Response.json({ flows: [flow], version: 1 })
+      return Response.json({ flows: [{ ...flow, referenceCount: 0 }], version: 1 })
     })
 
     await expect(runCli(['list', '--json'], { request }, output.value)).resolves.toBe(0)
 
-    expect(JSON.parse(output.stdout())).toEqual({ flows: [flow], kind: 'flow.list', version: 1 })
+    expect(JSON.parse(output.stdout())).toEqual({ flows: [{ ...flow, referenceCount: 0 }], kind: 'flow.list', version: 1 })
   })
 
   it('lists independent event sources and guides an empty catalog to Workbench', async () => {
@@ -235,7 +235,7 @@ describe('CLI', () => {
     const output = runtime()
     const request = vi.fn(async (path: string) => {
       if (path == '/v1/flows/Main') return Response.json({ error: { code: 'flow.not-found', message: 'Missing.' }, version: 1 }, { status: 404 })
-      if (path == '/v1/flows?limit=100') return Response.json({ flows: [flow], version: 1 })
+      if (path == '/v1/flows?limit=100') return Response.json({ flows: [{ ...flow, referenceCount: 0 }], version: 1 })
       if (path == '/v1/flows/flow-1/authoring/check') {
         return Response.json({
           closureDigest: 'closure-1',
@@ -281,7 +281,7 @@ describe('CLI', () => {
     const request = vi.fn(async (path: string) =>
       path == '/v1/flows/Main'
         ? Response.json({ error: { code: 'flow.not-found', message: 'Missing.' }, version: 1 }, { status: 404 })
-        : Response.json({ flows: [flow], version: 1 }),
+        : Response.json({ flows: [{ ...flow, referenceCount: 0 }], version: 1 }),
     )
     const getWorkbenchUrl = vi.fn(async (flowId?: string) => `https://console.example/flows/${flowId ?? ''}`)
 
@@ -569,7 +569,7 @@ describe('agent command contract', () => {
     const output = runtime()
     const request = vi.fn(async (path: string) => {
       expect(path).toBe('/v1/flows?cursor=before&limit=2')
-      return Response.json({ flows: [flow], nextCursor: 'after', version: 1 })
+      return Response.json({ flows: [{ ...flow, referenceCount: 0 }], nextCursor: 'after', version: 1 })
     })
     expect(await runCli(['list', '--cursor=before', '--limit', '2', '--json'], { request }, output.value)).toBe(0)
     expect(JSON.parse(output.stdout())).toMatchObject({ nextCursor: 'after' })

@@ -860,7 +860,7 @@ it('reports uncertain mutation outcomes and recovers the accepted resource with 
   const accepted = await call('flow_create', args)
   const page = await call('flow_list')
   expect(page.flows).toHaveLength(1)
-  expect(page.flows).toEqual([accepted])
+  expect(page.flows).toEqual([{ ...accepted, referenceCount: 0 }])
 })
 
 it('serves a modern client through an HTTP proxy and accepts chunked JSON requests', async () => {
