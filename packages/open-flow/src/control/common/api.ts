@@ -762,11 +762,10 @@ export type ConditionalResult<T> =
 
 export class ControlClient {
   private readonly requestControl: ControlRequest
+  private readonly channel: 'workbench' | 'cli' | 'api'
 
-  constructor(
-    requestControl: ControlRequest,
-    private readonly channel: 'workbench' | 'cli' | 'api' = 'api',
-  ) {
+  constructor(requestControl: ControlRequest, channel: 'workbench' | 'cli' | 'api' = 'api') {
+    this.channel = channel
     this.requestControl = requestControl
   }
 

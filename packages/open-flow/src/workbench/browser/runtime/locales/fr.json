@@ -217,6 +217,11 @@
     "deleteDescription": "Le workflow et son historique seront définitivement supprimés, et ses déclencheurs actifs arrêtés.",
     "importFlow": "Importer un workflow",
     "exportFlow": "Exporter le workflow",
+    "exportSvg": "Exporter une image SVG",
+    "exportSvgPending": "Exportation du SVG…",
+    "exportSvgPendingDescription": "Préparation du workflow et des images. Les images volumineuses peuvent prendre un peu plus de temps.",
+    "exportSvgComplete": "Image SVG exportée.",
+    "exportSvgFailed": "Impossible d’exporter l’image SVG. Veuillez réessayer.",
     "importInvalid": "Fichier de workflow invalide ou non pris en charge."
   },
   "inspector": {

@@ -11,3 +11,22 @@ export const sampleSprite = {
   lightUrl: sheet('#3278cf'),
   darkUrl: sheet('#8fbcff'),
 }
+
+// Public catalog snapshot, including the original image for a missing remote sprite.
+const remoteSpriteVersion = '6c09b9866c4ca60f8f86018668a0ef1e3908f43de202044febf34ad59afb12e1'
+export const remoteGithubArtwork = {
+  serviceId: 'github',
+  serviceName: 'GitHub',
+  icon: 'https://static.oomol.com/logo/third-party/github.png',
+  iconSprite: {
+    version: remoteSpriteVersion,
+    pixelRatio: 2,
+    iconSize: 48,
+    bleed: 1,
+    width: 2050,
+    height: 2050,
+    lightUrl: `https://static.oomol.com/logo/provider-sprites/${remoteSpriteVersion}/light.png`,
+    darkUrl: `https://static.oomol.com/logo/provider-sprites/${remoteSpriteVersion}/dark.png`,
+  },
+  iconSpritePosition: { x: 451, y: 701 },
+}

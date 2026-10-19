@@ -96,7 +96,7 @@ export function DiagnosticsPanel({ checking, items, nodes, onClose, onRefresh, o
                     variant="ghost"
                   >
                     <span aria-hidden="true" className="diagnostics-node-icon">
-                      <CanvasNodeIcon icon={node.icon} kind={node.kind} className="size-[18px]" />
+                      <CanvasNodeIcon icon={node.icon} fallbackIcon={node.fallbackIcon} kind={node.kind} className="size-[18px]" />
                     </span>
                     <span className="diagnostics-node-title">{title}</span>
                     <span aria-hidden="true" className="diagnostics-node-trailing">

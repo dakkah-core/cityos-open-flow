@@ -21,7 +21,7 @@ export function IconStack({
       <span className="inline-flex items-center -space-x-0.5">
         {icons.slice(0, limit).map((item) => (
           <span key={item.id} className={frame}>
-            <ContentIcon src={item.icon} className={size === 'sm' ? 'size-3.5' : 'size-4'} />
+            <ContentIcon src={item.icon} className={cn(size === 'sm' ? 'size-3.5' : 'size-4', 'data-[icon-kind=initials]:text-[20px]')} />
           </span>
         ))}
       </span>

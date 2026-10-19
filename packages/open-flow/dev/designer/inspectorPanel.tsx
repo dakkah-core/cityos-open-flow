@@ -169,27 +169,30 @@ function PanelStates({ dark }: { dark: boolean }) {
 
 function Gallery({ dark, language, log }: { dark: boolean; language: UiLanguage; log: LogAction }) {
   const [generation, reset] = useState(0)
+  const [oomol, setOomol] = useState(true)
   const [store, setStore] = useState<WorkbenchStore>()
   const i18n = useMemo(() => createI18n(language), [language])
   useEffect(() => {
     const { client, flowId } = createInspectorTransport(log, content, {
-      access: {
-        mode: 'selectable',
-        version: 1,
-        accessRevision: 1,
-        sharedAccessDigest: 'lab',
-        providerIds: ['github', 'slack'],
-        bindings: [
-          {
-            accessBindingId: 'github-access',
-            connectionId: 'github-work',
-            connectionDisplayName: 'GitHub · Work',
-            providerId: 'github',
-            source: { kind: 'admin-delegation' },
-            status: 'active',
+      access: !oomol
+        ? { accessRevision: 0, bindings: [], mode: 'implicit', sharedAccessDigest: 'implicit', version: 1 }
+        : {
+            mode: 'selectable',
+            version: 1,
+            accessRevision: 1,
+            sharedAccessDigest: 'lab',
+            providerIds: ['github', 'slack'],
+            bindings: [
+              {
+                accessBindingId: 'github-access',
+                connectionId: 'github-work',
+                connectionDisplayName: 'GitHub · Work',
+                providerId: 'github',
+                source: { kind: 'admin-delegation' },
+                status: 'active',
+              },
+            ],
           },
-        ],
-      },
       candidates: [
         { accessBindingId: 'github-access', connectionDisplayName: 'GitHub · Work', providerId: 'github' },
         { accessBindingId: 'github-personal-access', connectionDisplayName: 'GitHub · Personal', providerId: 'github' },
@@ -245,8 +248,9 @@ function Gallery({ dark, language, log }: { dark: boolean; language: UiLanguage;
     setStore(next)
     void next.start(flowId)
     return () => next.dispose()
-  }, [generation, i18n, log])
+  }, [generation, i18n, log, oomol])
   useStoryActions([
+    { label: oomol ? 'Use OpenConnector' : 'Use OOMOL', onClick: () => setOomol((value) => !value) },
     { label: 'Reset samples', onClick: () => reset((value) => value + 1) },
     {
       label: 'Reload saved data',

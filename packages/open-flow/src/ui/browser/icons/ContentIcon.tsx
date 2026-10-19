@@ -2,11 +2,14 @@ import styles from './ContentIcon.module.scss'
 import type { ProviderIconAppearance } from '../../../control/common/providerIconSprite.ts'
 
 import { clsx } from 'clsx'
-import { useContext, useMemo, useState } from 'react'
+import { createContext, useContext, useMemo, useState } from 'react'
 import { providerIconAppearance } from '../../../control/common/providerIconSprite.ts'
 import { IconifyIcon } from './IconifyIcon.tsx'
 import { IconThemeContext } from './iconTheme.ts'
 import { useSpriteStatus } from './spriteResource.ts'
+
+/** Standalone image capture uses individual, cross-origin-readable images instead of sprites. */
+export const IconImageCrossOriginContext = createContext<'anonymous' | undefined>(undefined)
 
 export interface ContentIconProps {
   /** Image URL, Iconify source, or a descriptor created by imageIcon, initialsIcon, or spriteIcon. */
@@ -20,6 +23,7 @@ export interface ContentIconProps {
 }
 
 export const ContentIcon = ({ src, className, fallback = null, loading = 'lazy', decoding = 'async' }: ContentIconProps) => {
+  const crossOrigin = useContext(IconImageCrossOriginContext)
   const sprite = useMemo(() => parseSpriteIcon(src), [src])
   const image = useMemo(() => parseImageIcon(src), [src])
   const source = image?.source ?? src
@@ -27,9 +31,15 @@ export const ContentIcon = ({ src, className, fallback = null, loading = 'lazy',
   const [error, setError] = useState<string>()
   const onError = () => setError(source)
 
-  if (sprite) return <SpriteIcon {...{ className, fallback, loading, decoding }} sprite={sprite} />
+  if (sprite)
+    return crossOrigin ? (
+      <ContentIcon {...{ className, fallback, loading, decoding }} src={sprite.fallback} />
+    ) : (
+      <SpriteIcon {...{ className, fallback, loading, decoding }} sprite={sprite} />
+    )
 
   if (source?.startsWith(initialsIconPrefix)) {
+    if (crossOrigin && fallback != null) return <>{fallback}</>
     return (
       <span data-icon-kind="initials" aria-hidden="true" className={clsx(styles.initials, className)}>
         <span>{source.slice(initialsIconPrefix.length)}</span>
@@ -40,6 +50,7 @@ export const ContentIcon = ({ src, className, fallback = null, loading = 'lazy',
   if (!source) {
     return fallback as React.ReactElement
   }
+  if (source === error && crossOrigin && fallback != null) return <>{fallback}</>
   if (source === error)
     return image == null ? (
       (fallback as React.ReactElement)
@@ -50,7 +61,16 @@ export const ContentIcon = ({ src, className, fallback = null, loading = 'lazy',
   return result ? (
     <IconifyIcon collection={result.collection} icon={result.icon} color={result.color} className={className} onError={onError} />
   ) : (
-    <img className={clsx(styles.img, className)} src={source} alt="" decoding={decoding} loading={loading} referrerPolicy="no-referrer" onError={onError} />
+    <img
+      className={clsx(styles.img, className)}
+      src={source}
+      alt=""
+      crossOrigin={crossOrigin}
+      decoding={decoding}
+      loading={loading}
+      referrerPolicy="no-referrer"
+      onError={onError}
+    />
   )
 }
 
@@ -110,7 +130,7 @@ function SpriteIcon({ sprite, ...props }: Omit<ContentIconProps, 'src'> & { spri
   const status = useSpriteStatus(url)
   if (status == 'failed') return <ContentIcon {...props} src={sprite.fallback} />
   return (
-    <span aria-hidden="true" className={clsx(styles.sprite, props.className)}>
+    <span aria-hidden="true" data-render-pending={status == 'loading' || undefined} className={clsx(styles.sprite, props.className)}>
       {status == 'loaded' && (
         <span
           style={{

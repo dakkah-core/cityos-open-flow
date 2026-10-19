@@ -40,7 +40,7 @@ export const IconifyIcon = ({ collection, icon, color, className, onError }: Ico
   return url ? (
     <IconifyIconSync url={url} collection={collection} icon={icon} color={color} className={className} />
   ) : bundledCollectionPending ? (
-    <i />
+    <i data-render-pending />
   ) : (
     <IconifyIconAsync collection={collection} icon={icon} color={color} className={className} onError={onError} />
   )
@@ -71,7 +71,7 @@ const IconifyIconAsync = ({ collection, icon, color, className, onError }: Iconi
   }
 
   // Keep the loading placeholder inert to avoid duplicate API requests.
-  return <i />
+  return <i data-render-pending />
 }
 
 // Reuse loaded icons across mounts and share concurrent requests.

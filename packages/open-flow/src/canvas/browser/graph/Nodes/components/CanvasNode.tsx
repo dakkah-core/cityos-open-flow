@@ -67,7 +67,7 @@ export function CanvasNode({
         contentHidden={hidden}
         footerHidden={hidden && !runContent}
         title={title}
-        icon={<CanvasNodeIcon icon={node.icon} kind={node.kind} nodeType={nodeStore.nodeType} />}
+        icon={<CanvasNodeIcon icon={node.icon} fallbackIcon={node.fallbackIcon} kind={node.kind} nodeType={nodeStore.nodeType} />}
         subtitle={subtitle}
         subtitleAccessory={
           actions != null && actions.count > 0 ? (

@@ -9,9 +9,10 @@ import type { FrontendStory, LogAction } from './stories.tsx'
 
 import { currentFlowModelVersion } from '@oomol-lab/open-flow/flow-change'
 import { ReactFlow } from '@xyflow/react'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { I18nProvider } from 'val-i18n-react'
 import { val } from 'value-enhancer'
+import { downloadFlowSvg, flowToSvg } from '../../src/canvas/browser/graph/FlowCanvas/exportSvg.ts'
 import { FlowCanvasView } from '../../src/canvas/browser/graph/FlowCanvas/FlowCanvasView.tsx'
 import { CanvasViewControls, CanvasTopLeftControls } from '../../src/canvas/browser/graph/ReactFlowContainer/CanvasControls.tsx'
 import { CornerControls } from '../../src/canvas/browser/graph/ReactFlowContainer/CornerControls.tsx'
@@ -27,6 +28,8 @@ import { RunControl } from '../../src/workbench/browser/runtime/runs/runControl.
 import { WorkspaceNavigationIsland } from '../../src/workbench/browser/runtime/shell/workspaceNavigationIsland.tsx'
 import { WorkspacePublishIsland } from '../../src/workbench/browser/runtime/shell/workspacePublishIsland.tsx'
 import { designerGraph } from '../../src/workbench/browser/runtime/workspace.ts'
+import googleSheetsIcon from './fixtures/google-sheets.ico'
+import { remoteGithubArtwork, sampleSprite } from './fixtures/providerSprite.ts'
 import { useStoryActions } from './storyActions.tsx'
 
 const pickerDraft: Draft = {
@@ -462,6 +465,15 @@ const edgeColors: FlowCanvasViewModel = {
 export const workflowStories: readonly FrontendStory[] = [
   {
     group: 'Workbench',
+    id: 'workflow-svg',
+    title: 'SVG export',
+    description:
+      'Compare the canvas and exported SVG. Exports use individual Provider images regardless of sprite availability; check Connector icons, JavaScript and AI Agent tool lists, branches, comments and both themes. Simulate a slow export to inspect the waiting dialog.',
+    standalone: true,
+    render: (_log, dark, language) => <SvgExportStory dark={dark} language={language} />,
+  },
+  {
+    group: 'Workbench',
     id: 'canvas-commands',
     title: 'Remote canvas commands',
     description:
@@ -527,6 +539,136 @@ export const workflowStories: readonly FrontendStory[] = [
     render: (log, dark, language) => <WorkflowStory dark={dark} language={language} log={log} model={workflow} picker />,
   },
 ]
+
+function SvgExportStory({ dark, language }: { readonly dark: boolean; readonly language: UiLanguage }) {
+  const [wrapped, setWrapped] = useState(false)
+  const [remoteIcons, setRemoteIcons] = useState(false)
+  const [taskKind, setTaskKind] = useState<'connector' | 'javascript' | 'agent'>('connector')
+  const [slowExport, setSlowExport] = useState(false)
+  const providerArtwork = remoteIcons
+    ? providerIcon(remoteGithubArtwork)
+    : providerIcon({ serviceId: 'google-sheets', serviceName: 'Google Sheets', icon: googleSheetsIcon })
+  const i18n = useMemo(() => createI18n(language), [language])
+  const model = useMemo(
+    () =>
+      wrapped
+        ? longChainModel
+        : {
+            ...workflow,
+            edges: workflow.edges.map((edge) => (edge.id == 'condition-value' ? Object.assign({}, edge, { target: 'task' }) : edge)),
+            nodes: workflow.nodes.map((node) =>
+              Object.assign({}, node, {
+                title: node.kind == 'task' ? '汇总客户反馈并生成每周产品分析报告 & Review' : node.title,
+                icon:
+                  node.kind == 'task'
+                    ? taskKind == 'agent'
+                      ? ':carbon:machine-learning-model:'
+                      : providerArtwork
+                    : node.kind == 'trigger'
+                      ? remoteIcons
+                        ? providerArtwork
+                        : providerIcon({ serviceId: 'sample', serviceName: 'Sample', iconSprite: sampleSprite, iconSpritePosition: { x: 54, y: 2 } })
+                      : 'icon' in node
+                        ? node.icon
+                        : undefined,
+                position: { x: node.position.x - 500, y: node.position.y - 180 },
+                ...(node.kind == 'task'
+                  ? {
+                      executorName:
+                        taskKind == 'agent' ? 'AI Agent' : taskKind == 'connector' ? 'Connector · ' + (remoteIcons ? 'GitHub' : 'Google Sheets') : 'JavaScript',
+                      fallbackIcon:
+                        taskKind == 'agent' ? ':carbon:machine-learning-model:' : taskKind == 'connector' ? ':carbon:connection-signal:' : ':carbon:code:',
+                      actionSummary:
+                        taskKind == 'connector'
+                          ? undefined
+                          : { count: 2, providers: [{ id: 'provider', icon: providerArtwork, label: remoteIcons ? 'GitHub' : 'Google Sheets' }] },
+                    }
+                  : {}),
+              }),
+            ),
+          },
+    [wrapped, remoteIcons, taskKind, providerArtwork],
+  )
+  const title = wrapped ? 'Weekly records pipeline' : 'Customer insights'
+  const [source, setSource] = useState<string>()
+  const [error, setError] = useState<string>()
+  useEffect(() => {
+    let active = true
+    setSource(undefined)
+    setError(undefined)
+    void flowToSvg(model, title, language, { dark }).then(
+      (value) => {
+        if (active) setSource(value)
+      },
+      (reason) => {
+        if (active) setError(String(reason))
+      },
+    )
+    return () => {
+      active = false
+    }
+  }, [model, title, language, dark])
+  useStoryActions([
+    { label: slowExport ? 'Use normal export speed' : 'Simulate slow export', onClick: () => setSlowExport((value) => !value) },
+    { label: wrapped ? 'Show branches & Chinese titles' : 'Show wrapped pipeline', onClick: () => setWrapped((value) => !value) },
+    { label: remoteIcons ? 'Use local provider artwork' : 'Use remote provider artwork', onClick: () => setRemoteIcons((value) => !value) },
+    {
+      label: taskKind == 'connector' ? 'Show JavaScript' : taskKind == 'javascript' ? 'Show AI Agent' : 'Show Connector',
+      onClick: () => setTaskKind((value) => (value == 'connector' ? 'javascript' : value == 'javascript' ? 'agent' : 'connector')),
+    },
+  ])
+  return (
+    <I18nProvider i18n={i18n}>
+      <div style={{ display: 'grid', gap: 24, padding: 24, justifyItems: 'start', alignItems: 'start', alignContent: 'start' }}>
+        <WorkspacePublishIsland
+          hasPublications={false}
+          onExportSvg={async () => {
+            if (slowExport) await new Promise((resolve) => setTimeout(resolve, 5000))
+            await downloadFlowSvg(model, title, language, { dark })
+          }}
+          onOpenPublications={() => {}}
+          onOpenRuns={() => {}}
+          onPublish={() => {}}
+          state="current"
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 24, width: '100%' }}>
+          <section>
+            <p>Canvas</p>
+            <div style={{ height: 620 }}>
+              <FlowCanvasView
+                identity={`svg-comparison:${wrapped}`}
+                model={model}
+                dark={dark}
+                language={language}
+                editable={false}
+                nodesDraggable={false}
+                fitView
+                autoLayout={false}
+                layoutMotion={false}
+                ignoredNodeIds={[]}
+                selectedNodeIds={[]}
+                onMoveNodes={() => {}}
+                onMoveViewport={() => {}}
+                onSelectionChange={() => {}}
+              />
+            </div>
+          </section>
+          <section>
+            <p>Exported SVG</p>
+            {source && (
+              <img
+                alt={title}
+                src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(source)}`}
+                style={{ width: '100%', height: 620, objectFit: 'contain' }}
+              />
+            )}
+            {error && <p role="alert">{error}</p>}
+          </section>
+        </div>
+      </div>
+    </I18nProvider>
+  )
+}
 
 function NavigationIslandStory({ dark, language, log }: { readonly dark: boolean; readonly language: UiLanguage; readonly log: LogAction }) {
   const i18n = useMemo(() => createI18n(language), [language])

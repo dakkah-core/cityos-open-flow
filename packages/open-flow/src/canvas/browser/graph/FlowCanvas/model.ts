@@ -96,6 +96,8 @@ interface FlowCanvasViewNodeBase {
   readonly contentHidden?: boolean
   readonly description?: string
   readonly diagnostics?: number
+  /** Node-type artwork used when the primary icon cannot be loaded or embedded. */
+  readonly fallbackIcon?: string
   readonly icon?: string
   readonly id: string
   readonly inputs: readonly (FlowCanvasViewInput | GroupDividerDef)[]

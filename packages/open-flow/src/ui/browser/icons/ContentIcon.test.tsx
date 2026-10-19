@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { ContentIcon, imageIcon, initialsIcon, spriteIcon } from './ContentIcon.tsx'
+import { ContentIcon, IconImageCrossOriginContext, imageIcon, initialsIcon, spriteIcon } from './ContentIcon.tsx'
 import { IconThemeContext } from './iconTheme.ts'
 const status = vi.hoisted(() => ({ value: 'loaded', urls: [] as string[] }))
 vi.mock('./spriteResource.ts', () => ({
@@ -46,4 +46,39 @@ it('preserves space without loading the fallback while pending', () => {
 it('uses the original image after a shared failure', () => {
   status.value = 'failed'
   expect(renderToStaticMarkup(<ContentIcon src={src} />)).toContain('src="https://example.com/icon.svg"')
+})
+
+it.each(['loaded', 'loading', 'failed'])('exports only the original image even when the sprite is %s', (spriteStatus) => {
+  status.value = spriteStatus
+  const html = renderToStaticMarkup(
+    <IconImageCrossOriginContext.Provider value="anonymous">
+      <ContentIcon src={src} fallback={<span>Default node icon</span>} />
+    </IconImageCrossOriginContext.Provider>,
+  )
+  expect(html).toContain('src="https://example.com/icon.svg"')
+  expect(html).toContain('crossorigin="anonymous"')
+  expect(html).not.toContain('Default node icon')
+  expect(status.urls).toEqual([])
+})
+
+it('uses the node fallback during export when a sprite has no original image', () => {
+  const html = renderToStaticMarkup(
+    <IconImageCrossOriginContext.Provider value="anonymous">
+      <ContentIcon
+        src={spriteIcon({ iconSprite: metadata, iconSpritePosition: { x: 54, y: 2 } }, initialsIcon('AB'))}
+        fallback={<span>Default node icon</span>}
+      />
+    </IconImageCrossOriginContext.Provider>,
+  )
+  expect(html).toContain('Default node icon')
+})
+
+it('requests readable images only inside the export surface', () => {
+  const html = renderToStaticMarkup(
+    <IconImageCrossOriginContext.Provider value="anonymous">
+      <ContentIcon src={fallback} />
+    </IconImageCrossOriginContext.Provider>,
+  )
+  expect(html).toContain('crossorigin="anonymous"')
+  expect(renderToStaticMarkup(<ContentIcon src={fallback} />)).not.toContain('crossorigin')
 })

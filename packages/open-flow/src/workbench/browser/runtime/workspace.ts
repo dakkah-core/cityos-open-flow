@@ -569,6 +569,7 @@ function semanticDesignerNode(nodeId: string, resolved: ResolvedNode, ports: Nod
   const common = {
     description: node.description,
     diagnostics: nodeDiagnosticCount(resolved, context.diagnostics),
+    fallbackIcon: nodeIcon(resolved),
     icon: semanticNodeIcon(resolved, context.connectorActions),
     id: nodeId,
     inputs,

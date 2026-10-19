@@ -29,7 +29,7 @@ export const MarkdownPreview: FC<MarkdownPreviewProps> = /* @__PURE__ */ memo(
         onDoubleClick={onDoubleClick}
       >
         <div className={`${styles.body} markdown-body`}>
-          <Suspense fallback={null}>
+          <Suspense fallback={<span hidden data-render-pending />}>
             <MarkdownContent components={components} dark={dark} unstyled={unstyled} className={contentClassName} text={content} mermaid />
           </Suspense>
         </div>

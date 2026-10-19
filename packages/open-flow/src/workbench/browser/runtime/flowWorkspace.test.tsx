@@ -13,6 +13,7 @@ import FlowWorkspace, { FlowEditor } from './flowWorkspace.tsx'
 import { createI18n } from './i18n.ts'
 import { RevisionView } from './revisionView.ts'
 import { runDrawerPreferenceKey } from './runs/runDrawerPreference.ts'
+import { WorkspacePublishIsland } from './shell/workspacePublishIsland.tsx'
 
 const mocks = vi.hoisted(() => ({
   preferences: new Map<string, string>(),
@@ -189,6 +190,20 @@ describe('FlowWorkspace run drawer', () => {
     mocks.stateCall = 0
     mocks.stateValues.clear()
     vi.mocked(useEffect).mockReset()
+  })
+
+  it.each([
+    [undefined, true, false],
+    ['implicit', true, false],
+    ['selectable', true, true],
+    ['selectable', false, false],
+  ] as const)('shows SVG export only for a loaded OOMOL workflow (mode=%s, nodes=%s)', (mode, withNodes, visible) => {
+    const { editor, store } = renderWorkspace(undefined, withNodes)
+    Object.assign(store.connectorAccess.$, { value: { access: mode == null ? undefined : { mode } } })
+    const tree = FlowEditor(editor.props as Parameters<typeof FlowEditor>[0])
+    const canvas = find(tree, (item) => item.type == WorkbenchCanvas)!
+    const island = find((canvas.props as { cornerLeading: ReactElement }).cornerLeading, (item) => item.type == WorkspacePublishIsland)!
+    expect(typeof (island.props as Parameters<typeof WorkspacePublishIsland>[0]).onExportSvg == 'function').toBe(visible)
   })
 
   it('keeps Run inputs open across Draft saves and dismisses them when switching workflows', () => {

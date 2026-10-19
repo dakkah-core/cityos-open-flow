@@ -275,6 +275,7 @@ export function FlowEditor({
 }): ReactElement {
   const t = useTranslate()
   const addNodeOptions = useVal(store.workspace.$.addNodeOptions)
+  const language = useLang()
   const connections = useVal(store.connectors.$.pickerConnections)
   const triggerCatalogState = useVal(store.triggers.catalog.state)
   const [startId, setStartId] = useState<string>()
@@ -319,7 +320,8 @@ export function FlowEditor({
     setAccountReference(undefined)
   }, [accountReference])
   const designerRef = useRef<WorkbenchCanvasHandle>(null)
-  const accessConfiguration = useVal(store.connectorAccess.$).configuration
+  const connectorAccess = useVal(store.connectorAccess.$)
+  const accessConfiguration = connectorAccess.configuration
   useEffect(() => {
     if (accessConfiguration == null) return
     panel.openInspector()
@@ -467,6 +469,11 @@ export function FlowEditor({
               />
             )}
             <WorkspacePublishIsland
+              onExportSvg={
+                connectorAccess.access?.mode != 'selectable' || designer.nodes.length == 0
+                  ? undefined
+                  : () => store.exportSvg(language, { dark: theme == 'dark', ignoredNodeIds })
+              }
               onExport={() => {
                 const id = store.workspace.$.flowId.value
                 if (id != null) void store.workspace.exportFlow(id)

@@ -217,6 +217,11 @@
     "deleteDescription": "工作流程及執行記錄將永久刪除，並停止線上觸發。",
     "importFlow": "匯入工作流",
     "exportFlow": "匯出工作流",
+    "exportSvg": "匯出 SVG 圖片",
+    "exportSvgPending": "正在匯出 SVG…",
+    "exportSvgPendingDescription": "正在處理工作流程和圖片資源，圖片較大時可能需要一些時間。",
+    "exportSvgComplete": "SVG 圖片已匯出。",
+    "exportSvgFailed": "SVG 圖片匯出失敗，請重試。",
     "importInvalid": "檔案損壞或工作流格式不受支援。"
   },
   "inspector": {

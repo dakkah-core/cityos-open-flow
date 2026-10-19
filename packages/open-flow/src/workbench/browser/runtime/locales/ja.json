@@ -217,6 +217,11 @@
     "deleteDescription": "ワークフローと実行履歴を完全に削除し、公開中のトリガーを停止します。",
     "importFlow": "ワークフローをインポート",
     "exportFlow": "ワークフローをエクスポート",
+    "exportSvg": "SVG 画像をエクスポート",
+    "exportSvgPending": "SVG をエクスポート中…",
+    "exportSvgPendingDescription": "ワークフローと画像を準備しています。画像が大きい場合は時間がかかることがあります。",
+    "exportSvgComplete": "SVG 画像をエクスポートしました。",
+    "exportSvgFailed": "SVG 画像をエクスポートできませんでした。もう一度お試しください。",
     "importInvalid": "無効または未対応のワークフローファイルです。"
   },
   "inspector": {

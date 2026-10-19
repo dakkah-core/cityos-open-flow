@@ -94,6 +94,7 @@ describe('Designer port projection', () => {
       connectionRequired: true,
       diagnostics: 1,
       executorName: 'JavaScript',
+      fallbackIcon: ':carbon:code:',
       actionSummary: {
         count: 3,
         providers: [
@@ -329,6 +330,8 @@ describe('Designer port projection', () => {
     ).nodes[0]
 
     expect(publicNode).toMatchObject({
+      fallbackIcon: ':carbon:connection-signal:',
+      icon: providerIcon(action),
       additionalInputs: [{ handle: 'start', jsonSchema: {}, nullable: false }],
       diagnostics: 0,
       executorName: 'Connector · Hacker News',
@@ -713,6 +716,7 @@ it('projects Agent tools through the shared action summary', () => {
   }
   const first = designerGraph(draft).nodes[0]
   expect(first).toMatchObject({
+    fallbackIcon: ':carbon:machine-learning-model:',
     actionSummary: { count: 2, providers: [{ id: 'gmail', icon: expect.any(String), label: 'gmail' }] },
   })
   const agent = ((draft.content.document.graph.nodes['agent'] as TaskNode).task as ManagedTaskDefinition)!
