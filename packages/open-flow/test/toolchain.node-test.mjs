@@ -65,7 +65,7 @@ test('the approved browser API binding cannot become a build compiler or spread 
       }
     }
   }
-  for (const directory of ['packages/open-flow/src', 'packages/command/src', 'apps/server/src']) await inspect(directory)
+  for (const directory of ['packages/open-flow/src', 'packages/command/src', 'apps/server/browser', 'apps/server/common', 'apps/server/node']) await inspect(directory)
   for (const member of members) {
     const pkg = await readJson(path.join(root, member))
     for (const [name, command] of Object.entries(pkg.scripts ?? {})) {
