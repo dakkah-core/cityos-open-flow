@@ -14,17 +14,17 @@
   },
   "dependencies": {
     "@oomol-lab/open-flow": "workspace:*",
-    "@wopjs/cast": "^0.1.16",
-    "val-i18n": "^0.1.14",
-    "zod": "4.6.5"
+    "@wopjs/cast": "catalog:",
+    "val-i18n": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
-    "@types/node": "^26.0.0",
-    "oxfmt": "^0.60.0",
-    "oxlint": "^1.75.0",
-    "typescript": "7.0.2",
-    "vite": "8.2.1",
-    "vitest": "^5.0.0"
+    "@types/node": "catalog:",
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
   },
   "exports": {
     ".": "./src/cli/node/command.ts",

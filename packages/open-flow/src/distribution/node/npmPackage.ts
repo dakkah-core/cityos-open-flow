@@ -1,4 +1,4 @@
-import { copyFile, cp, mkdir, writeFile } from 'node:fs/promises'
+import { copyFile, cp, mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 interface StageNpmPackageOptions {
@@ -9,17 +9,25 @@ interface StageNpmPackageOptions {
 
 export async function stageNpmPackage(options: StageNpmPackageOptions): Promise<void> {
   const { packageRoot, sourceRoot, version } = options
+  const workspace = JSON.parse(await readFile(path.resolve(sourceRoot, '../../package.json'), 'utf8')) as { catalog?: Record<string, unknown> }
+  const peers = Object.fromEntries(['effect', 'zod', 'react', 'react-dom'].map(name => {
+    const selected = workspace.catalog?.[name]
+    if (typeof selected != 'string' || !/^\d+\.\d+\.\d+$/.test(selected)) {
+      throw new Error(`Package staging requires an exact stable catalog entry for ${name}.`)
+    }
+    return [name, selected]
+  }))
   await mkdir(path.join(packageRoot, 'dist'), { recursive: true })
   await Promise.all([
     cp(path.join(sourceRoot, 'skills'), path.join(packageRoot, 'skills'), { recursive: true }),
     copyFile(path.join(sourceRoot, 'LICENSE'), path.join(packageRoot, 'LICENSE')),
     copyFile(path.join(sourceRoot, 'NOTICE'), path.join(packageRoot, 'NOTICE')),
     writeFile(path.join(packageRoot, 'README.md'), renderReadme()),
-    writeFile(path.join(packageRoot, 'package.json'), `${JSON.stringify(createManifest(version), undefined, 2)}\n`),
+    writeFile(path.join(packageRoot, 'package.json'), `${JSON.stringify(createManifest(version, peers), undefined, 2)}\n`),
   ])
 }
 
-function createManifest(version: string): object {
+function createManifest(version: string, peerDependencies: Readonly<Record<string, string>>): object {
   return {
     name: '@oomol-lab/open-flow',
     version,
@@ -137,12 +145,7 @@ function createManifest(version: string): object {
       },
     },
     files: ['dist', 'skills', 'README.md', 'NOTICE', 'LICENSE'],
-    peerDependencies: {
-      'effect': '4.0.0-rc.112',
-      'zod': '^4.6.5',
-      'react': '^18.3.1 || ^19.0.0',
-      'react-dom': '^18.3.1 || ^19.0.0',
-    },
+    peerDependencies,
     sideEffects: ['**/*.css'],
     publishConfig: {
       access: 'public',
