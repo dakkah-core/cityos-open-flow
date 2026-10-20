@@ -109,6 +109,45 @@ function access(flowId: string) {
   }
 }
 
+it('opens a direct Flow route without loading the catalog, then loads the list on return', async () => {
+  const { client, store, navigation, navigate, list } = catalogSession('direct-flow')
+  const page = Promise.withResolvers<Awaited<ReturnType<WorkbenchClient['listFlows']>>>()
+  list.mockReturnValue(page.promise)
+  const watch = vi.spyOn(client, 'watchFlowCatalog')
+  vi.spyOn(client, 'getConnectorAccess').mockResolvedValue(access('direct-flow'))
+  try {
+    await navigation.start()
+
+    expect(navigation.$.ready.value).toBe(true)
+    expect(store.workspace.$.draft.value?.flowId).toBe('direct-flow')
+    expect(store.workspace.$.flow.value?.name).toBe('direct-flow')
+    expect(client.getEditor).toHaveBeenCalledExactlyOnceWith('direct-flow')
+    expect(list).not.toHaveBeenCalled()
+    expect(watch).not.toHaveBeenCalled()
+    expect(navigate).not.toHaveBeenCalled()
+
+    const opening = navigation.openFlows()
+    await vi.waitFor(() => expect(list).toHaveBeenCalledOnce())
+    expect(store.workspace.$.flowLoading.value).toBe(true)
+    expect(watch).toHaveBeenCalledOnce()
+    page.resolve({ flows: [], total: 0, version: 1 })
+    await opening
+    expect(store.workspace.$.flowId.value).toBeUndefined()
+    expect(store.workspace.$.flowLoading.value).toBe(false)
+    expect(store.workspace.$.flows.value).toEqual([])
+    expect(navigate).toHaveBeenLastCalledWith({ flowId: undefined, view: 'design' }, { replace: false })
+
+    await navigation.selectFlow({ flowId: 'direct-flow' })
+    await navigation.openFlows()
+    expect(list).toHaveBeenCalledOnce()
+    expect(watch).toHaveBeenCalledOnce()
+  } finally {
+    page.resolve({ flows: [], version: 1 })
+    navigation.dispose()
+    store.dispose()
+  }
+})
+
 describe('Trigger creation permissions', () => {
   const definition: TriggerKeySnapshot = {
     configInputs: [],
@@ -569,20 +608,25 @@ describe('Flow creation notifications', () => {
     }
   })
 
-  it('does not replace an initial detail route with a creation received during startup', async () => {
-    const { store, navigation, navigate, list, emit } = catalogSession('existing-flow')
-    const loading = Promise.withResolvers<Awaited<ReturnType<WorkbenchClient['listFlows']>>>()
-    list.mockReturnValueOnce(loading.promise)
+  it('does not replace a detail route with a creation received while the editor is loading', async () => {
+    const { client, store, navigation, navigate, emit } = catalogSession('existing-flow')
+    const loading = Promise.withResolvers<void>()
+    const read = vi.mocked(client.getEditor).getMockImplementation()!
+    vi.mocked(client.getEditor).mockImplementationOnce(async (flowId) => {
+      await loading.promise
+      return await read(flowId)
+    })
     try {
+      await store.workspace.start()
       const started = navigation.start()
-      await vi.waitFor(() => expect(list).toHaveBeenCalled())
+      await vi.waitFor(() => expect(client.getEditor).toHaveBeenCalled())
       emit({ kind: 'flow.created', flowId: 'new-flow', version: 1 })
-      loading.resolve({ flows: [], version: 1 })
+      loading.resolve()
       await started
       expect(store.workspace.$.flowId.value).toBe('existing-flow')
       expect(navigate).not.toHaveBeenCalled()
     } finally {
-      loading.resolve({ flows: [], version: 1 })
+      loading.resolve()
       navigation.dispose()
       store.dispose()
     }

@@ -172,9 +172,14 @@ export class WorkspaceStore {
   }
 
   public async start(flowId?: string): Promise<void> {
-    const current = this.#draftSession.capture()
-    let initialLoad: Promise<void> | undefined
     this.#started = false
+    await this.selectFlow(flowId)
+    this.#started = !this.#disposed
+  }
+
+  async #loadFlowCatalog(): Promise<void> {
+    if (this.#flows.loaded && this.#stopCatalogWatch != null) return
+    let initialLoad: Promise<void> | undefined
     if (this.#stopCatalogWatch == null) {
       const subscription = this.#client.watchFlowCatalog((event) => {
         if (this.#disposed) return
@@ -193,8 +198,6 @@ export class WorkspaceStore {
     if (this.#disposed) return
     initialLoad = this.reloadFlows()
     await initialLoad
-    if (!this.#disposed && current()) await this.selectFlow(flowId)
-    this.#started = !this.#disposed
   }
 
   public async reloadFlows(): Promise<void> {
@@ -244,7 +247,10 @@ export class WorkspaceStore {
       workspaceLoading: flowId != null,
       workspaceRepairing: false,
     })
-    if (flowId == null) return true
+    if (flowId == null) {
+      await this.#loadFlowCatalog()
+      return true
+    }
     try {
       let invalidated = false
       let pendingRevision: string | undefined
@@ -342,16 +348,22 @@ export class WorkspaceStore {
 
   public async repairWorkspace(): Promise<void> {
     const flowId = this.#model.value.flowId
-    const flow = flowId == null ? undefined : this.#flows.flow(flowId)
-    if (flowId == null || flow == null || this.#model.value.workspaceRepairing) return
-    const repair = (this.#pendingRepair ??= { changeId: this.#identity(), expectedRevisionId: flow.draftRevisionId })
+    if (flowId == null || this.#model.value.workspaceRepairing) return
+    const current = this.#draftSession.capture()
     this.#set({ workspaceRepairing: true, workspaceLoadProblem: this.#model.value.workspaceLoadProblem })
     try {
+      let repair = this.#pendingRepair
+      if (repair == null) {
+        const flow = this.#flows.flow(flowId) ?? (await this.#client.getFlow(flowId))
+        if (!current()) return
+        repair = this.#pendingRepair = { changeId: this.#identity(), expectedRevisionId: flow.draftRevisionId }
+      }
       await this.#client.repairDraft(flowId, repair.expectedRevisionId, repair.changeId)
+      if (!current()) return
       this.#pendingRepair = undefined
       await this.selectFlow(flowId)
     } catch (error) {
-      if (this.#disposed) return
+      if (this.#disposed || !current()) return
       if (error instanceof ApiError && error.code == controlErrorCode.flowRevisionConflict) {
         this.#pendingRepair = undefined
         await this.selectFlow(flowId)
