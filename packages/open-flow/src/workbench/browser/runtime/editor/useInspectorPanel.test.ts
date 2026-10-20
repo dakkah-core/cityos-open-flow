@@ -66,6 +66,16 @@ function fixture(saved: string | null = null) {
 }
 
 describe('inspector navigation', () => {
+  it('reveals properties automatically without changing the saved visibility preference', () => {
+    const f = fixture('false')
+    f.render().activate(['a'])
+    f.render().revealInspector()
+    expect(f.render().open).toBe(true)
+    expect(f.render().page).toBe('properties')
+    expect(f.preferences.setItem).not.toHaveBeenCalled()
+    f.render().close()
+    expect(f.render().open).toBe(false)
+  })
   it('keeps a closed inspector closed for selection and persists only explicit opening', () => {
     const f = fixture()
     f.render().activate(['a'])

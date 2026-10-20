@@ -174,6 +174,20 @@ function Gallery({ dark, language, log }: { dark: boolean; language: UiLanguage;
   const i18n = useMemo(() => createI18n(language), [language])
   useEffect(() => {
     const { client, flowId } = createInspectorTransport(log, content, {
+      checkDiagnostics: (draftContent) =>
+        Object.entries(draftContent.document.graph.nodes).flatMap(([nodeId, node]) =>
+          node.kind == 'task' && 'executor' in node.task && node.task.executor.kind == 'workflow' && !node.task.executor.flowId
+            ? [
+                {
+                  code: 'workflow.target-required',
+                  column: 0,
+                  line: 1,
+                  message: 'Select a target workflow.',
+                  path: `/document/graph/nodes/${nodeId}/task/executor/flowId`,
+                },
+              ]
+            : [],
+        ),
       access: !oomol
         ? { accessRevision: 0, bindings: [], mode: 'implicit', sharedAccessDigest: 'implicit', version: 1 }
         : {
@@ -293,6 +307,6 @@ export const inspectorPanelStory: FrontendStory = {
   title: 'Properties Panel',
   standalone: true,
   description:
-    'Inspect independent Code Actions, Action removal, and account selection. Shared permission controls and configuration links are currently hidden; explicit shared and legacy fixtures remain for implementation coverage. Check collapsed Actions with account summaries, expanded Actions missing accounts, default account selection on add, empty Actions, and long labels at narrow width in both themes.',
+    'Close the inspector and add Call Workflow to check that its missing target opens properties after validation. Close it again and add Fixed Values to check that a valid node preserves visibility. Inspect independent Code Actions, Action removal, and account selection. Shared permission controls and configuration links are currently hidden; explicit shared and legacy fixtures remain for implementation coverage. Check collapsed Actions with account summaries, expanded Actions missing accounts, default account selection on add, empty Actions, and long labels at narrow width in both themes.',
   render: (log, dark, language) => <Gallery dark={dark} language={language} log={log} />,
 }

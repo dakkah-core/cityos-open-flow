@@ -309,6 +309,19 @@ export function FlowEditor({
     onSelectNodes: (ids) => store.selectNodes(ids),
   })
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false)
+  const [addedNode, setAddedNode] = useState<{ readonly flowId: string; readonly nodeId: string }>()
+  const connectorSetupPending = useVal(store.$.connectorSetupPending)
+  useEffect(() => {
+    if (addedNode == null) return
+    if (addedNode.flowId != flowId || selectedNodeIds.length != 1 || selectedNodeIds[0] != addedNode.nodeId) {
+      setAddedNode(undefined)
+      return
+    }
+    // Creation saves before its asynchronous validation and account setup finish.
+    if (checkLoading || connectorSetupPending || diagnostics == null || diagnostics.revisionId != draft?.revisionId) return
+    setAddedNode(undefined)
+    if (diagnosticItems.some((item) => item.location?.nodeId == addedNode.nodeId)) panel.revealInspector()
+  }, [addedNode, flowId, selectedNodeIds, checkLoading, connectorSetupPending, diagnostics, draft?.revisionId, diagnosticItems])
   useEffect(() => {
     if (runInputRequest != null || diagnosticItems.length == 0) setDiagnosticsOpen(false)
   }, [runInputRequest, diagnosticItems.length])
@@ -548,7 +561,10 @@ export function FlowEditor({
         annotationContext={canvasAnnotations(flowId, draft, workspaceStatus, moduleEditor?.status, history.failed)}
         onAddNode={async (option, position, connection) => {
           const nodeId = await store.addNode(option, position, connection)
-          if (nodeId != null && panel.open) panel.activate([nodeId])
+          if (nodeId != null && flowId != null && store.workspace.$.flowId.value == flowId) {
+            setAddedNode({ flowId, nodeId })
+            if (panel.open) panel.activate([nodeId])
+          }
           return nodeId
         }}
         onConnect={(edge) => void store.workspace.connect(edge)}

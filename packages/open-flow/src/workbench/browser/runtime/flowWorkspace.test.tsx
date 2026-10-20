@@ -70,6 +70,7 @@ function renderWorkspace(busy?: string, withTrigger = true, invalid = false, sel
     preferences: { getItem: (key: string) => mocks.preferences.get(key) ?? null, setItem: (key: string, stored: string) => mocks.preferences.set(key, stored) },
     $: {
       busy: value(busy),
+      connectorSetupPending: value(false),
       variableNames: value([]),
       variableNamesLoaded: value(false),
       variableNamesLoading: value(false),
@@ -386,8 +387,47 @@ describe('FlowWorkspace run drawer', () => {
 
     expect(await designer.props.onAddNode(option, position)).toBe(nodeId)
     expect(store.addNode).toHaveBeenCalledWith(option, position, undefined)
-    expect(mocks.setOpen).not.toHaveBeenCalled()
+    expect(mocks.setOpen.mock.calls).toEqual(nodeId == null ? [] : [[{ flowId: 'flow', nodeId }]])
   })
+
+  it.each([
+    { name: 'new node errors', nodeId: 'new-node', revisionId: 'revision', loading: false, setup: false, reveal: true, finished: true },
+    { name: 'valid new node', nodeId: undefined, revisionId: 'revision', loading: false, setup: false, reveal: false, finished: true },
+    { name: 'unrelated errors', nodeId: 'start', revisionId: 'revision', loading: false, setup: false, reveal: false, finished: true },
+    { name: 'stale diagnostics', nodeId: 'new-node', revisionId: 'old-revision', loading: false, setup: false, reveal: false, finished: false },
+    { name: 'pending validation', nodeId: 'new-node', revisionId: 'revision', loading: true, setup: false, reveal: false, finished: false },
+    { name: 'pending account setup', nodeId: 'new-node', revisionId: 'revision', loading: false, setup: true, reveal: false, finished: false },
+  ])('handles $name after node creation', ({ nodeId, revisionId, loading, setup, reveal, finished }) => {
+    const addedNode = { flowId: 'flow', nodeId: 'new-node' }
+    mocks.stateValues.set(7, addedNode)
+    const { editor, store } = renderWorkspace(undefined, true, true, ['new-node'])
+    Object.assign(store.$.diagnostics, { value: { revisionId, valid: false } })
+    Object.assign(store.$.diagnosticItems, { value: nodeId == null ? [] : [{ location: { nodeId, section: 'node' } }] })
+    Object.assign(store.workspace.$.checkLoading, { value: loading })
+    Object.assign(store.$, { connectorSetupPending: value(setup) })
+    FlowEditor(editor.props as Parameters<typeof FlowEditor>[0])
+    mocks.setOpen.mockClear()
+
+    const [effect] = vi.mocked(useEffect).mock.calls.find(([, dependencies]) => dependencies?.includes(addedNode))!
+    effect()
+
+    expect(mocks.setOpen.mock.calls).toEqual(finished ? (reveal ? [[undefined], [true], ['properties']] : [[undefined]]) : [])
+    expect(mocks.preferences.has('open-flow:inspector-open')).toBe(false)
+  })
+
+  it.each([{ selection: [] }, { selection: ['start'] }, { selection: ['new-node', 'start'] }])(
+    'cancels automatic reveal when selection changes to $selection',
+    ({ selection }) => {
+      const addedNode = { flowId: 'flow', nodeId: 'new-node' }
+      mocks.stateValues.set(7, addedNode)
+      const { editor } = renderWorkspace(undefined, true, true, selection)
+      FlowEditor(editor.props as Parameters<typeof FlowEditor>[0])
+      mocks.setOpen.mockClear()
+      const [effect] = vi.mocked(useEffect).mock.calls.find(([, dependencies]) => dependencies?.includes(addedNode))!
+      effect()
+      expect(mocks.setOpen.mock.calls).toEqual([[undefined]])
+    },
+  )
 
   it('switches an open inspector to the added node properties', async () => {
     mocks.stateValues.set(3, true)
