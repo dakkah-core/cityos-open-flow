@@ -65,7 +65,7 @@ function retryButton() {
   return [...container.querySelectorAll('button')].find((button) => button.textContent === session.i18n.t('inspector.task.retrySave'))
 }
 it('keeps failed Agent edits retryable without an inline operation error or duplicate notification', async () => {
-  vi.spyOn(session.store, 'saveTaskSettings').mockImplementationOnce(async () => {
+  vi.spyOn(session.store.nodes, 'saveTaskSettings').mockImplementationOnce(async () => {
     session.store.notify({ kind: 'error', message: 'Save unavailable' })
     return false
   })
@@ -81,7 +81,7 @@ it('keeps failed Agent edits retryable without an inline operation error or dupl
   expect(log.mock.calls.filter(([event]) => event === 'inspector.notice')).toEqual([['inspector.notice', { kind: 'error', message: 'Save unavailable' }]])
 })
 it('keeps invalid model feedback at the field and does not send a save request', async () => {
-  const save = vi.spyOn(session.store, 'saveTaskSettings')
+  const save = vi.spyOn(session.store.nodes, 'saveTaskSettings')
   await editModel('')
   expect(container.querySelector<HTMLInputElement>('#agent-model')!.getAttribute('aria-invalid')).toBe('true')
   expect(container.textContent).toContain(session.i18n.t('agent.modelRequired'))

@@ -1084,7 +1084,7 @@ it.each(['unchanged', 'resolved', 'failed'] as const)('retains diagnostics throu
     await store.selectFlow(flow.flowId)
     await vi.waitFor(() => expect(store.$.diagnostics.value?.diagnostics).toEqual([diagnostic]))
     const previous = store.$.diagnostics.value
-    const changing = store.saveNodeTitle('value', 'Renamed input')
+    const changing = store.nodes.saveNodeTitle('value', 'Renamed input')
     expect(store.$.diagnostics.value).toBe(previous)
     saved.resolve(Response.json({ revision: { ...draft, revisionId: 'revision-2', parentRevisionId: 'revision-1' }, version: 1 }))
     await changing

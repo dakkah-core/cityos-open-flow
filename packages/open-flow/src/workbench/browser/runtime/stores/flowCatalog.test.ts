@@ -1,3 +1,5 @@
+import type { WorkflowFile } from '../../../../flow/common/workflowFile.ts'
+
 import { afterEach, expect, it, vi } from 'vitest'
 import { ApiError, WorkbenchClient } from '../api.ts'
 import { createI18n } from '../i18n.ts'
@@ -28,6 +30,115 @@ const operation = {
 } as const
 
 afterEach(() => vi.useRealTimers())
+
+it.each(['local', 'host'] as const)('imports a Flow through the %s and updates the catalog once', async (source) => {
+  const client = new WorkbenchClient(vi.fn())
+  const catalog = new FlowCatalog(client, vi.fn(), createI18n())
+  const file: WorkflowFile = {
+    kind: 'open-flow-workflow',
+    version: 1,
+    content: { modelVersion: 6, modules: {}, document: { bindings: {}, graph: { nodes: {}, edges: [] } } },
+  }
+  const importFlow = vi.spyOn(client, 'importFlow').mockResolvedValue(flow)
+  const getFlow = vi.spyOn(client, 'getFlow').mockResolvedValue(flow)
+  const importer = vi.fn(async () => flow.flowId)
+  vi.spyOn(client, 'listFlows').mockResolvedValue({ version: 1, flows: [], total: 0 })
+  try {
+    await catalog.reload()
+    expect(await catalog.import(file, flow.name, 'import-key', source == 'host' ? importer : undefined)).toEqual(flow)
+    if (source == 'host') {
+      expect(importer).toHaveBeenCalledWith(file, flow.name, 'import-key')
+      expect(getFlow).toHaveBeenCalledWith(flow.flowId)
+      expect(importFlow).not.toHaveBeenCalled()
+    } else {
+      expect(importFlow).toHaveBeenCalledWith(file, { name: flow.name, idempotencyKey: 'import-key' })
+      expect(getFlow).not.toHaveBeenCalled()
+    }
+    await catalog.import(file, flow.name, 'import-key', source == 'host' ? importer : undefined)
+    expect(catalog.$.flows.value).toEqual([flow])
+    expect(catalog.$.total.value).toBe(1)
+  } finally {
+    catalog.dispose()
+  }
+})
+
+it('keeps a failed rename intact and applies the trimmed authoritative result after retry', async () => {
+  const client = new WorkbenchClient(vi.fn())
+  const notice = vi.fn()
+  const catalog = new FlowCatalog(client, notice, createI18n())
+  const rename = vi
+    .spyOn(client, 'renameFlow')
+    .mockRejectedValueOnce(new Error('Unavailable'))
+    .mockResolvedValue({ ...flow, name: 'Renamed' })
+  catalog.include(flow)
+  try {
+    expect(await catalog.rename(flow.flowId, '   ')).toBe(false)
+    expect(await catalog.rename(flow.flowId, ` ${flow.name} `)).toBe(true)
+    expect(rename).not.toHaveBeenCalled()
+    expect(await catalog.rename(flow.flowId, ' Renamed ')).toBe(false)
+    expect(catalog.flow(flow.flowId)).toEqual(flow)
+    expect(notice).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'error' }))
+    expect(await catalog.rename(flow.flowId, ' Renamed ')).toBe(true)
+    expect(rename).toHaveBeenLastCalledWith(flow.flowId, 'Renamed')
+    expect(catalog.flow(flow.flowId)?.name).toBe('Renamed')
+    expect(notice).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'success' }))
+  } finally {
+    catalog.dispose()
+  }
+})
+
+it('retains a Flow after failed deletion and removes it only after acceptance', async () => {
+  const client = new WorkbenchClient(vi.fn())
+  const notice = vi.fn()
+  const catalog = new FlowCatalog(client, notice, createI18n())
+  const remove = vi
+    .spyOn(client, 'deleteFlow')
+    .mockRejectedValueOnce(new Error('Unavailable'))
+    .mockResolvedValue({ ...flow, status: 'retiring' })
+  vi.spyOn(client, 'listFlows').mockResolvedValue({ version: 1, flows: [{ ...flow, status: 'retiring', referenceCount: 0 }], total: 1 })
+  try {
+    await catalog.reload()
+    expect(await catalog.delete(flow.flowId)).toBe(false)
+    expect(remove).not.toHaveBeenCalled()
+    catalog.include(flow)
+    expect(await catalog.delete(flow.flowId)).toBe(false)
+    expect(catalog.flow(flow.flowId)).toEqual({ ...flow, referenceCount: 0 })
+    expect(catalog.$.total.value).toBe(1)
+    expect(notice).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'error' }))
+    expect(await catalog.delete(flow.flowId)).toBe(true)
+    expect(remove).toHaveBeenLastCalledWith(flow.flowId)
+    expect(catalog.$.flows.value).toEqual([])
+    expect(catalog.$.total.value).toBe(0)
+    expect(notice).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'success' }))
+  } finally {
+    catalog.dispose()
+  }
+})
+
+it.each(['create', 'rename', 'delete'] as const)('ignores a pending %s result after disposal', async (action) => {
+  const client = new WorkbenchClient(vi.fn())
+  const notice = vi.fn()
+  const catalog = new FlowCatalog(client, notice, createI18n())
+  const pending = Promise.withResolvers<void>()
+  vi.spyOn(client, 'createFlow').mockImplementation(async () => {
+    await pending.promise
+    return flow
+  })
+  vi.spyOn(client, 'renameFlow').mockImplementation(async () => {
+    await pending.promise
+    return { ...flow, name: 'Renamed' }
+  })
+  vi.spyOn(client, 'deleteFlow').mockImplementation(async () => {
+    await pending.promise
+    return { ...flow, status: 'retiring' }
+  })
+  catalog.include(flow)
+  const saving = action == 'create' ? catalog.create(flow.name) : action == 'rename' ? catalog.rename(flow.flowId, 'Renamed') : catalog.delete(flow.flowId)
+  catalog.dispose()
+  pending.resolve()
+  expect(await saving).toBe(action == 'create' ? undefined : false)
+  expect(notice).not.toHaveBeenCalled()
+})
 
 it('advances the draft and its resource references together while preserving shared access', () => {
   const catalog = new FlowCatalog(new WorkbenchClient(vi.fn()), vi.fn(), createI18n())

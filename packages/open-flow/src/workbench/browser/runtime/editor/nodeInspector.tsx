@@ -183,7 +183,7 @@ function inputUpstreamSources({
       store == null
         ? undefined
         : (source) => {
-            void store.setInputSource(selection.id, handleName, source)
+            void store.nodes.setInputSource(selection.id, handleName, source)
           },
   }
 }
@@ -294,7 +294,7 @@ export function NodeInspector({
           disabled: disabled || readOnly,
           load: (flowId: string, signal?: AbortSignal) => store!.loadWorkflowContract(flowId, signal),
           onSave: (before: typeof task, value: typeof task) =>
-            store?.saveTaskSettings(selection.id, { kind: 'workflow', name: value.name, before, task: value }) ?? Promise.resolve(false),
+            store?.nodes.saveTaskSettings(selection.id, { kind: 'workflow', name: value.name, before, task: value }) ?? Promise.resolve(false),
         }
       : undefined
   const workflowActions = useWorkflowActions(workflowSettings)
@@ -377,7 +377,7 @@ export function NodeInspector({
             placeholder={nodePurposePlaceholder(selection, t, connectorAction, triggerDisplays)}
             disabled={disabled}
             onSave={(description) => {
-              void store?.saveNodeDescription(selection.id, description)
+              void store?.nodes.saveNodeDescription(selection.id, description)
             }}
           />
         )}
@@ -425,17 +425,17 @@ export function NodeInspector({
               readOnly={readOnly}
               key={`config:${selection.id}`}
               onReset={() => {
-                return store?.resetTriggerConfig(selection.id)
+                return store?.nodes.resetTriggerConfig(selection.id)
               }}
               onResetValue={(name) => {
-                void store?.resetTriggerConfig(selection.id, [name])
+                void store?.nodes.resetTriggerConfig(selection.id, [name])
               }}
               inputs={presentProviderTriggerConfig(selection.trigger.definition.configInputs, triggerDisplays?.[selection.trigger.definition.key])}
               fieldLabels={triggerDisplays?.[selection.trigger.definition.key]?.configInputLabels}
               config={selection.trigger.config}
               disabled={disabled}
               onChange={(name, value) => {
-                void store?.saveTriggerConfig(selection.id, name, value)
+                void store?.nodes.saveTriggerConfig(selection.id, name, value)
               }}
             />
           ))}
@@ -465,7 +465,7 @@ export function NodeInspector({
               disabled={disabled}
               values={selection.trigger.inputDefs}
               onChange={(parameters, deletion) => {
-                void store?.saveStartInputDefs(selection.id, parameters, deletion)
+                void store?.nodes.saveStartInputDefs(selection.id, parameters, deletion)
               }}
             />
           </section>
@@ -488,7 +488,7 @@ export function NodeInspector({
             disabled={disabled}
             outputSection={<TriggerSummary trigger={selection.trigger} />}
             onChange={(settings, deletion) => {
-              void store?.saveWebhook(selection.id, settings, deletion)
+              void store?.nodes.saveWebhook(selection.id, settings, deletion)
             }}
           />
         )}
@@ -499,7 +499,7 @@ export function NodeInspector({
             disabled={disabled}
             collapsible={selection.trigger.kind === 'poll'}
             onChange={(schedule) => {
-              void store?.saveTriggerSchedule(selection.id, schedule)
+              void store?.nodes.saveTriggerSchedule(selection.id, schedule)
             }}
           />
         )}
@@ -509,7 +509,7 @@ export function NodeInspector({
             task={task}
             disabled={disabled}
             onSave={(before, value, deletion) =>
-              store?.saveTaskSettings(selection.id, { kind: 'decision', name: task.name, before, task: value }, deletion) ?? Promise.resolve(false)
+              store?.nodes.saveTaskSettings(selection.id, { kind: 'decision', name: task.name, before, task: value }, deletion) ?? Promise.resolve(false)
             }
           />
         )}
@@ -569,10 +569,10 @@ export function NodeInspector({
                         })}
                         variables={variables}
                         onValue={(value, deletion) => {
-                          void store?.setInputValue(selection.id, definition.handle, value, deletion)
+                          void store?.nodes.setInputValue(selection.id, definition.handle, value, deletion)
                         }}
                         onVariable={(name) => {
-                          void store?.setInputVariable(selection.id, definition.handle, name)
+                          void store?.nodes.setInputVariable(selection.id, definition.handle, name)
                         }}
                       />
                     </Field>
@@ -582,7 +582,7 @@ export function NodeInspector({
             disabled={disabled}
             load={(url, signal) => store!.loadOpenApiDocument(url, signal)}
             onSave={(before, value) =>
-              store?.saveTaskSettings(selection!.id, { kind: 'openapi', name: task.name, before, task: value }) ?? Promise.resolve(false)
+              store?.nodes.saveTaskSettings(selection!.id, { kind: 'openapi', name: task.name, before, task: value }) ?? Promise.resolve(false)
             }
           />
         )}
@@ -632,12 +632,13 @@ export function NodeInspector({
                         value={inputValue(mapping, definition.value)}
                         disabled={disabled}
                         onChange={(value) => {
-                          void store?.setInputValue(selection.id, definition.handle, value)
+                          void store?.nodes.setInputValue(selection.id, definition.handle, value)
                         }}
                       />
                     ) : undefined,
                   value: inputValue(mapping, definition.value),
-                  onReset: definition.value !== undefined && mapping != null ? () => void store?.resetInputs(selection.id, [definition.handle]) : undefined,
+                  onReset:
+                    definition.value !== undefined && mapping != null ? () => void store?.nodes.resetInputs(selection.id, [definition.handle]) : undefined,
                   connected: mapping?.kind === 'sources' && binding?.kind !== 'variable',
                   variableName: binding?.kind === 'variable' ? binding.target : undefined,
                 }
@@ -652,7 +653,7 @@ export function NodeInspector({
                 entries={entries}
                 fieldLabels={connector?.action == 'leina.send_notification' ? { leinaId: t('leina.robot'), message: t('leina.message') } : undefined}
                 onReset={() => {
-                  return store?.resetInputs(
+                  return store?.nodes.resetInputs(
                     selection.id,
                     entries.flatMap((entry) => ('group' in entry ? [] : [entry.definition.handle])),
                   )
@@ -660,7 +661,7 @@ export function NodeInspector({
                 onDefinitions={
                   selection.kind === 'outputs'
                     ? (outputDefinitions, deletion, values) => {
-                        void store?.saveOutputsDefs(
+                        void store?.nodes.saveOutputsDefs(
                           selection.id,
                           outputDefinitions.filter((port): port is InputPort => 'handle' in port),
                           deletion,
@@ -669,11 +670,11 @@ export function NodeInspector({
                       }
                     : selection.kind === 'task' && selection.definition != null && ('moduleId' in selection.node.task || isAgent)
                       ? (inputs, deletion, values) => {
-                          void store?.saveTaskPorts(selection.id, { inputs, outputs: selection.definition!.outputs }, deletion, values)
+                          void store?.nodes.saveTaskPorts(selection.id, { inputs, outputs: selection.definition!.outputs }, deletion, values)
                         }
                       : selection.kind === 'wait' || selection.kind === 'approval'
                         ? (inputs, deletion, values) => {
-                            void store?.saveResolution(
+                            void store?.nodes.saveResolution(
                               selection.id,
                               {
                                 name: selection.node.name,
@@ -690,10 +691,10 @@ export function NodeInspector({
                 variables={variables}
                 disabled={disabled}
                 onValue={(handle, value, deletion) => {
-                  void store?.setInputValue(selection.id, handle, value, deletion)
+                  void store?.nodes.setInputValue(selection.id, handle, value, deletion)
                 }}
                 onVariable={(handle, name) => {
-                  void store?.setInputVariable(selection.id, handle, name)
+                  void store?.nodes.setInputVariable(selection.id, handle, name)
                 }}
               />
             )
@@ -715,7 +716,9 @@ export function NodeInspector({
                           definition,
                           value: inputValue(mapping, definition.value),
                           onReset:
-                            definition.value !== undefined && mapping != null ? () => void store?.resetInputs(selection.id, [definition.handle]) : undefined,
+                            definition.value !== undefined && mapping != null
+                              ? () => void store?.nodes.resetInputs(selection.id, [definition.handle])
+                              : undefined,
                           connected: mapping?.kind === 'sources' && binding?.kind !== 'variable',
                           variableName: binding?.kind === 'variable' ? binding.target : undefined,
                         }
@@ -724,7 +727,7 @@ export function NodeInspector({
                       disabled={disabled}
                       reservedNames={selection.definition.inputs.flatMap((port) => ('handle' in port ? [port.handle] : []))}
                       onDefinitions={(inputs, deletion, values) => {
-                        void store?.saveTaskAdditionalInputs(
+                        void store?.nodes.saveTaskAdditionalInputs(
                           selection.id,
                           inputs.filter((port): port is InputPort => 'handle' in port),
                           deletion,
@@ -732,10 +735,10 @@ export function NodeInspector({
                         )
                       }}
                       onValue={(handle, value, deletion) => {
-                        void store?.setInputValue(selection.id, handle, value, deletion)
+                        void store?.nodes.setInputValue(selection.id, handle, value, deletion)
                       }}
                       onVariable={(handle, name) => {
-                        void store?.setInputVariable(selection.id, handle, name)
+                        void store?.nodes.setInputVariable(selection.id, handle, name)
                       }}
                       renderSource={(handle) => inputUpstreamSources({ revision, sourceNodeIcons, selection, store, handleName: handle, t, triggerDisplays })}
                     />
@@ -755,10 +758,10 @@ export function NodeInspector({
             variableName={(source) => (source.kind === 'binding' ? revision.binding(source.bindingId)?.target : undefined)}
             sourceType={(source) => revision.sourceType(source)}
             onVariable={(handle, name) => {
-              void store?.setInputVariable(selection.id, handle, name)
+              void store?.nodes.setInputVariable(selection.id, handle, name)
             }}
             onChange={(settings, deletion) => {
-              void store?.saveCondition(selection.id, settings, deletion)
+              void store?.nodes.saveCondition(selection.id, settings, deletion)
             }}
           />
         )}
@@ -770,7 +773,7 @@ export function NodeInspector({
               values={selection.node.values}
               disabled={disabled}
               onChange={(values, deletion) => {
-                void store?.saveValue(selection.id, values, deletion)
+                void store?.nodes.saveValue(selection.id, values, deletion)
               }}
             />
           </div>
@@ -786,7 +789,7 @@ export function NodeInspector({
               values={presentDecisionOutputs(selection.definition, t)}
               disabled={disabled || !('moduleId' in selection.node.task || isAgent)}
               onChange={(outputs, deletion) => {
-                void store?.saveTaskPorts(selection.id, { inputs: selection.definition!.inputs, outputs }, deletion)
+                void store?.nodes.saveTaskPorts(selection.id, { inputs: selection.definition!.inputs, outputs }, deletion)
               }}
             />
           </section>

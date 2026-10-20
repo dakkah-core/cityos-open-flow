@@ -593,10 +593,10 @@ export function FlowEditor({
                   disabled: authoringDisabled,
                   fallback: <Icon name={inspectorIcon(selection)} />,
                   onRename: (name) => {
-                    void store.workspace.saveNodeTitle(selection.id, name)
+                    void store.workspace.nodes.saveNodeTitle(selection.id, name)
                   },
                   onIconChange: (icon) => {
-                    void store.workspace.saveNodeIcon(selection.id, icon)
+                    void store.workspace.nodes.saveNodeIcon(selection.id, icon)
                   },
                   validate: (name) => {
                     if (revision == null) return

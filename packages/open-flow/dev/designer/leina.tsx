@@ -93,11 +93,11 @@ function Gallery({ language, dark, log }: { language: UiLanguage; dark: boolean;
       onClick: async () => {
         if (session == null) return
         await session.store.disconnect({ id: 'preview', source: 'review', target: 'notify', sourceHandle: '$branch:pending', targetHandle: '' })
-        await session.store.setInputValue('notify', 'message', undefined)
+        await session.store.nodes.setInputValue('notify', 'message', undefined)
         await session.store.connect({ source: 'review', target: 'notify', sourceHandle: '$branch:pending', targetHandle: '' })
       },
     },
-    { label: 'Clear robot', onClick: () => void session?.store.setInputValue('notify', 'leinaId', undefined) },
+    { label: 'Clear robot', onClick: () => void session?.store.nodes.setInputValue('notify', 'leinaId', undefined) },
     { label: disabled ? 'Enable editing' : 'Disable editing', onClick: () => setDisabled(!disabled) },
     {
       label: 'Reload saved data',

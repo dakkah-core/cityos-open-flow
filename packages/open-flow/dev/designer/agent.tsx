@@ -300,7 +300,7 @@ function AgentSession({ session, dark, code }: { session: ReturnType<typeof crea
   const selection = revision?.node(code ? 'code' : 'agent')
   const setPrompt = (prompt: string) => {
     if (task == null || !('executor' in task) || task.executor.kind != 'agent') return
-    void session.workspace.saveTaskSettings('agent', {
+    void session.workspace.nodes.saveTaskSettings('agent', {
       kind: 'agent',
       name: task.name,
       before: task,

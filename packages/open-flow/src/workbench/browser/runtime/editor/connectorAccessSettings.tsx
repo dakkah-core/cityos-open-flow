@@ -262,7 +262,7 @@ export function ConnectorAccessSettings({
                             label={t('actionPicker.accountFor', { action: provider.serviceName })}
                             onChange={(connectionId) => {
                               setSelectingAccount(true)
-                              void store.workspace.setServiceConnections(providerId, connectionId, deferred ? '' : undefined).then((saved) => {
+                              void store.workspace.nodes.setServiceConnections(providerId, connectionId, deferred ? '' : undefined).then((saved) => {
                                 setSelectingAccount(false)
                                 if (saved) panel.current?.focus()
                               })

@@ -61,7 +61,7 @@ function OutputsStory({ log, dark, language }: { log: LogAction; dark: boolean; 
   useStoryActions([
     { label: 'Undo', disabled: !history?.canUndo, onClick: () => void session?.store.undo() },
     { label: 'Redo', disabled: !history?.canRedo, onClick: () => void session?.store.redo() },
-    { label: 'Empty outputs', onClick: () => void session?.store.saveOutputsDefs('outputs', []) },
+    { label: 'Empty outputs', onClick: () => void session?.store.nodes.saveOutputsDefs('outputs', []) },
     { label: 'Reload saved data', onClick: () => void session?.start().then(() => session.store.selectNodes(['outputs'])) },
     { label: 'Reset samples', onClick: () => reset((value) => value + 1) },
   ])

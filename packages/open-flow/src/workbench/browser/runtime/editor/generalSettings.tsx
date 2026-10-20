@@ -51,7 +51,7 @@ export function GeneralSettings({
     }
     setLimitError(undefined)
     if (value == node.maxExecutions) return
-    void store.saveNodeSettings(nodeId, { name: node.name, timeoutMs: node.timeoutMs, maxExecutions: value })
+    void store.nodes.saveNodeSettings(nodeId, { name: node.name, timeoutMs: node.timeoutMs, maxExecutions: value })
   }
 
   function save(source: string): void {
@@ -63,7 +63,7 @@ export function GeneralSettings({
     }
     setError(undefined)
     if (value == node.timeoutMs) return
-    void store.saveNodeSettings(nodeId, {
+    void store.nodes.saveNodeSettings(nodeId, {
       name: node.name,
       ...(node.maxExecutions == null ? {} : { maxExecutions: node.maxExecutions }),
       ...(value == null ? {} : { timeoutMs: value }),

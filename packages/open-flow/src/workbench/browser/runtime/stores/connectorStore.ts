@@ -469,7 +469,7 @@ export class ConnectorStore {
   }
 
   public async setConnection(nodeId: string, connectionId: string | undefined): Promise<boolean> {
-    return await this.#workspace.setConnectorConnection(nodeId, connectionId)
+    return await this.#workspace.nodes.setConnectorConnection(nodeId, connectionId)
   }
 
   public async refreshAfterAuthorization(): Promise<void> {
@@ -522,7 +522,7 @@ export class ConnectorStore {
       task.executor.kind == 'connector' &&
       task.executor.connectionId == null
     ) {
-      await this.#workspace.setConnectorConnection(target.nodeId, connection.connectionId)
+      await this.#workspace.nodes.setConnectorConnection(target.nodeId, connection.connectionId)
     }
   }
 

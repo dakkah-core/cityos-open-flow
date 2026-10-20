@@ -276,19 +276,19 @@ export function LinearTriggerConfig({
   const missingStates = states.options == null ? [] : selected.filter((id) => !states.options!.some((item) => item.value == id))
   return (
     <TriggerConfigEditor
-      onReset={() => store.resetTriggerConfig(nodeId)}
-      onResetValue={(name) => void store.resetTriggerConfig(nodeId, [name])}
+      onReset={() => store.nodes.resetTriggerConfig(nodeId)}
+      onResetValue={(name) => void store.nodes.resetTriggerConfig(nodeId, [name])}
       inputs={inputs}
       fieldLabels={fieldLabels}
       config={assignments}
       disabled={disabled}
-      onChange={(name, value) => void store.saveTriggerConfig(nodeId, name, value)}
+      onChange={(name, value) => void store.nodes.saveTriggerConfig(nodeId, name, value)}
       renderEditor={(input) =>
         input.handle === 'teamId' ? (
           <TeamSelect
             disabled={disabled || connectionId == null}
             missing={missingTeam}
-            onChange={(value) => void store.saveTriggerConfig(nodeId, 'teamId', value)}
+            onChange={(value) => void store.nodes.saveTriggerConfig(nodeId, 'teamId', value)}
             options={teams}
             value={teamId}
           />
@@ -296,7 +296,7 @@ export function LinearTriggerConfig({
           <StatusSelect
             disabled={disabled || connectionId == null || teamId == null || missingTeam}
             missing={missingStates}
-            onChange={(value) => void store.saveTriggerConfig(nodeId, 'stateIds', value)}
+            onChange={(value) => void store.nodes.saveTriggerConfig(nodeId, 'stateIds', value)}
             options={states}
             selected={selected}
             teamSelected={teamId != null}

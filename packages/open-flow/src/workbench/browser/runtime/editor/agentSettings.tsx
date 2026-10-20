@@ -77,7 +77,7 @@ function EditableAgentSettingsProvider({
           },
         }).document.graph.nodes.agent!
         if (decoded.kind != 'task' || !('executor' in decoded.task)) return false
-        return store.saveTaskSettings(nodeId, { kind: 'agent', name: definition.name, before: definition, task: decoded.task })
+        return store.nodes.saveTaskSettings(nodeId, { kind: 'agent', name: definition.name, before: definition, task: decoded.task })
       }),
   )
   useEffect(() => {

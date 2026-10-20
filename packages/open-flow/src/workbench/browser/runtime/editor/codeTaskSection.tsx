@@ -132,7 +132,7 @@ function EditableCodeTaskSection({
   const savePermission = async (value: ConnectorPermissionCapability) => {
     setPending(true)
     try {
-      if (!(await store.setCodeActions(selection.id, [value]))) return false
+      if (!(await store.nodes.setCodeActions(selection.id, [value]))) return false
       setPermission(value)
       return true
     } catch (cause) {

@@ -65,10 +65,10 @@ export function InspectorSamplePanel({
             return issue == null ? undefined : t(`inspector.node.${issue === 'empty' ? 'nameEmpty' : 'nameDuplicate'}`)
           },
           onRename: (name) => {
-            void store.saveNodeTitle(selection.id, name)
+            void store.nodes.saveNodeTitle(selection.id, name)
           },
           onIconChange: (value) => {
-            void store.saveNodeIcon(selection.id, value)
+            void store.nodes.saveNodeIcon(selection.id, value)
           },
         }
       }

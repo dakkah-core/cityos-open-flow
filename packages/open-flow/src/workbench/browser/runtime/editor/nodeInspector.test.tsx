@@ -62,7 +62,7 @@ function resolutionDefinition(
     disabled: false,
     revision: view as never,
     selection: { id: 'wait', kind: node.kind, node } as never,
-    store: { $: { flowId: { value: 'flow' } }, saveResolution } as never,
+    store: { $: { flowId: { value: 'flow' } }, nodes: { saveResolution } } as never,
     theme: 'light',
     triggerAuthorizationPending: false,
     triggerConnectionLoading: false,
@@ -97,7 +97,7 @@ describe('Provider input presentation', () => {
         triggers: {} as never,
         revision: { inputMappings: nodeInputMappings, graph: () => ({ nodes: { provider: node } }) } as never,
         selection: { definition: task, id: 'provider', kind: 'task', node } as never,
-        store: { $: { flowId: { value: 'flow' }, moduleEditor: { value: undefined } }, setInputValue, setInputVariable } as never,
+        store: { $: { flowId: { value: 'flow' }, moduleEditor: { value: undefined } }, nodes: { setInputValue, setInputVariable } } as never,
         theme: 'light',
       })
       const fields = find(element, (item) => item.type === NodeInputs)
@@ -284,7 +284,7 @@ describe('Provider Trigger sections', () => {
       disabled: false,
       revision: { inputMappings: nodeInputMappings, inputDefs: () => [] } as never,
       selection: { id: 'provider-trigger', kind: 'trigger', node: trigger, trigger } as never,
-      store: { $: { flowId: { value: 'flow' } }, saveTriggerConfig: vi.fn(), saveTriggerSchedule: vi.fn() } as never,
+      store: { $: { flowId: { value: 'flow' } }, nodes: { saveTriggerConfig: vi.fn(), saveTriggerSchedule: vi.fn() } } as never,
       theme: 'light',
       triggerActiveConnections: [],
       triggerAuthorizationPending: false,
@@ -313,7 +313,7 @@ describe('Webhook Trigger sections', () => {
       disabled: false,
       revision: { inputMappings: nodeInputMappings, inputDefs: () => [] } as never,
       selection: { id: 'webhook-trigger', kind: 'trigger', node: trigger, trigger } as never,
-      store: { $: { flowId: { value: 'flow' } }, saveWebhook: vi.fn() } as never,
+      store: { $: { flowId: { value: 'flow' } }, nodes: { saveWebhook: vi.fn() } } as never,
       theme: 'light',
       triggerAuthorizationPending: false,
       triggerConnectionLoading: false,
@@ -373,7 +373,7 @@ describe('Node execution settings', () => {
       disabled: false,
       revision: revision as never,
       selection: { id: 'current', kind: 'task', node, definition: { inputs: [], outputs: [], executor: { kind: 'llm', mode: 'chat' } } } as never,
-      store: { $: { flowId: { value: 'flow' } }, saveNodeSettings } as never,
+      store: { $: { flowId: { value: 'flow' } }, nodes: { saveNodeSettings } } as never,
       theme: 'light',
       triggerAuthorizationPending: false,
       triggerConnectionLoading: false,
@@ -465,7 +465,7 @@ describe('Code task sections', () => {
         definition: { moduleId: 'code', inputs: [], outputs: [], capabilities: mode == 'missing' ? [] : [{ kind: 'connector', mode, actions: [] }] },
       } as never,
       store: {
-        setCodeActions,
+        nodes: { setCodeActions },
         catalogs: { providers: { get: () => ({ value: { data: [] } }) } },
         $: { flowId: { value: 'flow' }, moduleEditor: { value: { moduleId: 'code', source: '' } } },
       } as never,
@@ -519,7 +519,7 @@ describe('Code task sections', () => {
         module: { name: 'Transform', imports: [], source: 'export default () => ({})' },
       } as never,
       store: {
-        setCodeActions,
+        nodes: { setCodeActions },
         catalogs: { providers: { get: () => ({ value: { data: [] } }) } },
         $: {
           flowId: { value: 'flow' },
@@ -723,9 +723,7 @@ describe('Node input ownership', () => {
       } as never,
       store: {
         $: { flowId: { value: 'flow' } },
-        setInputSource,
-        setInputValue,
-        setInputVariable,
+        nodes: { setInputSource, setInputValue, setInputVariable },
       } as never,
       theme: 'light',
       triggerAuthorizationPending: false,

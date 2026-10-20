@@ -124,14 +124,14 @@ export function FeishuTriggerConfig({
   return (
     <TriggerConfigEditor
       onReset={() => {
-        return store.resetTriggerConfig(nodeId)
+        return store.nodes.resetTriggerConfig(nodeId)
       }}
-      onResetValue={(name) => void store.resetTriggerConfig(nodeId, [name])}
+      onResetValue={(name) => void store.nodes.resetTriggerConfig(nodeId, [name])}
       inputs={visibleInputs}
       fieldLabels={fieldLabels}
       config={assignments}
       disabled={disabled}
-      onChange={(name, value) => void store.saveTriggerConfig(nodeId, name, value)}
+      onChange={(name, value) => void store.nodes.saveTriggerConfig(nodeId, name, value)}
       renderEditor={(input) =>
         input.handle === 'sourceId' ? (
           <div className="flex min-w-0 flex-col gap-2">
@@ -148,7 +148,7 @@ export function FeishuTriggerConfig({
                 onOpen={() => setAttempt((value) => value + 1)}
                 onChange={(value) => {
                   const source = matchingSources?.find((item) => item.sourceId == value)
-                  if (source != null) void store.setTriggerEventSource(nodeId, source)
+                  if (source != null) void store.nodes.setTriggerEventSource(nodeId, source)
                 }}
               />
             ) : (
@@ -165,7 +165,7 @@ export function FeishuTriggerConfig({
                   existingNames={sources?.map((source) => source.name) ?? []}
                   disabled={disabled || state?.key != key || state.teamId === undefined}
                   onCreated={(source) => setState((current) => (current?.key == key ? { ...current, sources: [...(current.sources ?? []), source] } : current))}
-                  onSelect={async (source) => store.$.flowId.value == flowId && (await store.setTriggerEventSource(nodeId, source))}
+                  onSelect={async (source) => store.$.flowId.value == flowId && (await store.nodes.setTriggerEventSource(nodeId, source))}
                 />
                 <Button
                   type="button"
@@ -199,7 +199,7 @@ export function FeishuTriggerConfig({
                 value={selectedEvents}
                 allowedEvents={(eventOptions ?? []).map((option) => option.value)}
                 disabled={disabled || eventOptions == null}
-                onChange={(value) => void store.saveTriggerConfig(nodeId, 'eventTypes', value)}
+                onChange={(value) => void store.nodes.saveTriggerConfig(nodeId, 'eventTypes', value)}
               />
               <p className="m-0 text-xs text-muted-foreground">{t('eventSources.sourceEventsHint')}</p>
             </div>
@@ -215,7 +215,7 @@ export function FeishuTriggerConfig({
             events={selectedEvents}
             managed={selectedSource?.manageSubscriptions ?? false}
             disabled={disabled || selectedSource == null}
-            onChange={(name, value) => void store.saveTriggerConfig(nodeId, name, value)}
+            onChange={(name, value) => void store.nodes.saveTriggerConfig(nodeId, name, value)}
           />
         ) : undefined
       }

@@ -242,7 +242,7 @@ describe('code autosave', () => {
     })
     const request = vi.spyOn(store.runRequests, action == 'run' ? 'requestDraft' : 'editDraft').mockResolvedValue('unavailable')
     try {
-      const changing = workspace.saveNodeTitle('a', 'Edited A')
+      const changing = workspace.nodes.saveNodeTitle('a', 'Edited A')
       const running = action == 'run' ? store.requestDraftRun('start') : store.editDraftRunInputs('start')
       await Promise.resolve()
       expect(request).not.toHaveBeenCalled()
@@ -267,7 +267,7 @@ describe('code autosave', () => {
     })
     const request = vi.spyOn(store.runRequests, 'requestDraft').mockResolvedValue('unavailable')
     try {
-      const changing = workspace.saveNodeTitle('a', 'Unsaved A')
+      const changing = workspace.nodes.saveNodeTitle('a', 'Unsaved A')
       const running = store.requestDraftRun('start')
       held.resolve()
       await changing
@@ -357,7 +357,7 @@ it('waits for a pending parameter save when confirming an open Run form and reop
       return realChange(...args)
     })
     const createRun = vi.spyOn(client, 'createDraftRun')
-    const changing = workspace.saveStartInputDefs(startId, [{ handle: 'note', jsonSchema: {}, nullable: false }])
+    const changing = workspace.nodes.saveStartInputDefs(startId, [{ handle: 'note', jsonSchema: {}, nullable: false }])
     await entered.promise
     const confirming = store.runRequests.confirmInputs()
     await Promise.resolve()

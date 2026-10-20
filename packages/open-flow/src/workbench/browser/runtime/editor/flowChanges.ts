@@ -1,3 +1,4 @@
+import type { EventSource } from '../../../../control/common/api.ts'
 import type { AgentInput, AgentTool, ManagedTaskDefinition } from '../../../../flow/common/change.ts'
 import type {
   ChangeOperation,
@@ -16,10 +17,11 @@ import type { ConnectorActionView } from '../connectionCatalog.ts'
 import type { RevisionView } from '../revisionView.ts'
 
 import { dequal } from 'dequal/lite'
+import { isJsonObject } from '../../../../base/common/json.ts'
 import { connectorOutputMode } from '../../../../connector/common/actionSchema.ts'
 import { isTriggerNode, nextNodeName, normalizeNodeName, applyFlowChanges as reduceFlowChanges } from '../../../../flow/common/change.ts'
 import { otherwiseOutput } from '../../../../flow/common/condition.ts'
-import { fixedInputValue } from '../../../../flow/common/inputValue.ts'
+import { fixedInputValue, inputValue } from '../../../../flow/common/inputValue.ts'
 import {
   cleanVariableBindings,
   updateOutputsDefs,
@@ -40,16 +42,65 @@ import {
   updateSettings,
   setInputValue as setGraphInputValue,
   setInputVariable as setGraphInputVariable,
+  setTriggerConnection as changeTriggerConnection,
+  updateTriggerConfig as changeTriggerConfig,
 } from '../../../../flow/common/nodeChanges.ts'
 import { remapInputMappings, renamedPort, renameOutputMapping } from '../../../../flow/common/portChanges.ts'
 import { renamePromptInput } from '../../../../flow/common/promptTemplate.ts'
 import { valueForEditor } from '../../../../form/common/editorComponent.ts'
+import { feishuResourceKind, supportsFeishuChatFilter } from '../../../../trigger/providers/feishu/config.ts'
 import { withWorkflowTask } from '../../../../workflow/common/workflow.ts'
 
 export type FlowChanges = readonly ChangeOperation[]
 
 export function applyFlowChanges(draft: Draft, changes: FlowChanges): Draft {
   return { ...draft, content: reduceFlowChanges(draft.content, changes) }
+}
+
+export function setTriggerEventSource(revision: RevisionView, triggerId: string, source: EventSource): FlowChanges | undefined {
+  const trigger = revision.graph().nodes[triggerId]
+  if (trigger?.kind != 'integration' || trigger.definition.key != 'feishu_app_bot.on_event' || source.provider != trigger.definition.provider) return
+  const content = revision.revision.content
+  const changes = changeTriggerConnection(content, triggerId, source.connectionId)
+  if (changes == null) return
+  const changed = inputValue(trigger.config.sourceId, undefined) != source.sourceId
+  return [
+    ...changes,
+    ...(changeTriggerConfig(content, triggerId, 'sourceId', source.sourceId) ?? []),
+    ...(changed ? (changeTriggerConfig(content, triggerId, 'eventTypes', undefined) ?? []) : []),
+    ...(changed ? (changeTriggerConfig(content, triggerId, 'resource', undefined) ?? []) : []),
+    ...(changed ? (changeTriggerConfig(content, triggerId, 'chatIds', undefined) ?? []) : []),
+  ]
+}
+
+export function updateTriggerConfig(revision: RevisionView, triggerId: string, name: string, value: JsonValue | undefined): FlowChanges | undefined {
+  const content = revision.revision.content
+  let changes = changeTriggerConfig(content, triggerId, name, value)
+  if (changes == null) return
+  const trigger = revision.graph().nodes[triggerId]
+  if (changes.length > 0 && trigger?.kind == 'integration' && trigger.definition.key == 'feishu_app_bot.on_event' && name == 'eventTypes') {
+    const events = Array.isArray(value) ? value.filter((item): item is string => typeof item == 'string') : []
+    if (!supportsFeishuChatFilter(events)) changes = [...changes, ...(changeTriggerConfig(content, triggerId, 'chatIds', undefined) ?? [])]
+    const resource = inputValue(trigger.config.resource, undefined)
+    if (isJsonObject(resource) && resource.kind != feishuResourceKind(events)) {
+      changes = [...changes, ...(changeTriggerConfig(content, triggerId, 'resource', undefined) ?? [])]
+    }
+  }
+  if (changes.length > 0 && trigger?.kind == 'poll' && trigger.definition.key == 'linear.on_issue_changed' && name == 'teamId') {
+    return [...changes, ...(changeTriggerConfig(content, triggerId, 'stateIds', undefined) ?? [])]
+  }
+  return changes
+}
+
+export function setTriggerConnection(revision: RevisionView, triggerId: string, connectionId: string | undefined): FlowChanges | undefined {
+  const content = revision.revision.content
+  const changes = changeTriggerConnection(content, triggerId, connectionId)
+  if (changes == null) return
+  const trigger = revision.graph().nodes[triggerId]
+  if (changes.length > 0 && trigger?.kind == 'poll' && trigger.definition.key == 'linear.on_issue_changed') {
+    return [...changes, ...['teamId', 'stateIds'].flatMap((field) => changeTriggerConfig(content, triggerId, field, undefined) ?? [])]
+  }
+  return changes
 }
 
 export interface WebhookSettings {

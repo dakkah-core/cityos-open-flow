@@ -32,7 +32,7 @@ export function ResolutionDefinition({
       return
     }
     setError(undefined)
-    await store?.saveResolution(selection.id, { name: node.name, prompt: value })
+    await store?.nodes.saveResolution(selection.id, { name: node.name, prompt: value })
   }
   return (
     <form

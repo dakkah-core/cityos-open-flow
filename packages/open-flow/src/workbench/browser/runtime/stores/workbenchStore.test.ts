@@ -991,7 +991,7 @@ it.each(['unchanged', 'deleted', 'account selected', 'flow switched', 'failed'] 
     )
     vi.spyOn(store, 'prepareConnectorAction').mockReturnValue(preparation)
     const add = vi.spyOn(store.workspace, 'addNode').mockResolvedValue('new-node')
-    const setConnection = vi.spyOn(store.workspace, 'setConnectorConnection').mockResolvedValue(true)
+    const setConnection = vi.spyOn(store.workspace.nodes, 'setConnectorConnection').mockResolvedValue(true)
     const refresh = vi.spyOn(store.connectors, 'refresh').mockResolvedValue()
     try {
       await navigation.start()
@@ -1041,7 +1041,7 @@ it.each(['connected', 'unconfigured', 'failed'] as const)('keeps new Connector a
   const preparation = Promise.withResolvers<{ action: typeof action & { defaultConnection?: typeof connection }; connections: (typeof connection)[] }>()
   const saving = Promise.withResolvers<boolean>()
   vi.spyOn(store, 'prepareConnectorAction').mockReturnValue(preparation.promise)
-  const save = vi.spyOn(store.workspace, 'setConnectorConnection').mockReturnValue(saving.promise)
+  const save = vi.spyOn(store.workspace.nodes, 'setConnectorConnection').mockReturnValue(saving.promise)
   vi.spyOn(store.connectors, 'refresh').mockResolvedValue()
   try {
     await navigation.start()
