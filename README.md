@@ -25,7 +25,7 @@ Combine JavaScript, connected apps, AI, branching, and human approval in one can
 inputs, follow the execution, and decide which version goes live. Run on OOMOL Hosted or on your
 own infrastructure.
 
-[Explore the interactive demo](https://openflow.run) · [Use OOMOL Hosted](https://oomol.com) ·
+[Explore the interactive demo](https://openflow.run) · [Use OOMOL Hosted](https://console.openflow.run) ·
 [Self-host with Docker](#run-it-your-way)
 
 ![A customer onboarding workflow in the current Open Flow Workbench, with explicit customer data, JavaScript, approval, and a subflow](docs/assets/readme-workbench.png)
@@ -110,7 +110,7 @@ complete setup, including authorizing an account and building a first Flow.
 
 | Option           | What you manage                                                                      | Get started                                      |
 | ---------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------ |
-| **OOMOL Hosted** | Your workflows and connected accounts; OOMOL operates the deployment.                | [Open OOMOL](https://oomol.com)                  |
+| **OOMOL Hosted** | Your workflows and connected accounts; OOMOL operates the deployment.                | [Open OOMOL](https://console.openflow.run)       |
 | **Docker**       | Your deployment, storage, backups, upgrades, and integrations.                       | Commands below                                   |
 | **Fly.io**       | Your app, persistent volume, secrets, backups, and upgrades on Fly's infrastructure. | [Deployment guide](docs/server/fly-io/README.md) |
 

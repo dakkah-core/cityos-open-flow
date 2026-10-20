@@ -23,7 +23,7 @@ Open Flow は、AI による構築の速さと、視覚的なワークフロー�
 
 JavaScript、アプリ連携、AI、条件分岐、人による承認を一つのキャンバスで組み合わせます。入力を確認し、実行を追跡し、どのバージョンを本番で動かすかを決められます。OOMOL Hosted でも、自分で管理するインフラでも実行できます。
 
-[インタラクティブデモを試す](https://openflow.run) · [OOMOL Hosted を使う](https://oomol.com) · [Docker でセルフホストする](#自分に合った実行環境を選ぶ)
+[インタラクティブデモを試す](https://openflow.run) · [OOMOL Hosted を使う](https://console.openflow.run) · [Docker でセルフホストする](#自分に合った実行環境を選ぶ)
 
 ![現在の Open Flow Workbench で表示した顧客オンボーディングフロー。顧客データ、JavaScript、承認、サブフローを明示](assets/readme-workbench.png)
 
@@ -83,7 +83,7 @@ OOMOL Hosted は、対応する連携向けにマネージド OAuth アプリを
 
 | 選択肢           | 自分で管理するもの                                                                     | はじめる                                     |
 | ---------------- | -------------------------------------------------------------------------------------- | -------------------------------------------- |
-| **OOMOL Hosted** | ワークフローと接続アカウント。デプロイ環境は OOMOL が運用します。                      | [OOMOL を開く](https://oomol.com)            |
+| **OOMOL Hosted** | ワークフローと接続アカウント。デプロイ環境は OOMOL が運用します。                      | [OOMOL を開く](https://console.openflow.run) |
 | **Docker**       | デプロイ、ストレージ、バックアップ、アップグレード、連携。                             | 下記のコマンド                               |
 | **Fly.io**       | Fly のインフラ上のアプリ、永続ボリューム、シークレット、バックアップ、アップグレード。 | [デプロイガイド](server/fly-io/README.ja.md) |
 

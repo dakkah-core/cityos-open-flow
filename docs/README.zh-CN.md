@@ -23,7 +23,7 @@ Open Flow 是一个开源工作流平台，把 AI 辅助构建的速度与可视
 
 在一张画布上组合 JavaScript、应用集成、AI、条件分支和人工审批。查看输入、跟踪执行，并决定哪个版本正式上线。可以使用 OOMOL Hosted，也可以部署到自己的基础设施。
 
-[体验交互演示](https://openflow.run) · [使用 OOMOL Hosted](https://oomol.com) · [用 Docker 自部署](#选择适合你的运行方式)
+[体验交互演示](https://openflow.run) · [使用 OOMOL Hosted](https://console.openflow.run) · [用 Docker 自部署](#选择适合你的运行方式)
 
 ![新版 Open Flow Workbench 中的客户入门流程，包含显式客户数据、JavaScript、审批和子流程](assets/readme-workbench.png)
 
@@ -81,11 +81,11 @@ OOMOL Hosted 为支持的集成提供托管 OAuth 应用。自部署时，你选
 
 ## 选择适合你的运行方式
 
-| 方式             | 你需要管理什么                                     | 开始使用                                  |
-| ---------------- | -------------------------------------------------- | ----------------------------------------- |
-| **OOMOL Hosted** | 工作流和已连接的账号；OOMOL 负责运行部署。         | [打开 OOMOL](https://oomol.com)           |
-| **Docker**       | 部署、存储、备份、升级和集成。                     | 下方命令                                  |
-| **Fly.io**       | Fly 基础设施上的应用、持久化卷、密钥、备份和升级。 | [部署指南](server/fly-io/README.zh-CN.md) |
+| 方式             | 你需要管理什么                                     | 开始使用                                   |
+| ---------------- | -------------------------------------------------- | ------------------------------------------ |
+| **OOMOL Hosted** | 工作流和已连接的账号；OOMOL 负责运行部署。         | [打开 OOMOL](https://console.openflow.run) |
+| **Docker**       | 部署、存储、备份、升级和集成。                     | 下方命令                                   |
+| **Fly.io**       | Fly 基础设施上的应用、持久化卷、密钥、备份和升级。 | [部署指南](server/fly-io/README.zh-CN.md)  |
 
 要在本机自行部署，请安装 Docker 和 OpenSSL，然后运行：
 

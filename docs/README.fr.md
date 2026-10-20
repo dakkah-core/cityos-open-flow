@@ -23,7 +23,7 @@ Open Flow est une plateforme de workflows open source qui associe la rapidité d
 
 Combinez JavaScript, applications connectées, IA, embranchements et validation humaine sur un même canevas. Inspectez les entrées, suivez l'exécution et choisissez la version à mettre en production. Utilisez OOMOL Hosted ou votre propre infrastructure.
 
-[Explorer la démo interactive](https://openflow.run) · [Utiliser OOMOL Hosted](https://oomol.com) · [Auto-héberger avec Docker](#exécutez-open-flow-où-vous-voulez)
+[Explorer la démo interactive](https://openflow.run) · [Utiliser OOMOL Hosted](https://console.openflow.run) · [Auto-héberger avec Docker](#exécutez-open-flow-où-vous-voulez)
 
 ![Un workflow d'accueil client dans le Workbench actuel, avec des données client explicites, du JavaScript, une validation et un sous-flux](assets/readme-workbench.png)
 
@@ -83,7 +83,7 @@ Consultez [Open Flow avec OpenConnector et le CLI oo](server/self-hosted-stack/R
 
 | Option           | Ce que vous gérez                                                                                | Pour démarrer                                      |
 | ---------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
-| **OOMOL Hosted** | Vos workflows et comptes connectés ; OOMOL exploite le déploiement.                              | [Ouvrir OOMOL](https://oomol.com)                  |
+| **OOMOL Hosted** | Vos workflows et comptes connectés ; OOMOL exploite le déploiement.                              | [Ouvrir OOMOL](https://console.openflow.run)       |
 | **Docker**       | Déploiement, stockage, sauvegardes, mises à niveau et intégrations.                              | Commandes ci-dessous                               |
 | **Fly.io**       | Application, volume persistant, secrets, sauvegardes et mises à niveau sur l'infrastructure Fly. | [Guide de déploiement](server/fly-io/README.fr.md) |
 
