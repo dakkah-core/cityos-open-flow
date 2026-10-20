@@ -811,13 +811,100 @@ function checked(revisionId: string): Response {
   })
 }
 
-it('loads the catalog before its subscription settles while the editor waits for its own subscription', async () => {
+it('shows a 300 ms editor response without waiting for a 5 second Flow subscription', async () => {
+  vi.useFakeTimers()
+  const ready = Promise.withResolvers<void>()
+  const next = { ...draft, revisionId: 'revision-2', digest: 'digest-2' }
+  const request = vi.fn(async (path: string) => {
+    if (path.endsWith('/editor')) {
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      return Response.json(editor)
+    }
+    if (path.endsWith('/draft/sync')) return Response.json({ draft: next, kind: 'snapshot', version: 1 })
+    if (path.endsWith('/check')) return checked(path.includes('revision-2') ? next.revisionId : draft.revisionId)
+    throw new Error(path)
+  })
+  const store = new WorkspaceStore(new WorkbenchClient(request, () => ({ ready: ready.promise, stop: () => ready.resolve() })), vi.fn())
+  try {
+    setTimeout(() => ready.resolve(), 5_000)
+    const loading = store.selectFlow(flow.flowId)
+    await vi.advanceTimersByTimeAsync(300)
+    expect(store.$.workspaceLoading.value).toBe(false)
+    expect(store.$.draft.value).toEqual(draft)
+    await expect(loading).resolves.toBe(true)
+    expect(request.mock.calls.filter(([path]) => path.endsWith('/draft/sync'))).toHaveLength(0)
+
+    await vi.advanceTimersByTimeAsync(4_700)
+    expect(store.$.draft.value).toEqual(next)
+    expect(store.$.workspaceLoading.value).toBe(false)
+    expect(request.mock.calls.filter(([path]) => path.endsWith('/draft/sync'))).toHaveLength(1)
+  } finally {
+    store.dispose()
+    await vi.runAllTimersAsync()
+    vi.useRealTimers()
+  }
+})
+
+it('catches up when the Flow subscription becomes ready during the initial read', async () => {
+  const ready = Promise.withResolvers<void>()
+  const response = Promise.withResolvers<Response>()
+  const next = { ...draft, revisionId: 'revision-2', digest: 'digest-2' }
+  const request = vi.fn(async (path: string) => {
+    if (path.endsWith('/editor')) return response.promise
+    if (path.endsWith('/draft/sync')) return Response.json({ draft: next, kind: 'snapshot', version: 1 })
+    if (path.endsWith('/check')) return checked(path.includes('revision-2') ? next.revisionId : draft.revisionId)
+    throw new Error(path)
+  })
+  const store = new WorkspaceStore(new WorkbenchClient(request, () => ({ ready: ready.promise, stop: () => ready.resolve() })), vi.fn())
+  try {
+    const loading = store.selectFlow(flow.flowId)
+    await vi.waitFor(() => expect(request).toHaveBeenCalledOnce())
+    ready.resolve()
+    await ready.promise
+    expect(request).toHaveBeenCalledOnce()
+    response.resolve(Response.json(editor))
+    await loading
+    await vi.waitFor(() => expect(store.$.draft.value).toEqual(next))
+    expect(store.$.workspaceLoading.value).toBe(false)
+    expect(request.mock.calls.filter(([path]) => path.endsWith('/draft/sync'))).toHaveLength(1)
+  } finally {
+    ready.resolve()
+    response.resolve(Response.json(editor))
+    store.dispose()
+  }
+})
+
+it('keeps a readable editor and reports a failed initial subscription', async () => {
+  const ready = Promise.withResolvers<void>()
+  const stop = vi.fn()
+  const notice = vi.fn()
+  const request = vi.fn(async (path: string) => {
+    if (path.endsWith('/editor')) return Response.json(editor)
+    if (path.endsWith('/check')) return checked(draft.revisionId)
+    throw new Error(path)
+  })
+  const store = new WorkspaceStore(new WorkbenchClient(request, () => ({ ready: ready.promise, stop })), notice)
+  try {
+    await store.selectFlow(flow.flowId)
+    ready.reject(new Error('Subscription failed'))
+    await vi.waitFor(() => expect(notice).toHaveBeenCalledWith(expect.objectContaining({ kind: 'error' })))
+    expect(store.$.draft.value).toEqual(draft)
+    expect(store.$.workspaceLoading.value).toBe(false)
+    expect(store.$.workspaceLoadFailed.value).toBe(false)
+    expect(stop).toHaveBeenCalledOnce()
+  } finally {
+    store.dispose()
+  }
+})
+
+it('loads the catalog and editor without waiting for either subscription', async () => {
   const catalogReady = Promise.withResolvers<void>()
   const flowReady = Promise.withResolvers<void>()
   const stopFlow = vi.fn()
   const stopCatalog = vi.fn()
   const request = vi.fn(async (path: string) => {
     if (path == `/v1/flows/${flow.flowId}/editor`) return Response.json(editor)
+    if (path.endsWith('/draft/sync')) return Response.json({ draft, kind: 'snapshot', version: 1 })
     if (path.endsWith('/check')) return checked(draft.revisionId)
     if (path == '/v1/flows?limit=50&includeTotal=true') return Response.json({ flows: [{ ...flow, referenceCount: 0 }], version: 1 })
     throw new Error(path)
@@ -832,19 +919,18 @@ it('loads the catalog before its subscription settles while the editor waits for
   )
   try {
     const loading = store.start(flow.flowId)
-    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1))
-    expect(request.mock.calls[0]?.[0]).toBe('/v1/flows?limit=50&includeTotal=true')
-    flowReady.resolve()
     await loading
     expect(store.$.draft.value).toEqual(draft)
+    expect(store.$.workspaceLoading.value).toBe(false)
     expect(request.mock.calls.map(([path]) => path)).toEqual([
       '/v1/flows?limit=50&includeTotal=true',
       `/v1/flows/${flow.flowId}/editor`,
       `/v1/flows/${flow.flowId}/revisions/${draft.revisionId}/check`,
     ])
+    flowReady.resolve()
+    await vi.waitFor(() => expect(request.mock.calls.filter(([path]) => path.endsWith('/draft/sync'))).toHaveLength(1))
     catalogReady.resolve()
-    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(4))
-    expect(request.mock.calls[3]?.[0]).toBe('/v1/flows?limit=50&includeTotal=true')
+    await vi.waitFor(() => expect(request.mock.calls.filter(([path]) => path.startsWith('/v1/flows?'))).toHaveLength(2))
   } finally {
     catalogReady.resolve()
     flowReady.resolve()
@@ -966,10 +1052,8 @@ it.each(['subscription', 'snapshot'])('discards a Flow left while awaiting its %
   )
   try {
     const loading = store.selectFlow(flow.flowId)
-    if (phase == 'snapshot') {
-      ready.resolve()
-      await vi.waitFor(() => expect(request).toHaveBeenCalledOnce())
-    }
+    if (phase == 'snapshot') ready.resolve()
+    await vi.waitFor(() => expect(request).toHaveBeenCalledOnce())
     await store.selectFlow(undefined)
     response.resolve(Response.json(editor))
     await expect(loading).resolves.toBe(false)
@@ -977,7 +1061,7 @@ it.each(['subscription', 'snapshot'])('discards a Flow left while awaiting its %
     expect(stop).toHaveBeenCalledOnce()
     expect(store.$.draft.value).toBeUndefined()
     expect(store.$.flowId.value).toBeUndefined()
-    expect(request).toHaveBeenCalledTimes(phase == 'snapshot' ? 1 : 0)
+    expect(request).toHaveBeenCalledOnce()
   } finally {
     store.dispose()
   }

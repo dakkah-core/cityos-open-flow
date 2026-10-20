@@ -248,17 +248,18 @@ export class WorkspaceStore {
     try {
       let invalidated = false
       let pendingRevision: string | undefined
+      const changed = (revisionId?: string): void => {
+        if (!current()) return
+        if (this.#draftChanges.committed == null) {
+          invalidated = true
+          pendingRevision = revisionId
+        } else if (revisionId != this.#draftChanges.committed.revisionId) {
+          void this.#refreshDraft(revisionId)
+        }
+      }
       const subscription = this.#client.watchFlow(
         flowId,
-        (revisionId) => {
-          if (!current()) return
-          if (this.#draftChanges.committed == null) {
-            invalidated = true
-            pendingRevision = revisionId
-          } else if (revisionId != this.#draftChanges.committed.revisionId) {
-            void this.#refreshDraft(revisionId)
-          }
-        },
+        changed,
         (event) => {
           if (current()) this.#runChanged(event)
         },
@@ -275,8 +276,23 @@ export class WorkspaceStore {
         },
       )
       this.#stopFlowWatch = subscription.stop
-      await subscription.ready
+      let reading = false
+      void subscription.ready.then(
+        () => {
+          // Reconcile changes missed between the initial read and subscription readiness.
+          if (reading) changed()
+        },
+        (error) => {
+          if (!current()) return
+          subscription.stop()
+          this.#stopFlowWatch = undefined
+          this.#setNotice(errorNotice(error, this.#i18n.t))
+        },
+      )
+      // An already-ready subscription covers the initial read without a catch-up request.
+      await Promise.resolve()
       if (!current()) return false
+      reading = true
       let editor = await this.#client.getEditor(flowId)
       for (let attempt = 0; current() && Object.values(revisionView(editor.draft).graph().nodes).some((node) => node.kind == 'manual'); attempt += 1) {
         if (attempt >= 3) throw new ApiError(409, controlErrorCode.flowRevisionConflict, 'The Draft changed while upgrading its Start node.')
