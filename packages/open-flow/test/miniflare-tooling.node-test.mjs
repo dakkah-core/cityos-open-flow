@@ -9,7 +9,7 @@ const root = fileURLToPath(new URL('../../../', import.meta.url))
 const requireRoot = createRequire(path.join(root, 'package.json'))
 const readJson = (file) => JSON.parse(readFileSync(file, 'utf8'))
 const workspace = readJson(path.join(root, 'package.json'))
-const version = '5.20261019.0-beta'
+const version = '5.20261019.1-beta'
 let context
 function installed() {
   if (context) return context
