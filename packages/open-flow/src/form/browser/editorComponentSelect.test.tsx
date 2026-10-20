@@ -44,3 +44,19 @@ it('returns to generic JSON editing without retaining editor constraints', () =>
   ;(select!.props.onValueChange as (value: string) => void)('json')
   expect(onChange).toHaveBeenCalledExactlyOnceWith({})
 })
+
+it.each(['string', 'json'] as const)('can replace a constant definition with %s', (component) => {
+  const onChange = vi.fn()
+  const rendered = EditorComponentSelect({ name: 'result', schema: { const: 'choice', description: 'Result kind' }, compact: false, onChange })
+  const select = find(rendered, (item) => typeof item.props.onValueChange == 'function')
+  expect(onChange).not.toHaveBeenCalled()
+  expect(select?.props.value).toBe('literal')
+  ;(select!.props.onValueChange as (value: string) => void)(component)
+  expect(onChange).toHaveBeenCalledExactlyOnceWith(component === 'json' ? { description: 'Result kind' } : { type: 'string', description: 'Result kind' })
+})
+
+it('keeps local value-editor selection independent of a constant definition', () => {
+  const rendered = EditorComponentSelect({ name: 'result', schema: { const: 'choice' }, valueOnly: true, onChange: vi.fn() })
+  const select = find(rendered, (item) => typeof item.props.onValueChange == 'function')
+  expect(select?.props.value).toBe('json')
+})

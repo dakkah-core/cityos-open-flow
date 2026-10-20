@@ -58,6 +58,7 @@
     "hours": "時",
     "minutes": "分",
     "seconds": "秒",
+    "constant": "常數 {{value}}",
     "components": {
       "string": "單行文字",
       "text": "多行文字",

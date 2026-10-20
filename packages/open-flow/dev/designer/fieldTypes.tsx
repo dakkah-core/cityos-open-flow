@@ -14,6 +14,9 @@ function FieldTypes({ dark, language }: { dark: boolean; language: UiLanguage })
       .flat()
       .map((type) => ({ type, schema: schemaForEditor(type, {}) })),
   )
+  const [constants, setConstants] = useState<Record<string, unknown>[]>(() =>
+    ['choice', '', 0, false, null, { kind: 'choice' }, ['a', 'b']].map((value) => ({ const: value })),
+  )
   return (
     <I18nProvider i18n={i18n}>
       <div className="open-flow-workbench open-flow-theme p-6" data-theme={dark ? 'dark' : 'light'}>
@@ -53,6 +56,37 @@ function FieldTypes({ dark, language }: { dark: boolean; language: UiLanguage })
             ))}
           </tbody>
         </table>
+        <table className="mt-6 text-left text-xs">
+          <thead>
+            <tr>
+              <th className="p-2 font-normal">Constant</th>
+              <th className="p-2 font-normal">Editable</th>
+              <th className="p-2 font-normal">Fixed / read-only</th>
+              <th className="p-2 font-normal">Compact / read-only</th>
+            </tr>
+          </thead>
+          <tbody>
+            {constants.map((schema, index) => (
+              <tr key={`constant-${index}`}>
+                <th className="p-2 font-normal">Constant {index + 1}</th>
+                <td className="w-52 p-2">
+                  <EditorComponentSelect
+                    schema={schema}
+                    name={`Editable constant ${index}`}
+                    compact={false}
+                    onChange={(next) => setConstants((current) => current.map((entry, i) => (i === index ? next : entry)))}
+                  />
+                </td>
+                <td className="w-52 p-2">
+                  <EditorComponentSelect schema={schema} name={`Fixed constant ${index}`} compact={false} readOnly readOnlySurface onChange={() => {}} />
+                </td>
+                <td className="p-2">
+                  <EditorComponentSelect schema={schema} name={`Compact constant ${index}`} readOnly onChange={() => {}} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </I18nProvider>
   )
@@ -61,7 +95,7 @@ function FieldTypes({ dark, language }: { dark: boolean; language: UiLanguage })
 export const fieldTypesStory: FrontendStory = {
   id: 'field-type-states',
   title: 'Type States',
-  description: 'All 15 types: editable selectors, fixed labels, and temporarily disabled selectors.',
+  description: 'Editable, fixed, and temporarily disabled types, plus constants with string, empty, falsy, null, and structured values.',
   group: 'Node Fixed Values',
   propertyPanel: true,
   standalone: true,

@@ -58,6 +58,7 @@
     "hours": "Hours",
     "minutes": "Minutes",
     "seconds": "Seconds",
+    "constant": "Constant {{value}}",
     "components": {
       "string": "Text",
       "text": "Multiline",

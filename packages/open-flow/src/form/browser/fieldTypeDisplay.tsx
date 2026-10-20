@@ -1,7 +1,22 @@
 import type { ReactNode } from 'react'
 
 import { useState } from 'react'
+import { useTranslate } from 'val-i18n-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../ui/browser/tooltip.tsx'
+import { editorComponent } from '../common/editorComponent.ts'
+import { objectValue } from '../common/value.ts'
+
+/** Schema definitions show constants; local value-editor choices keep their editor identity. */
+export function useFieldTypePresentation(schema: unknown, valueOnly = false) {
+  const t = useTranslate()
+  const source = objectValue(schema)
+  if (!valueOnly && source != null && Object.hasOwn(source, 'const')) {
+    return { component: 'literal' as const, label: t('valueEditor.constant', { value: JSON.stringify(source.const) }) }
+  }
+  const component = editorComponent(schema)
+  const label = t(valueOnly && component === 'json' ? 'valueEditor.any' : `valueEditor.components.${component}`)
+  return { component, label }
+}
 
 export interface FieldDisclosure {
   readonly controls: string

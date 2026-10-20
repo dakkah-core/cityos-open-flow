@@ -58,6 +58,7 @@
     "hours": "Часы",
     "minutes": "Минуты",
     "seconds": "Секунды",
+    "constant": "Константа {{value}}",
     "components": {
       "string": "Одна строка",
       "text": "Несколько строк",
