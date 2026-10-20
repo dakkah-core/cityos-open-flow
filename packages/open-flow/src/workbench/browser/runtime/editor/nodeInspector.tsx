@@ -276,6 +276,13 @@ export function NodeInspector({
   const disabled = readOnly || temporarilyDisabled || store == null
   const t = useTranslate()
   const content = useRef<HTMLDivElement>(null)
+  const providerTrigger =
+    selection?.kind === 'trigger' && (selection.trigger.kind === 'integration' || selection.trigger.kind === 'poll') ? selection.trigger : undefined
+  const providerDisplay = providerTrigger == null ? undefined : triggerDisplays?.[providerTrigger.definition.key]
+  const providerConfigInputs =
+    providerTrigger == null
+      ? []
+      : presentProviderTriggerConfig(providerTrigger.definition.configInputs, providerDisplay, { 'Advanced settings': t('valueEditor.advancedSettings') })
   const task = selection?.kind == 'task' ? selection.definition : undefined
   const isAgent = task != null && 'executor' in task && task.executor.kind == 'agent'
   const isDecision = task != null && 'executor' in task && task.executor.kind == 'decision'
@@ -402,8 +409,8 @@ export function NodeInspector({
           (selection.trigger.kind === 'integration' || selection.trigger.kind === 'poll') &&
           (!readOnly && store != null && ['feishu.on_event', 'feishu_app_bot.on_event'].includes(selection.trigger.definition.key) ? (
             <FeishuTriggerConfig
-              inputs={presentProviderTriggerConfig(selection.trigger.definition.configInputs, triggerDisplays?.[selection.trigger.definition.key])}
-              fieldLabels={triggerDisplays?.[selection.trigger.definition.key]?.configInputLabels}
+              inputs={providerConfigInputs}
+              fieldLabels={providerDisplay?.configInputLabels}
               config={selection.trigger.config}
               nodeId={selection.id}
               connectionId={selection.trigger.connectionId}
@@ -412,8 +419,8 @@ export function NodeInspector({
             />
           ) : !readOnly && store != null && selection.trigger.definition.key === 'linear.on_issue_changed' ? (
             <LinearTriggerConfig
-              inputs={presentProviderTriggerConfig(selection.trigger.definition.configInputs, triggerDisplays?.[selection.trigger.definition.key])}
-              fieldLabels={triggerDisplays?.[selection.trigger.definition.key]?.configInputLabels}
+              inputs={providerConfigInputs}
+              fieldLabels={providerDisplay?.configInputLabels}
               config={selection.trigger.config}
               nodeId={selection.id}
               connectionId={selection.trigger.connectionId}
@@ -430,8 +437,8 @@ export function NodeInspector({
               onResetValue={(name) => {
                 void store?.nodes.resetTriggerConfig(selection.id, [name])
               }}
-              inputs={presentProviderTriggerConfig(selection.trigger.definition.configInputs, triggerDisplays?.[selection.trigger.definition.key])}
-              fieldLabels={triggerDisplays?.[selection.trigger.definition.key]?.configInputLabels}
+              inputs={providerConfigInputs}
+              fieldLabels={providerDisplay?.configInputLabels}
               config={selection.trigger.config}
               disabled={disabled}
               onChange={(name, value) => {

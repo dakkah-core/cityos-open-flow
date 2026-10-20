@@ -93,6 +93,8 @@ bun run --cwd packages/open-flow generate:provider-triggers /path/to/open-connec
 
 This command invokes OpenConnector’s `scripts/export-flow-trigger-catalog.ts` to export registered snapshots, options, listener intervals, and eventSource information. It requires no private connector checkout.
 
+Provider definitions also own configuration order and groups in `configInputs`. Put common fields before a `{ group: "Advanced settings", collapsed: true }` entry and low-frequency options after it. Open Flow renders these declarations and localizes the standard group title; it does not maintain a separate Provider-to-field layout table. Saved Flow definitions retain their pinned layout until the definition is updated.
+
 Then run formatting, type, localization, and relevant test checks in Open Flow. Open Flow still handles Feishu event ingestion; display snapshots also come from generated data. Do not reintroduce third-party request implementations into Open Flow.
 
 ## Deployment and legacy subscriptions

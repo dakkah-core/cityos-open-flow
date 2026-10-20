@@ -14,9 +14,19 @@ function withDescriptions<Value extends InputPort | Port>(
   })
 }
 
-/** Adds localized Provider configuration copy without changing graph-owned definitions. */
-export function presentProviderTriggerConfig(inputs: readonly (InputPort | Group)[], display?: TriggerDisplay): readonly (InputPort | Group)[] {
-  return withDescriptions(inputs, display?.configInputs)
+/** Localizes Provider configuration copy while preserving its declared layout. */
+export function presentProviderTriggerConfig(
+  inputs: readonly (InputPort | Group)[],
+  display?: TriggerDisplay,
+  groupLabels?: Readonly<Record<string, string>>,
+): readonly (InputPort | Group)[] {
+  const fields = withDescriptions(inputs, display?.configInputs)
+  if (groupLabels == null) return fields
+  return fields.map((field) => {
+    if (!('group' in field)) return field
+    const group = groupLabels[field.group]
+    return group == null || group == field.group ? field : Object.assign({}, field, { group })
+  })
 }
 
 /** Adds localized Provider output copy without changing graph-owned definitions. */

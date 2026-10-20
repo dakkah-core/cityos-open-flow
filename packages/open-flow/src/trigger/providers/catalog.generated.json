@@ -11,34 +11,12 @@
           "nullable": false
         },
         {
-          "handle": "fields",
-          "jsonSchema": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "nullable": false,
-          "value": []
-        },
-        {
           "handle": "formula",
           "jsonSchema": {
             "type": "string"
           },
           "nullable": false,
           "value": ""
-        },
-        {
-          "handle": "maxRecordsPerPoll",
-          "jsonSchema": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 1000
-          },
-          "nullable": false,
-          "value": 200
         },
         {
           "handle": "tableIdOrName",
@@ -66,6 +44,32 @@
           },
           "nullable": false,
           "value": ""
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
+          "handle": "fields",
+          "jsonSchema": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "nullable": false,
+          "value": []
+        },
+        {
+          "handle": "maxRecordsPerPoll",
+          "jsonSchema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "nullable": false,
+          "value": 200
         }
       ],
       "definitionVersion": 2,
@@ -320,14 +324,6 @@
           "nullable": false
         },
         {
-          "handle": "insecureSsl",
-          "jsonSchema": {
-            "type": "boolean"
-          },
-          "nullable": false,
-          "value": false
-        },
-        {
           "handle": "owner",
           "jsonSchema": {
             "type": "string",
@@ -342,6 +338,18 @@
             "pattern": "^(?!\\.{1,2}$)[a-zA-Z0-9._-]{1,100}$"
           },
           "nullable": false
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
+          "handle": "insecureSsl",
+          "jsonSchema": {
+            "type": "boolean"
+          },
+          "nullable": false,
+          "value": false
         }
       ],
       "definitionVersion": 2,
@@ -521,14 +529,6 @@
           "nullable": false
         },
         {
-          "handle": "insecureSsl",
-          "jsonSchema": {
-            "type": "boolean"
-          },
-          "nullable": false,
-          "value": false
-        },
-        {
           "handle": "project",
           "jsonSchema": {
             "type": "string",
@@ -546,6 +546,18 @@
           },
           "nullable": false,
           "value": ""
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
+          "handle": "insecureSsl",
+          "jsonSchema": {
+            "type": "boolean"
+          },
+          "nullable": false,
+          "value": false
         }
       ],
       "definitionVersion": 2,
@@ -601,24 +613,6 @@
     "snapshot": {
       "configInputs": [
         {
-          "handle": "includeDrafts",
-          "jsonSchema": {
-            "type": "boolean"
-          },
-          "nullable": false,
-          "value": false,
-          "description": "Also trigger on draft messages."
-        },
-        {
-          "handle": "includeSpamAndTrash",
-          "jsonSchema": {
-            "type": "boolean"
-          },
-          "nullable": false,
-          "value": false,
-          "description": "Also trigger on messages in SPAM and TRASH."
-        },
-        {
           "handle": "labelNamesOrIds",
           "jsonSchema": {
             "type": "array",
@@ -630,16 +624,6 @@
           "nullable": false,
           "description": "Only trigger on messages carrying all of these labels, referenced by name or ID.",
           "value": []
-        },
-        {
-          "handle": "maxMessagesPerPoll",
-          "jsonSchema": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100
-          },
-          "nullable": false,
-          "value": 25
         },
         {
           "handle": "readStatus",
@@ -667,6 +651,38 @@
           "nullable": false,
           "description": "Only trigger on messages whose sender matches this address or name.",
           "value": ""
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
+          "handle": "includeDrafts",
+          "jsonSchema": {
+            "type": "boolean"
+          },
+          "nullable": false,
+          "value": false,
+          "description": "Also trigger on draft messages."
+        },
+        {
+          "handle": "includeSpamAndTrash",
+          "jsonSchema": {
+            "type": "boolean"
+          },
+          "nullable": false,
+          "value": false,
+          "description": "Also trigger on messages in SPAM and TRASH."
+        },
+        {
+          "handle": "maxMessagesPerPoll",
+          "jsonSchema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "nullable": false,
+          "value": 25
         }
       ],
       "definitionVersion": 2,
@@ -755,6 +771,10 @@
           },
           "nullable": false,
           "value": ""
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
         },
         {
           "handle": "maxEventsPerPoll",
@@ -884,6 +904,28 @@
           "description": "Optional shared drive ID. Omit it to monitor the connected account."
         },
         {
+          "handle": "includeRemoved",
+          "jsonSchema": {
+            "type": "boolean"
+          },
+          "nullable": false,
+          "value": true,
+          "description": "Include changes caused by deletion or loss of access."
+        },
+        {
+          "handle": "restrictToMyDrive",
+          "jsonSchema": {
+            "type": "boolean"
+          },
+          "nullable": false,
+          "value": false,
+          "description": "Restrict changes to the My Drive hierarchy."
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
           "handle": "includeCorpusRemovals",
           "jsonSchema": {
             "type": "boolean"
@@ -902,15 +944,6 @@
           "description": "Include items from My Drive and shared drives."
         },
         {
-          "handle": "includeRemoved",
-          "jsonSchema": {
-            "type": "boolean"
-          },
-          "nullable": false,
-          "value": true,
-          "description": "Include changes caused by deletion or loss of access."
-        },
-        {
           "handle": "pageSize",
           "jsonSchema": {
             "type": "integer",
@@ -920,15 +953,6 @@
           "nullable": false,
           "value": 100,
           "description": "Maximum changes included in one Flow Run."
-        },
-        {
-          "handle": "restrictToMyDrive",
-          "jsonSchema": {
-            "type": "boolean"
-          },
-          "nullable": false,
-          "value": false,
-          "description": "Restrict changes to the My Drive hierarchy."
         }
       ],
       "definitionVersion": 2,
@@ -1052,16 +1076,6 @@
           "value": ["file"]
         },
         {
-          "handle": "maxFilesPerPoll",
-          "jsonSchema": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 200
-          },
-          "nullable": false,
-          "value": 50
-        },
-        {
           "handle": "mimeTypes",
           "jsonSchema": {
             "type": "array",
@@ -1080,6 +1094,20 @@
           },
           "nullable": false,
           "value": ""
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
+          "handle": "maxFilesPerPoll",
+          "jsonSchema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "nullable": false,
+          "value": 50
         }
       ],
       "definitionVersion": 2,
@@ -1175,6 +1203,28 @@
           "description": "Optional shared drive ID. Omit it to monitor the connected account."
         },
         {
+          "handle": "includeRemoved",
+          "jsonSchema": {
+            "type": "boolean"
+          },
+          "nullable": false,
+          "value": true,
+          "description": "Include changes caused by deletion or loss of access."
+        },
+        {
+          "handle": "restrictToMyDrive",
+          "jsonSchema": {
+            "type": "boolean"
+          },
+          "nullable": false,
+          "value": false,
+          "description": "Restrict changes to the My Drive hierarchy."
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
           "handle": "includeCorpusRemovals",
           "jsonSchema": {
             "type": "boolean"
@@ -1193,15 +1243,6 @@
           "description": "Include items from My Drive and shared drives."
         },
         {
-          "handle": "includeRemoved",
-          "jsonSchema": {
-            "type": "boolean"
-          },
-          "nullable": false,
-          "value": true,
-          "description": "Include changes caused by deletion or loss of access."
-        },
-        {
           "handle": "pageSize",
           "jsonSchema": {
             "type": "integer",
@@ -1211,15 +1252,6 @@
           "nullable": false,
           "value": 100,
           "description": "Maximum changes included in one Flow Run."
-        },
-        {
-          "handle": "restrictToMyDrive",
-          "jsonSchema": {
-            "type": "boolean"
-          },
-          "nullable": false,
-          "value": false,
-          "description": "Restrict changes to the My Drive hierarchy."
         }
       ],
       "definitionVersion": 2,
@@ -1267,6 +1299,26 @@
           "value": "A:ZZZ"
         },
         {
+          "handle": "sheet",
+          "jsonSchema": {
+            "type": "string",
+            "minLength": 1
+          },
+          "nullable": false
+        },
+        {
+          "handle": "spreadsheetId",
+          "jsonSchema": {
+            "type": "string",
+            "minLength": 1
+          },
+          "nullable": false
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
           "handle": "dateTimeRender",
           "jsonSchema": {
             "type": "string",
@@ -1302,22 +1354,6 @@
           },
           "nullable": false,
           "value": 100
-        },
-        {
-          "handle": "sheet",
-          "jsonSchema": {
-            "type": "string",
-            "minLength": 1
-          },
-          "nullable": false
-        },
-        {
-          "handle": "spreadsheetId",
-          "jsonSchema": {
-            "type": "string",
-            "minLength": 1
-          },
-          "nullable": false
         },
         {
           "handle": "valueRender",
@@ -1502,6 +1538,10 @@
           "value": ["page_added"]
         },
         {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
           "handle": "includeProperties",
           "jsonSchema": {
             "type": "boolean"
@@ -1620,6 +1660,18 @@
           "value": ["file"]
         },
         {
+          "handle": "parentFolderId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false,
+          "value": ""
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
           "handle": "maxItemsPerPoll",
           "jsonSchema": {
             "type": "integer",
@@ -1628,14 +1680,6 @@
           },
           "nullable": false,
           "value": 50
-        },
-        {
-          "handle": "parentFolderId",
-          "jsonSchema": {
-            "type": "string"
-          },
-          "nullable": false,
-          "value": ""
         }
       ],
       "definitionVersion": 2,
@@ -1729,24 +1773,6 @@
           "description": "A well-known mail folder name, folder ID, or an empty string for the whole mailbox."
         },
         {
-          "handle": "includeDrafts",
-          "jsonSchema": {
-            "type": "boolean"
-          },
-          "nullable": false,
-          "value": false
-        },
-        {
-          "handle": "maxMessagesPerPoll",
-          "jsonSchema": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100
-          },
-          "nullable": false,
-          "value": 25
-        },
-        {
           "handle": "readStatus",
           "jsonSchema": {
             "type": "string",
@@ -1780,6 +1806,28 @@
           },
           "nullable": false,
           "value": false
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
+          "handle": "includeDrafts",
+          "jsonSchema": {
+            "type": "boolean"
+          },
+          "nullable": false,
+          "value": false
+        },
+        {
+          "handle": "maxMessagesPerPoll",
+          "jsonSchema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "nullable": false,
+          "value": 25
         }
       ],
       "definitionVersion": 2,
@@ -2188,6 +2236,19 @@
           "description": "Never trigger on messages written by these Slack user IDs."
         },
         {
+          "handle": "textContains",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false,
+          "value": "",
+          "description": "Only trigger when message text contains this string, case-insensitively."
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
           "handle": "includeBotMessages",
           "jsonSchema": {
             "type": "boolean"
@@ -2215,15 +2276,6 @@
           "nullable": false,
           "value": 15,
           "description": "Maximum number of messages processed per poll."
-        },
-        {
-          "handle": "textContains",
-          "jsonSchema": {
-            "type": "string"
-          },
-          "nullable": false,
-          "value": "",
-          "description": "Only trigger when message text contains this string, case-insensitively."
         }
       ],
       "definitionVersion": 2,
@@ -2296,15 +2348,6 @@
     "snapshot": {
       "configInputs": [
         {
-          "handle": "apiVersion",
-          "jsonSchema": {
-            "type": "string",
-            "maxLength": 40
-          },
-          "nullable": false,
-          "value": ""
-        },
-        {
           "handle": "events",
           "jsonSchema": {
             "type": "array",
@@ -2325,6 +2368,19 @@
           },
           "nullable": false,
           "value": false
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
+          "handle": "apiVersion",
+          "jsonSchema": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "nullable": false,
+          "value": ""
         }
       ],
       "definitionVersion": 2,
@@ -2395,15 +2451,6 @@
           "description": "Only accept updates from these numeric Telegram chat IDs. Empty means every chat."
         },
         {
-          "handle": "dropPendingUpdates",
-          "jsonSchema": {
-            "type": "boolean"
-          },
-          "nullable": false,
-          "value": true,
-          "description": "Discard updates queued before the webhook is created or resumed."
-        },
-        {
           "handle": "updates",
           "jsonSchema": {
             "type": "array",
@@ -2458,6 +2505,19 @@
           "nullable": false,
           "value": [],
           "description": "Only accept updates from these numeric Telegram user IDs. Empty means every user."
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
+          "handle": "dropPendingUpdates",
+          "jsonSchema": {
+            "type": "boolean"
+          },
+          "nullable": false,
+          "value": true,
+          "description": "Discard updates queued before the webhook is created or resumed."
         }
       ],
       "definitionVersion": 2,
@@ -2535,6 +2595,10 @@
             "uniqueItems": true
           },
           "nullable": false
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
         },
         {
           "handle": "webhookName",
