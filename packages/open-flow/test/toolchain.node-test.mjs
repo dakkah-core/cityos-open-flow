@@ -7,9 +7,17 @@ import { fileURLToPath } from 'node:url'
 import { stageNpmPackage } from '../src/distribution/node/npmPackage.ts'
 
 const root = fileURLToPath(new URL('../../../', import.meta.url))
-const readJson = async file => JSON.parse(await readFile(file, 'utf8'))
+const readJson = async (file) => JSON.parse(await readFile(file, 'utf8'))
 const manifest = await readJson(path.join(root, 'package.json'))
 const members = ['package.json', 'packages/open-flow/package.json', 'packages/command/package.json', 'apps/server/package.json']
+
+test('standalone migration regressions are discoverable through the owning toolchain command', () => {
+  const command = manifest.scripts['test:toolchain']
+  for (const file of ['toolchain.node-test.mjs', 'miniflare-tooling.node-test.mjs', 'babel-gen-mapping.node-test.mjs']) {
+    assert.ok(command.includes('packages/open-flow/test/' + file), file)
+  }
+  assert.ok(command.includes('--test-concurrency=1'))
+})
 
 test('registry dependencies use the owning Bun catalog and retain workspace edges', async () => {
   for (const member of members) {
@@ -65,7 +73,8 @@ test('the approved browser API binding cannot become a build compiler or spread 
       }
     }
   }
-  for (const directory of ['packages/open-flow/src', 'packages/command/src', 'apps/server/browser', 'apps/server/common', 'apps/server/node']) await inspect(directory)
+  for (const directory of ['packages/open-flow/src', 'packages/command/src', 'apps/server/browser', 'apps/server/common', 'apps/server/node'])
+    await inspect(directory)
   for (const member of members) {
     const pkg = await readJson(path.join(root, member))
     for (const [name, command] of Object.entries(pkg.scripts ?? {})) {
@@ -74,7 +83,7 @@ test('the approved browser API binding cannot become a build compiler or spread 
   }
 })
 
-test('package staging emits concrete stable peers from the owning catalog', async t => {
+test('package staging emits concrete stable peers from the owning catalog', async (t) => {
   const temporary = await mkdtemp(path.join(tmpdir(), 'open-flow-catalog-'))
   t.after(() => rm(temporary, { recursive: true, force: true }))
   const sourceRoot = path.join(temporary, 'packages/open-flow')
@@ -82,13 +91,16 @@ test('package staging emits concrete stable peers from the owning catalog', asyn
   await mkdir(path.join(sourceRoot, 'skills'), { recursive: true })
   await writeFile(path.join(sourceRoot, 'LICENSE'), 'fixture license')
   await writeFile(path.join(sourceRoot, 'NOTICE'), 'fixture notice')
-  const catalog = { effect: '4.0.5', zod: '4.6.7', react: '19.3.1', 'react-dom': '19.3.1' }
+  const catalog = { 'effect': '4.0.5', 'zod': '4.6.7', 'react': '19.3.1', 'react-dom': '19.3.1' }
   await writeFile(path.join(temporary, 'package.json'), JSON.stringify({ catalog }))
   await stageNpmPackage({ sourceRoot, packageRoot, version: '0.1.0' })
   const packed = await readJson(path.join(packageRoot, 'package.json'))
   assert.deepEqual(packed.peerDependencies, catalog)
   assert.doesNotMatch(JSON.stringify(packed), /catalog:|4\.0\.0-rc\./)
-  for (const bad of [{ ...catalog, effect: '4.0.0-rc.113' }, { ...catalog, effect: undefined }]) {
+  for (const bad of [
+    { ...catalog, effect: '4.0.0-rc.113' },
+    { ...catalog, effect: undefined },
+  ]) {
     await writeFile(path.join(temporary, 'package.json'), JSON.stringify({ catalog: bad }))
     await assert.rejects(stageNpmPackage({ sourceRoot, packageRoot, version: '0.1.0' }), /stable catalog/)
   }
