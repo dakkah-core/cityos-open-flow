@@ -32,7 +32,7 @@ import type { DraftOperation } from '@oomol-lab/open-flow/control-requests'
 import type { JsonValue, RevisionContent, TriggerKeySnapshot } from '@oomol-lab/open-flow/flow-change'
 import type { WorkflowFile } from '@oomol-lab/open-flow/flow-encoding'
 import type { ConnectorAccessHost, ConnectorAccessMutation } from '../deployment/connector-access.ts'
-import type { ConnectorAccessContext, ConnectorHost } from '../deployment/connector.ts'
+import type { ConnectorAccessContext, ConnectorHost } from '../deployment/connector-contract.ts'
 import type { EventSourceRuntime } from '../runtime/event-source-runtime.ts'
 import type { StoredFlow, StoredFlowRevision } from '../storage/flow-store.ts'
 import type { PublicationAcceptance } from '../storage/publication-store.ts'
@@ -41,6 +41,7 @@ import type { StoredTriggerBinding } from '../storage/trigger-store.ts'
 import { controlErrorCode, liveEntries, flowInputDefinitions } from '@oomol-lab/open-flow/control-api'
 import { readAuthoring, searchAuthoring, compileAuthoring, authoringSchema, authoringDiagnostics, AuthoringError } from '@oomol-lab/open-flow/control-requests'
 import { resolveDraftOperations } from '@oomol-lab/open-flow/control-requests'
+import { eventSourceDefinition, SourceIdentityError } from '@oomol-lab/open-flow/event-source'
 import { resourceNameIssue } from '@oomol-lab/open-flow/flow-change'
 import { applyFlowChanges, currentFlowModelVersion, FlowChangeError } from '@oomol-lab/open-flow/flow-change'
 import { cleanWorkflowFile } from '@oomol-lab/open-flow/flow-encoding'
@@ -52,7 +53,8 @@ import { triggerDefinitions as providerDefinitions } from '@oomol-lab/open-flow/
 import { currentEngineContract, findEngineContract } from '@oomol-lab/open-flow/runtime-contract'
 import { createHash } from 'node:crypto'
 import { randomUUID } from 'node:crypto'
-import { ConnectorTaskError, ConnectorClient } from '../deployment/connector.ts'
+import { ConnectorTaskError } from '../deployment/connector-contract.ts'
+import { ConnectorClient } from '../deployment/connector.ts'
 import { loadOpenApiDocument } from '../deployment/openapi.ts'
 import { AcceptanceError, ControlError, serverErrorCode } from '../error.ts'
 import { RevisionIntegrityError } from '../storage/revision-store.ts'
@@ -192,19 +194,26 @@ export class ControlService {
     }
   }
 
-  async listEventSources(flowId?: string) {
+  async listEventSources(flowId?: string, signal?: AbortSignal) {
     if (this.eventSources == null) throw new ControlError(controlErrorCode.eventSourceInvalid, 'Event sources are unavailable.')
-    if (flowId == null) return this.eventSources.list()
+    if (flowId == null) return this.eventSources.list(undefined, signal)
     const teamId = (await this.resolveConnectorScope(flowId)) ?? null
-    return { ...this.eventSources.list(teamId), teamId }
+    return { ...(await this.eventSources.list(teamId, signal)), teamId }
   }
 
-  async listEventSourceConnections(teamId: string | undefined, signal: AbortSignal) {
+  async listEventSourceConnections(teamId: string | undefined, signal: AbortSignal, kind = 'feishu') {
     const scope = await this.resolveConnectorTeam(teamId)
     if (scope != teamId) throw new ControlError(controlErrorCode.eventSourceInvalid, 'Select the Connector Team explicitly.')
     const connector = this.resolveConnector()
     if (connector == null) throw new ControlError(controlErrorCode.connectorUnconfigured, 'Connector is not configured.')
-    return { version: 1, connections: await connector.listConnections('feishu_app_bot', signal, this.#connectorContext(undefined, scope)) }
+    let definition
+    try {
+      definition = eventSourceDefinition(kind)
+    } catch (error) {
+      if (error instanceof SourceIdentityError) throw new ControlError(controlErrorCode.eventSourceInvalid, error.message)
+      throw error
+    }
+    return { version: 1, connections: await connector.listConnections(definition.provider, signal, this.#connectorContext(undefined, scope)) }
   }
 
   async createEventSource(input: CreateEventSource, signal: AbortSignal) {
@@ -214,9 +223,9 @@ export class ControlService {
     return this.eventSources.create(input, signal)
   }
 
-  updateEventSource(sourceId: string, input: UpdateEventSource) {
+  updateEventSource(sourceId: string, input: UpdateEventSource, signal: AbortSignal) {
     if (this.eventSources == null) throw new ControlError(controlErrorCode.eventSourceInvalid, 'Event sources are unavailable.')
-    return this.eventSources.update(sourceId, input)
+    return this.eventSources.update(sourceId, input, signal)
   }
 
   deleteEventSource(sourceId: string, revision: number) {
@@ -276,7 +285,7 @@ export class ControlService {
     const definition = providerDefinitions.find((item) => item.snapshot.key == trigger.definition.key)
     if (definition != null && 'eventSource' in definition && definition.eventSource != null) {
       if (trigger.connectionId == null) throw new ControlError(serverErrorCode.connectorConnectionRequired, 'Select a Connection first.')
-      const sources = (await this.listEventSources(flowId)).sources.filter(
+      const sources = (await this.listEventSources(flowId, signal)).sources.filter(
         (source) => source.connectionId == trigger.connectionId && source.provider == trigger.definition.provider,
       )
       if (field == 'sourceId') return sources.map((source) => ({ value: source.sourceId, label: source.name }))

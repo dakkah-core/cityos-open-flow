@@ -42,8 +42,8 @@ async function fixture() {
   const file = path.join(directory, 'flow.sqlite')
   const database = Database.open(file)
   const store = new Store(database, Date.now)
-  function seed(id: string, document: JsonValue = legacyDocument()) {
-    const source = { kind: 'open-flow-flow-revision', version: 1, modelVersion: 8, document, modules: {} }
+  function seed(id: string, document: JsonValue = legacyDocument(), modelVersion = 8) {
+    const source = { kind: 'open-flow-flow-revision', version: 1, modelVersion, document, modules: {} }
     const body = serialized(source)
     store.flows.createFlow({
       actorId: 'operator',
@@ -53,7 +53,7 @@ async function fixture() {
       createdAt: Date.now(),
       idempotencyKey: id,
       requestDigest: id,
-      modelVersion: 8,
+      modelVersion,
       ...body,
     })
     return {
@@ -73,12 +73,12 @@ async function fixture() {
       publishedAt: Date.now(),
       idempotencyKey: `publish-${id}`,
       requestDigest: `request-${id}`,
-      metadata: { operation: 'publish' as const, actorId: 'operator', modelVersion: 8 },
+      metadata: { operation: 'publish' as const, actorId: 'operator', modelVersion },
     }
   }
   function closeLegacy() {
     database.connection.exec(
-      "UPDATE publish_operations SET input_json = json_remove(input_json, '$.interface'); ALTER TABLE publications DROP COLUMN interface_json; ALTER TABLE runs DROP COLUMN initiator_actor_id; ALTER TABLE runs DROP COLUMN initiator_channel; PRAGMA user_version = 48;",
+      "UPDATE publish_operations SET input_json = json_remove(input_json, '$.interface'); ALTER TABLE publications DROP COLUMN interface_json; ALTER TABLE runs DROP COLUMN initiator_actor_id; ALTER TABLE runs DROP COLUMN initiator_channel; DROP TABLE event_source_apps; DROP TABLE source_event_versions; PRAGMA user_version = 48;",
     )
     database.close()
   }
@@ -173,7 +173,7 @@ it('upgrades full and delta Revisions, preserves identities and Live history, an
   })
   await closeService(service)
   const reopened = Database.open(file)
-  expect(reopened.connection.prepare('PRAGMA user_version').get()).toEqual({ user_version: 50 })
+  expect(reopened.connection.prepare('PRAGMA user_version').get()).toEqual({ user_version: 51 })
   reopened.close()
 })
 
@@ -204,6 +204,85 @@ it('backfills null versus empty interfaces and resumes pending publication with 
     checkpoint_digest: 'checkpoint-digest',
   })
   upgraded.close()
+})
+
+it.each([false, true])('snapshots historical Task revisions without rewriting them (Start present: %s)', async (hasStart) => {
+  const { file, database, store, seed, closeLegacy } = await fixture()
+  const historical = seed(
+    'historical',
+    {
+      tasks: { shared: { name: 'Historical task' } },
+      bindings: {},
+      graph: {
+        nodes: {
+          task: { kind: 'task', name: 'Task', taskId: 'shared' },
+          ...(hasStart ? { start: { kind: 'start', name: 'Start', inputDefs: [number] } } : {}),
+        },
+        edges: [],
+      },
+    },
+    hasStart ? 7 : 5,
+  )
+  expect(store.publications.publish(historical).kind).toBe('published')
+  const before = database.connection.prepare('SELECT * FROM publications').get()
+  closeLegacy()
+  const upgraded = Database.open(file)
+  try {
+    const snapshot = { inputs: hasStart ? [number] : null, outputs: null }
+    expect(new Store(upgraded, Date.now).publications.interfaceForRevision('historical', 'historical')).toEqual(snapshot)
+    const stored = new RevisionStore(upgraded.connection).read('historical')!
+    expect(stored).toMatchObject({ content: historical.content, digest: historical.revisionDigest })
+    expect(upgraded.connection.prepare('SELECT * FROM publications').get()).toEqual({ ...before, interface_json: JSON.stringify(snapshot) })
+    expect(() => decodeRevision(encoder.encode(stored.content))).toThrow('Independent Task definitions are no longer supported.')
+  } finally {
+    upgraded.close()
+  }
+})
+
+it.each(['pending', 'failed'] as const)('preserves historical Task revisions with %s publication operations', async (status) => {
+  const { file, database, store, seed, closeLegacy } = await fixture()
+  const historical = seed(
+    'historical',
+    {
+      tasks: { shared: { name: 'Historical task' } },
+      bindings: {},
+      graph: { nodes: { task: { kind: 'task', name: 'Task', taskId: 'shared' } }, edges: [] },
+    },
+    5,
+  )
+  const accepted = store.publications.acceptPublishOperation({
+    ...historical,
+    integrations: [
+      {
+        connectionId: 'connection',
+        reconcileAt: Date.now(),
+        triggerNodeId: 'integration',
+        triggerJson: JSON.stringify({ kind: 'integration', definition: { key: 'github.on_repo_event' } }),
+      },
+    ],
+    polls: [{ connectionId: 'connection', nextAt: Date.now(), scheduleJson: '[]', triggerNodeId: 'poll', triggerJson: '{}' }],
+  })
+  if (accepted.kind !== 'accepted') throw new Error('Expected accepted operation')
+  if (status === 'failed') store.publications.failPublishOperation(accepted.operation.operationId, { code: 'flow.invalid', message: 'Historical failure' })
+  expect(database.connection.prepare('SELECT COUNT(*) AS count FROM publish_work').get()).toEqual({ count: 2 })
+  closeLegacy()
+  const upgraded = Database.open(file)
+  try {
+    const migrated = new Store(upgraded, Date.now)
+    const operationId = accepted.operation.operationId
+    expect(upgraded.connection.prepare('SELECT status FROM publish_operations').get()).toEqual({ status: 'failed' })
+    const candidate = migrated.integrations.candidate(operationId, 'integration')!
+    expect(candidate.status).toBe('cleanup')
+    expect(upgraded.connection.prepare('SELECT COUNT(*) AS count FROM poll_candidates').get()).toEqual({ count: 0 })
+    expect(migrated.publications.nextPublishOperation(Date.now())).toBeUndefined()
+    expect(migrated.publications.prunePublishOperations(Number.MAX_SAFE_INTEGER, 10)).toBe(0)
+    expect(migrated.integrations.deleteCandidate(candidate)).toBe(true)
+    expect(migrated.publications.prunePublishOperations(Number.MAX_SAFE_INTEGER, 10)).toBe(1)
+    expect(upgraded.connection.prepare('SELECT COUNT(*) AS count FROM publish_work').get()).toEqual({ count: 0 })
+    expect(new RevisionStore(upgraded.connection).read('historical')).toMatchObject({ content: historical.content, digest: historical.revisionDigest })
+  } finally {
+    upgraded.close()
+  }
 })
 
 it.each(['conflict', 'orphan', 'missing-revision', 'bad-digest', 'bad-delta'])(

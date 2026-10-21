@@ -11,13 +11,13 @@ import type {
 } from '@oomol-lab/open-flow/integration-trigger'
 import type { Logger } from 'pino'
 import type { ConnectorAccessHost } from '../deployment/connector-access.ts'
-import type { ConnectorAccessContext, ConnectorHost } from '../deployment/connector.ts'
+import type { ConnectorAccessContext, ConnectorHost } from '../deployment/connector-contract.ts'
 import type { SourceDelivery } from '../storage/event-source-store.ts'
 import type { IntegrationCandidate } from '../storage/integration-store.ts'
 import type { IntegrationHealth, StoredIntegrationBinding, StoredIntegrationState, StoredIntegrationTarget } from '../storage/trigger-store.ts'
 
 import { decodeConnectorAccessSnapshot } from '@oomol-lab/open-flow/control-api'
-import { eventSourceDefinition } from '@oomol-lab/open-flow/event-source'
+import { sourceReady } from '@oomol-lab/open-flow/event-source'
 import { decodeRevision } from '@oomol-lab/open-flow/flow-encoding'
 import { canonicalJsonBytes, digestBytes } from '@oomol-lab/open-flow/flow-encoding'
 import { matchesTriggerOutputs } from '@oomol-lab/open-flow/flow-semantics'
@@ -33,7 +33,7 @@ import {
 import * as Effect from 'effect/Effect'
 import * as Semaphore from 'effect/Semaphore'
 import { isDeepStrictEqual } from 'node:util'
-import { ConnectorTaskError } from '../deployment/connector.ts'
+import { ConnectorTaskError } from '../deployment/connector-contract.ts'
 import { AcceptanceError } from '../error.ts'
 import { errorKind } from '../logger.ts'
 import { Store } from '../storage/store.ts'
@@ -855,7 +855,7 @@ export class IntegrationRuntime {
           this.#store.eventSources.finish(delivery, 'retired')
           continue
         }
-        if (source.enabled != 1 || !eventSourceDefinition(source.kind).ready(source) || !this.#store.eventSources.deliverable(delivery)) {
+        if (source.enabled != 1 || !sourceReady(source) || !this.#store.eventSources.deliverable(delivery)) {
           this.#store.eventSources.retry(delivery, now)
           continue
         }

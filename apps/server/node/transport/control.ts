@@ -121,11 +121,11 @@ export function createControlApp(service: ControlService, resolveActor?: Resolve
 
   app.get('/event-sources', async (context) => {
     query(context.req.raw, ['flowId'], controlErrorCode.eventSourceInvalid)
-    return response(200, await service.listEventSources(context.req.query('flowId')))
+    return response(200, await service.listEventSources(context.req.query('flowId'), context.req.raw.signal))
   })
   app.get('/event-sources/connections', async (context) => {
-    query(context.req.raw, ['teamId'], controlErrorCode.eventSourceInvalid)
-    return response(200, await service.listEventSourceConnections(context.req.query('teamId'), context.req.raw.signal))
+    query(context.req.raw, ['teamId', 'kind'], controlErrorCode.eventSourceInvalid)
+    return response(200, await service.listEventSourceConnections(context.req.query('teamId'), context.req.raw.signal, context.req.query('kind')))
   })
   app.post('/event-sources', async (context) => {
     query(context.req.raw, [], controlErrorCode.eventSourceInvalid)
@@ -135,7 +135,7 @@ export function createControlApp(service: ControlService, resolveActor?: Resolve
   app.put('/event-sources/:sourceId', async (context) => {
     query(context.req.raw, [], controlErrorCode.eventSourceInvalid)
     const body = await decodeRequest(context.req.raw, controlErrorCode.eventSourceInvalid, controlRequests.updateEventSource)
-    return response(200, service.updateEventSource(context.req.param('sourceId'), body))
+    return response(200, await service.updateEventSource(context.req.param('sourceId'), body, context.req.raw.signal))
   })
   app.delete('/event-sources/:sourceId', async (context) => {
     query(context.req.raw, [], controlErrorCode.eventSourceInvalid)

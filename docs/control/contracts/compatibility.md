@@ -23,6 +23,8 @@ Server schema migration 49 upgrades existing development and deployed databases 
 
 Fresh databases and migrated databases enforce Publication `interface_json` as `TEXT NOT NULL` without a default. Snapshots distinguish absent nodes (`null`) from nodes with no fields (`[]`). Databases already created with the new interface column require no content rewrite. Missing Publication Revisions, corrupt digests or deltas, conflicting configurations, duplicate special nodes, and nonempty definitions whose owning node is absent abort the entire migration without committing changes. These cases require explicit data repair rather than silently dropping configuration or inventing callable nodes.
 
+For historical Revisions that need no interface rewrite, snapshot backfill validates only the Start and Outputs nodes after verifying the stored digest. Retired Task definitions elsewhere in those Revisions do not block server startup. Their original bytes and digests remain unchanged, and normal Revision decoding and execution still reject unsupported definitions.
+
 Stop the previous server and back up the SQLite database before deploying this upgrade, including its WAL if present. Start the new server against the existing persistent data directory; startup performs the migration before serving traffic or resuming background work. Keep the backup for deployment rollback. Do not remove the Docker data volume to upgrade.
 
 Outputs retains ordinary dependency snapshots, loops, cancellation and checkpoint recovery. Run business outputs are absent when Outputs never executes and `{}` when it executes with no declared fields. Start normalizes omitted nullable arguments to null and rejects unknown or missing required arguments.
@@ -200,3 +202,18 @@ The managed `workflow` executor adds independent Live Run invocation without res
 Run details add optional `initiator` audit metadata without changing `source: draft | live`, Run
 request versions, or existing `caller/calls` associations. Older Runs and deployments may omit it.
 Server migration 50 adds nullable audit columns without backfilling inferred identities or channels.
+
+## Connector-owned shared event source protocols
+
+Shared source protocol code and its Provider regression tests move from Open Flow to Connector.
+The public event-source entry now exposes metadata, the source operation contract and generic state
+projection helpers. Provider-specific `feishuApplication`, `receiveFeishuEvent`, `matchesFeishuEvent`
+and `feishuSubscriptions` exports are removed. Consumers use the Connector source protocol instead.
+Deploy the supporting Connector before Open Flow; no local protocol fallback is retained. Source
+instances retain their IDs and acquire stored projections through Connector without rewriting bindings.
+
+The npm publication baseline checked for this change is `0.1.0-beta.68` at
+`ae0f847fde9b8b5feb96822c763ea563f456f069`, whose Engine contract is v5. The branch already carries
+pending Engine v6 changes. This refactor preserves node snapshots, output contracts and Run semantics;
+it does not allocate another Engine revision. Package consumers of the removed protocol helpers and
+Connector deployments must upgrade together at the new package boundary.

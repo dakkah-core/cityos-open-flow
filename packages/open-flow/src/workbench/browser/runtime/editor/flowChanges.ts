@@ -19,6 +19,7 @@ import type { RevisionView } from '../revisionView.ts'
 import { dequal } from 'dequal/lite'
 import { isJsonObject } from '../../../../base/common/json.ts'
 import { connectorOutputMode } from '../../../../connector/common/actionSchema.ts'
+import catalog from '../../../../event-source/common/catalog.generated.json' with { type: 'json' }
 import { isTriggerNode, nextNodeName, normalizeNodeName, applyFlowChanges as reduceFlowChanges } from '../../../../flow/common/change.ts'
 import { otherwiseOutput } from '../../../../flow/common/condition.ts'
 import { fixedInputValue, inputValue } from '../../../../flow/common/inputValue.ts'
@@ -48,8 +49,8 @@ import {
 import { remapInputMappings, renamedPort, renameOutputMapping } from '../../../../flow/common/portChanges.ts'
 import { renamePromptInput } from '../../../../flow/common/promptTemplate.ts'
 import { valueForEditor } from '../../../../form/common/editorComponent.ts'
-import { feishuResourceKind, supportsFeishuChatFilter } from '../../../../trigger/providers/feishu/config.ts'
 import { withWorkflowTask } from '../../../../workflow/common/workflow.ts'
+import { feishuResourceKind, supportsFeishuChatFilter } from './feishuEventConfig.ts'
 
 export type FlowChanges = readonly ChangeOperation[]
 
@@ -59,7 +60,7 @@ export function applyFlowChanges(draft: Draft, changes: FlowChanges): Draft {
 
 export function setTriggerEventSource(revision: RevisionView, triggerId: string, source: EventSource): FlowChanges | undefined {
   const trigger = revision.graph().nodes[triggerId]
-  if (trigger?.kind != 'integration' || trigger.definition.key != 'feishu_app_bot.on_event' || source.provider != trigger.definition.provider) return
+  if (trigger?.kind != 'integration' || !catalog.some((entry) => entry.key === trigger.definition.key) || source.provider != trigger.definition.provider) return
   const content = revision.revision.content
   const changes = changeTriggerConnection(content, triggerId, source.connectionId)
   if (changes == null) return
@@ -67,9 +68,13 @@ export function setTriggerEventSource(revision: RevisionView, triggerId: string,
   return [
     ...changes,
     ...(changeTriggerConfig(content, triggerId, 'sourceId', source.sourceId) ?? []),
-    ...(changed ? (changeTriggerConfig(content, triggerId, 'eventTypes', undefined) ?? []) : []),
-    ...(changed ? (changeTriggerConfig(content, triggerId, 'resource', undefined) ?? []) : []),
-    ...(changed ? (changeTriggerConfig(content, triggerId, 'chatIds', undefined) ?? []) : []),
+    ...['eventTypes', 'resource', 'chatIds', 'channelIds'].flatMap((handle): readonly ChangeOperation[] => {
+      if (trigger.definition.configInputs.some((input) => 'handle' in input && input.handle === handle))
+        return changed ? (changeTriggerConfig(content, triggerId, handle, undefined) ?? []) : []
+      return Object.hasOwn(trigger.config, handle)
+        ? [{ kind: 'graph.trigger.config.set', nodeId: triggerId, name: handle, before: trigger.config[handle], value: undefined }]
+        : []
+    }),
   ]
 }
 
