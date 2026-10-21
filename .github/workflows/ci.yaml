@@ -115,6 +115,11 @@ jobs:
       - name: Verify package artifacts
         run: bun run test:npm-package
 
+      - name: Verify packed authoring client over HTTP
+        env:
+          OPEN_FLOW_BUN_EXECUTABLE: bun
+        run: node scripts/upstream/check-http-authoring.mjs
+
   command:
     needs: changes
     if: needs.changes.outputs.command == 'true'
