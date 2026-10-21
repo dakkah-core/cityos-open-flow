@@ -47,7 +47,9 @@
     "startDescription": "Démarrer le workflow manuellement ou par un appel API avec des paramètres de démarrage.",
     "outputs": "Sorties du workflow",
     "outputsDescription": "Définir les sorties du workflow et leurs valeurs. Calculées après les dépendances en amont.",
-    "workflow": "Appeler un workflow"
+    "workflow": "Appeler un workflow",
+    "webhookResponse": "Réponse Webhook",
+    "webhookResponseDescription": "Renvoyer une réponse HTTP et poursuivre le workflow."
   },
   "connectorAccess": {
     "searchServices": "Rechercher un service",
@@ -892,7 +894,18 @@
         "config-invalid": "La configuration du Trigger « {{triggerId}} » ne correspond pas à sa définition fixe.",
         "connection-invalid": "La liaison Trigger « {{bindingId}} » doit être une Connection.",
         "connection-missing": "Sélectionnez un compte connecté pour ce déclencheur.",
-        "input-duplicate": "L’entrée « {{input}} » du Webhook Trigger est déclarée plusieurs fois."
+        "input-duplicate": "L’entrée « {{input}} » du Webhook Trigger est déclarée plusieurs fois.",
+        "webhook-response-outputs-missing": "Ajoutez un nœud de sorties pour la réponse HTTP.",
+        "webhook-response-unreachable": "Reliez ce Webhook au nœud de sorties.",
+        "webhook-response-output-missing": "La sortie « {{output}} » n’existe pas.",
+        "webhook-response-status-invalid": "Choisissez un statut autorisant un corps de réponse.",
+        "webhook-response-status-source": "Choisissez les sorties du workflow comme source de réponse pour utiliser un champ de statut.",
+        "webhook-response-status-output-missing": "La sortie de statut « {{output}} » n’existe pas.",
+        "webhook-response-headers-source": "Choisissez les sorties du workflow comme source de réponse pour utiliser des en-têtes dynamiques.",
+        "webhook-response-header-name": "Utilisez des noms d’en-tête HTTP valides et uniques.",
+        "webhook-response-header-output-missing": "La sortie du workflow « {{output}} » n’existe pas.",
+        "webhook-response-header-output-type": "Choisissez du texte, un nombre, un booléen ou un objet contenant uniquement ces valeurs.",
+        "webhook-response-status-output-type": "Choisissez une sortie numérique du workflow pour le code de statut."
       },
       "leina": {
         "robot-required": "Sélectionnez un robot Leina ou liez son identifiant à une source d’entrée."
@@ -1100,6 +1113,7 @@
     "webhookHeaderName": "Nom de l'en-tête",
     "webhookHeaderNameDuplicate": "Les noms d'en-tête doivent être uniques.",
     "webhookHeaderNameInvalid": "Saisissez un nom d'en-tête HTTP valide.",
+    "webhookHeadersSource": "Source des en-têtes de réponse",
     "webhookHeaders": "En-têtes de réponse",
     "webhookHeaderValue": "Valeur de l'en-tête",
     "webhookMethod": "Méthode de requête",
@@ -1115,7 +1129,26 @@
     "webhookStatusInvalid": "Saisissez un entier compris entre 200 et 599.",
     "webhookBodyFields": "Champs du corps de la requête",
     "webhookNoBodyFields": "Le corps de la requête accepte un objet vide.",
-    "webhookNoHeaders": "Aucun en-tête de réponse."
+    "webhookNoHeaders": "Aucun en-tête de réponse.",
+    "webhookResponse": "Réponse HTTP",
+    "webhookResponseMode": "Source de la réponse",
+    "webhookImmediate": "Contenu fixe",
+    "webhookAfterWorkflow": "Sorties du workflow",
+    "webhookResponseContent": "Contenu de la réponse",
+    "webhookAllOutputs": "Objet de sortie complet",
+    "webhookMissingOutput": "{{output}} (introuvable)",
+    "webhookTimeout": "Délai d’attente (secondes)",
+    "webhookTimeoutInvalid": "Saisissez un délai de 1 à 60 secondes.",
+    "webhookTimeoutDescription": "À expiration du délai d’attente, renvoie HTTP 504 et poursuit l’exécution. L’attente inclut la file, les nouvelles tentatives, les approbations et les workflows appelés.",
+    "webhookDynamicStatusInvalid": "Saisissez un entier de 200 à 599, sauf 204, 205 et 304.",
+    "webhookAddOutputs": "Ajouter les sorties du workflow",
+    "webhookOutputsDisconnected": "Sorties du workflow non connectées",
+    "webhookStatusSource": "Source du code de statut",
+    "webhookAddResponse": "Ajouter un nœud Réponse Webhook",
+    "webhookSelectResponse": "Choisir un nœud Réponse Webhook",
+    "webhookResponseDisconnected": "Le nœud Réponse Webhook n’est pas connecté",
+    "webhookConnectResponse": "Sélectionnez un nœud de réponse Webhook sur le canevas pour le connecter.",
+    "webhookMissingResponse": "Le nœud Réponse Webhook sélectionné est introuvable"
   },
   "conditionEditor": {
     "addCondition": "Ajouter une condition",

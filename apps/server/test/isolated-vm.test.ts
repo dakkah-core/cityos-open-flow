@@ -2,6 +2,7 @@ import type { RuntimeHarness, RuntimeProgram } from '@oomol-lab/open-flow/runtim
 
 import { currentFlowModelVersion } from '@oomol-lab/open-flow/flow-change'
 import { prepareFlow } from '@oomol-lab/open-flow/flow-semantics'
+import { currentEngineContract } from '@oomol-lab/open-flow/runtime-contract'
 import { runtimeConformanceCases } from '@oomol-lab/open-flow/runtime-contract'
 import * as Effect from 'effect/Effect'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -19,7 +20,7 @@ afterAll(async () => await host.close())
 
 function program(source: string): RuntimeProgram {
   return {
-    engineContract: 'open-flow-engine/v6',
+    engineContract: currentEngineContract,
     engineDigest: isolatedVmEngineDigest,
     entryModuleId: 'main',
     modules: { main: { imports: [], source } },
@@ -43,6 +44,30 @@ async function executorPid(): Promise<number> {
 }
 
 describe('isolated-vm runtime conformance', () => {
+  it.each(['open-flow-engine/v6', 'open-flow-engine/v6/nodejs-compat-v1'])('executes the published v6 runtime identity for %s', async (engineContract) => {
+    const engineDigest = 'sha256:1d4de22503410f3ae83e38e7e487446c8d71fa5e2af6697f46add32c3b84bac6'
+    await expect(
+      host.invoke({
+        capability: async () => ({ body: null, status: 403 }),
+        input: null,
+        invocationId: 'legacy-platform',
+        program: {
+          ...program("import { engineContract } from 'open-flow:platform'; export default () => ({ engineContract })"),
+          engineContract,
+          engineDigest,
+        },
+      }),
+    ).resolves.toEqual({ engineContract })
+    await expect(
+      host.invoke({
+        capability: async () => ({ body: null, status: 403 }),
+        input: null,
+        invocationId: 'legacy-digest-current-contract',
+        program: { ...program('export default () => true'), engineDigest },
+      }),
+    ).rejects.toMatchObject({ code: 'invalid-program' })
+  })
+
   it.each(['return {}', 'return { result: undefined }', 'return { result: null }', 'return undefined'])(
     'transports nullable output candidates for Scheduler normalization: %s',
     async (body) => {
@@ -586,7 +611,7 @@ it('reads immutable single and merged predecessor arrays through the isolated sc
         },
       },
     },
-    'open-flow-engine/v6',
+    currentEngineContract,
   )
   if (prepared.kind != 'prepared') throw new Error(JSON.stringify(prepared))
   const outcome = await Effect.runPromise(
@@ -670,7 +695,7 @@ async function retryFixture(kind: 'managed' | 'code', source?: string, onError?:
         },
       },
     },
-    'open-flow-engine/v6',
+    currentEngineContract,
   )
   if (prepared.kind != 'prepared') throw new Error(JSON.stringify(prepared))
   return prepared.flow

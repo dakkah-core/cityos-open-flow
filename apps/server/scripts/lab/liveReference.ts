@@ -5,7 +5,187 @@ import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 
 /** All discovery and editing goes through caller-visible CLI commands. */
-export async function referenceLive(call: ToolCall, flowId: string) {
+export async function referenceLive(call: ToolCall, flowId: string, dynamic = false) {
+  if (dynamic) await call('flow_schema', { type: 'webhook' })
+  const before = await call('flow_read', { flowId })
+  const saved = await call('flow_edit', {
+    flowId,
+    baseRevision: before.revision,
+    requestId: randomUUID(),
+    edits: [
+      {
+        op: 'node.add',
+        as: 'hook',
+        type: 'webhook',
+        name: 'Published hook',
+        config: {
+          method: 'POST',
+          body: { message: { schema: { type: 'string' }, nullable: false } },
+          ...(dynamic
+            ? {
+                options: {
+                  responseBody: { kind: 'workflow-outputs', output: 'message', timeoutMs: 30000 },
+                  responseData: 'accepted',
+                  responseStatusCode: 202,
+                  responseStatusCodeOutput: 'status',
+                  responseHeaders: { 'X-Reply': 'saved reply', 'X-Fixed': 'kept' },
+                  responseHeaderOutputs: { 'X-Reply': 'message', 'X-Status': 'status', 'X-Enabled': 'enabled' },
+                },
+              }
+            : {}),
+        },
+      },
+      {
+        op: 'node.add',
+        as: 'echo',
+        type: 'code',
+        name: 'Echo',
+        config: { outputs: { message: { schema: { type: 'string' }, nullable: false } } },
+        inputs: { body: { kind: 'output', node: '$hook', port: 'body' } },
+        code: 'export default ({body}) => ({message: body.message})',
+      },
+      { op: 'edge.connect', source: '$hook', target: '$echo' },
+      ...(dynamic
+        ? [
+            {
+              op: 'node.add',
+              as: 'out',
+              type: 'outputs',
+              name: 'Outputs',
+              config: {
+                outputDefs: {
+                  message: { schema: { type: 'string' }, nullable: false },
+                  status: { schema: { type: 'integer' }, nullable: false },
+                  enabled: { schema: { type: 'boolean' }, nullable: false },
+                  headers: { schema: { type: 'object', additionalProperties: { type: ['string', 'number', 'boolean'] } }, nullable: false },
+                },
+              },
+              inputs: {
+                message: { kind: 'output', node: '$echo', port: 'message' },
+                status: { kind: 'value', value: 201 },
+                enabled: { kind: 'value', value: false },
+                headers: { kind: 'value', value: { 'X-Object': 'whole', 'X-Count': 3, 'X-Enabled': false } },
+              },
+            },
+            { op: 'edge.connect', source: '$echo', target: '$out' },
+          ]
+        : []),
+    ],
+  })
+  let revision = saved.revision
+  if (dynamic) {
+    const refs = saved.nodes as Record<string, string>
+    const renamed = await call('flow_edit', {
+      flowId,
+      baseRevision: revision,
+      requestId: randomUUID(),
+      edits: [
+        {
+          op: 'node.update',
+          node: refs.out,
+          set: { config: { outputDefs: { reply: { schema: { type: 'string' }, nullable: false } } } },
+          clear: [['config', 'outputDefs', 'message']],
+        },
+        { op: 'node.update', node: refs.hook, set: { config: { options: { responseBody: { timeoutMs: 15000 } } } } },
+      ],
+    })
+    const renamedStatus = await call('flow_edit', {
+      flowId,
+      baseRevision: renamed.revision,
+      requestId: randomUUID(),
+      edits: [
+        {
+          op: 'node.update',
+          node: refs.out,
+          set: { config: { outputDefs: { httpStatus: { schema: { type: 'integer' }, nullable: false } } } },
+          clear: [['config', 'outputDefs', 'status']],
+        },
+      ],
+    })
+    const wholeHeaders = await call('flow_edit', {
+      flowId,
+      baseRevision: renamedStatus.revision,
+      requestId: randomUUID(),
+      edits: [{ op: 'node.update', node: refs.hook, set: { config: { options: { responseHeadersSource: { kind: 'workflow-outputs', output: 'headers' } } } } }],
+    })
+    await call('flow_read', { flowId, nodes: [refs.hook] })
+    await call('flow_check', { flowId, revisionId: wholeHeaders.revision })
+    revision = wholeHeaders.revision
+    await call('flow_read', { flowId, nodes: [refs.hook, refs.out] })
+    const cleared = await call('flow_edit', {
+      flowId,
+      baseRevision: revision,
+      requestId: randomUUID(),
+      edits: [
+        {
+          op: 'node.update',
+          node: refs.hook,
+          clear: [
+            ['config', 'options', 'responseBody'],
+            ['config', 'options', 'responseStatusCodeOutput'],
+            ['config', 'options', 'responseHeadersSource'],
+            ['config', 'options', 'responseHeaderOutputs'],
+          ],
+        },
+      ],
+    })
+    await call('flow_read', { flowId, nodes: [refs.hook] })
+    const restored = await call('flow_edit', {
+      flowId,
+      baseRevision: cleared.revision,
+      requestId: randomUUID(),
+      edits: [
+        {
+          op: 'node.update',
+          node: refs.hook,
+          set: {
+            config: {
+              options: {
+                responseBody: { kind: 'workflow-outputs', output: 'reply', timeoutMs: 15000 },
+                responseStatusCodeOutput: 'httpStatus',
+                responseHeaderOutputs: { 'X-Reply': 'reply', 'X-Status': 'httpStatus', 'X-Enabled': 'enabled' },
+              },
+            },
+          },
+        },
+      ],
+    })
+    revision = restored.revision
+    await call('flow_check', { flowId, revisionId: revision })
+  }
+  const published = await call('flow_publish', { flowId, revisionId: revision, expectedLivePublicationId: null, idempotencyKey: randomUUID() })
+  if (published.warnings != null) throw new Error(`Unexpected publication warnings: ${JSON.stringify(published.warnings)}`)
+  if (typeof published.operationId === 'string') {
+    let operation = published
+    const deadline = Date.now() + 10000
+    while (operation.status === 'pending' && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      operation = await call('flow_publish_status', { flowId, operationId: published.operationId })
+    }
+    if (operation.status !== 'succeeded') throw new Error(`Publication did not succeed: ${JSON.stringify(operation)}`)
+  }
+  async function readLive() {
+    const result = await call('flow_live', { flowId })
+    return (result.live ?? result) as LiveDetails
+  }
+  const live = published.live == null ? await readLive() : (published.live as LiveDetails)
+  const hook = live.entries.find((entry) => entry.type == 'webhook')
+  if (hook?.type != 'webhook' || !hook.binding.endpointUrl || hook.config.method != 'POST' || !hook.config.body.message)
+    throw new Error('Publish did not expose the Webhook contract')
+  const queried = await readLive()
+  if (!isDeepStrictEqual(queried, live)) throw new Error('Publish and live disagree')
+  await call('flow_edit', {
+    flowId,
+    baseRevision: revision,
+    requestId: randomUUID(),
+    edits: [{ op: 'node.update', node: hook.nodeId, set: { name: 'Draft hook', config: { method: 'PUT' } } }],
+  })
+  const after = await readLive()
+  if (!isDeepStrictEqual(after, live)) throw new Error('Draft edit changed online entries')
+}
+
+export async function referenceEarlyResponse(call: ToolCall, flowId: string) {
+  await call('flow_schema', { type: 'webhook-response' })
   const before = await call('flow_read', { flowId })
   const saved = await call('flow_edit', {
     flowId,
@@ -23,28 +203,53 @@ export async function referenceLive(call: ToolCall, flowId: string) {
         op: 'node.add',
         as: 'echo',
         type: 'code',
-        name: 'Echo',
-        config: { outputs: { message: { schema: { type: 'string' }, nullable: false } } },
+        name: 'Prepare response',
         inputs: { body: { kind: 'output', node: '$hook', port: 'body' } },
-        code: 'export default ({body}) => ({message: body.message})',
+        config: {
+          outputs: {
+            message: { schema: { type: 'string' }, nullable: false },
+            headers: { schema: { type: 'object', additionalProperties: { type: ['string', 'number', 'boolean'] } }, nullable: false },
+          },
+        },
+        code: 'export default ({body}) => ({message: body.message, headers: {"X-Count": 3, "X-Enabled": false}})',
+      },
+      {
+        op: 'node.add',
+        as: 'reply',
+        type: 'webhook-response',
+        name: 'Selected reply',
+        inputs: {
+          body: { kind: 'output', node: '$echo', port: 'message' },
+          statusCode: { kind: 'value', value: 201 },
+          headers: { kind: 'output', node: '$echo', port: 'headers' },
+        },
+      },
+      { op: 'node.add', as: 'other', type: 'webhook-response', name: 'Other reply', inputs: { body: { kind: 'value', value: 'unselected' } } },
+      { op: 'node.add', as: 'later', type: 'wait', name: 'Continue after response', prompt: 'Continue the workflow after HTTP response' },
+      {
+        op: 'node.update',
+        node: '$hook',
+        set: {
+          config: {
+            options: {
+              responseBody: { kind: 'webhook-response', nodeId: '$reply', timeoutMs: 15000 },
+              responseData: 'saved fixed text',
+              responseStatusCode: 202,
+              responseHeaders: { 'X-Ignored': 'fixed' },
+            },
+          },
+        },
       },
       { op: 'edge.connect', source: '$hook', target: '$echo' },
+      { op: 'edge.connect', source: '$hook', target: '$other' },
+      { op: 'edge.connect', source: '$echo', target: '$reply' },
+      { op: 'edge.connect', source: '$reply', target: '$later' },
     ],
   })
-  const published = await call('flow_publish', { flowId, revisionId: saved.revision, idempotencyKey: randomUUID() })
-  if (published.warnings != null) throw new Error(`Unexpected publication warnings: ${JSON.stringify(published.warnings)}`)
-  const live = published.live as LiveDetails
-  const hook = live.entries.find((entry) => entry.type == 'webhook')
-  if (hook?.type != 'webhook' || !hook.binding.endpointUrl || hook.config.method != 'POST' || !hook.config.body.message)
-    throw new Error('Publish did not expose the Webhook contract')
-  const queried = await call('flow_live', { flowId })
-  if (!isDeepStrictEqual(queried.live, live)) throw new Error('Publish and live disagree')
-  await call('flow_edit', {
-    flowId,
-    baseRevision: saved.revision,
-    requestId: randomUUID(),
-    edits: [{ op: 'node.update', node: hook.nodeId, set: { name: 'Draft hook', config: { method: 'PUT' } } }],
-  })
-  const after = await call('flow_live', { flowId })
-  if (!isDeepStrictEqual(after.live, live)) throw new Error('Draft edit changed online entries')
+  await call('flow_read', { flowId, nodes: Object.values(saved.nodes as Record<string, string>) })
+  await call('flow_check', { flowId, revisionId: saved.revision })
+  const published = await call('flow_publish', { flowId, revisionId: saved.revision, expectedLivePublicationId: null, idempotencyKey: randomUUID() })
+  const result = published.live == null ? await call('flow_live', { flowId }) : published
+  const live = (result.live ?? result) as unknown as LiveDetails
+  if (!live.entries.some((entry) => entry.type === 'webhook')) throw new Error('Published response entry is missing.')
 }

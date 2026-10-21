@@ -47,7 +47,9 @@
     "startDescription": "Запустить рабочий процесс вручную или через API с параметрами запуска.",
     "outputs": "Выходы рабочего процесса",
     "outputsDescription": "Определить выходные данные процесса и их значения. Вычисляются после завершения зависимостей.",
-    "workflow": "Вызвать процесс"
+    "workflow": "Вызвать процесс",
+    "webhookResponse": "Ответ Webhook",
+    "webhookResponseDescription": "Вернуть HTTP-ответ и продолжить процесс."
   },
   "connectorAccess": {
     "searchServices": "Поиск сервисов",
@@ -892,7 +894,18 @@
         "config-invalid": "Конфигурация Trigger «{{triggerId}}» не соответствует его фиксированному определению.",
         "connection-invalid": "Привязка Trigger «{{bindingId}}» должна быть Connection.",
         "connection-missing": "Выберите подключённую учётную запись для этого триггера.",
-        "input-duplicate": "Вход Webhook Trigger «{{input}}» объявлен несколько раз."
+        "input-duplicate": "Вход Webhook Trigger «{{input}}» объявлен несколько раз.",
+        "webhook-response-outputs-missing": "Добавьте узел результатов для HTTP-ответа.",
+        "webhook-response-unreachable": "Соедините этот Webhook с узлом результатов.",
+        "webhook-response-output-missing": "Результат «{{output}}» не существует.",
+        "webhook-response-status-invalid": "Выберите код состояния, допускающий тело ответа.",
+        "webhook-response-status-source": "Для выбора поля статуса укажите выходные данные процесса как источник ответа.",
+        "webhook-response-status-output-missing": "Поле статуса «{{output}}» отсутствует в выходных данных процесса.",
+        "webhook-response-headers-source": "Выберите выходы процесса как источник ответа для динамических заголовков.",
+        "webhook-response-header-name": "Укажите допустимые и уникальные имена HTTP-заголовков.",
+        "webhook-response-header-output-missing": "Выход процесса «{{output}}» не существует.",
+        "webhook-response-header-output-type": "Выберите текст, число, логическое значение или объект только с такими значениями.",
+        "webhook-response-status-output-type": "Выберите числовое поле выходных данных процесса для кода статуса."
       },
       "leina": {
         "robot-required": "Выберите робота Leina или привяжите его идентификатор к источнику данных."
@@ -1100,6 +1113,7 @@
     "webhookHeaderName": "Имя заголовка",
     "webhookHeaderNameDuplicate": "Имена заголовков не должны повторяться.",
     "webhookHeaderNameInvalid": "Введите допустимое имя HTTP-заголовка.",
+    "webhookHeadersSource": "Источник заголовков ответа",
     "webhookHeaders": "Заголовки ответа",
     "webhookHeaderValue": "Значение заголовка",
     "webhookMethod": "Метод запроса",
@@ -1115,7 +1129,26 @@
     "webhookStatusInvalid": "Введите целое число от 200 до 599.",
     "webhookBodyFields": "Поля тела запроса",
     "webhookNoBodyFields": "Тело запроса допускает пустой объект.",
-    "webhookNoHeaders": "Заголовки ответа не добавлены."
+    "webhookNoHeaders": "Заголовки ответа не добавлены.",
+    "webhookResponse": "HTTP-ответ",
+    "webhookResponseMode": "Источник ответа",
+    "webhookImmediate": "Фиксированное содержимое",
+    "webhookAfterWorkflow": "Выходные данные процесса",
+    "webhookResponseContent": "Содержимое ответа",
+    "webhookAllOutputs": "Полный объект результатов",
+    "webhookMissingOutput": "{{output}} (отсутствует)",
+    "webhookTimeout": "Время ожидания (секунды)",
+    "webhookTimeoutInvalid": "Введите время ожидания от 1 до 60 секунд.",
+    "webhookTimeoutDescription": "При истечении времени ожидания возвращает HTTP 504; выполнение продолжается. Ожидание включает очередь, повторы, подтверждения и вызванные процессы.",
+    "webhookDynamicStatusInvalid": "Введите целое число от 200 до 599, кроме 204, 205 и 304.",
+    "webhookAddOutputs": "Добавить результаты процесса",
+    "webhookOutputsDisconnected": "Результаты процесса не подключены",
+    "webhookStatusSource": "Источник кода статуса",
+    "webhookAddResponse": "Добавить узел ответа Webhook",
+    "webhookSelectResponse": "Выберите узел ответа Webhook",
+    "webhookResponseDisconnected": "Узел ответа Webhook не подключён",
+    "webhookConnectResponse": "Выберите узел ответа Webhook на холсте, чтобы подключить его.",
+    "webhookMissingResponse": "Выбранный узел ответа Webhook отсутствует"
   },
   "conditionEditor": {
     "addCondition": "Добавить условие",

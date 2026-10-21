@@ -22,6 +22,17 @@ import { nodeSystemOutputPorts, supportsNodeErrorHandling } from './errorHandlin
 import { supportsNodeRetry, retryConfigurationSchema } from './retry.ts'
 import { schemaObject, matchesSchema, comparePorts, portsAssignable, variableInputCompatible, hasRetiredRef } from './schema.ts'
 import { sourceFields, sourcePort, sourceOutputLabel } from './sourceField.ts'
+import {
+  webhookResponseInputs,
+  validWebhookStatus,
+  webhookHeaderValues,
+  webhookHeaderNameIssue,
+  webhookHeaderValuePort,
+  webhookHeadersPort,
+  webhookResponseAllowsBody,
+  webhookStatusCodePort,
+  workflowOutputsPort,
+} from './webhookResponse.ts'
 
 export function isResolutionNode(node: GraphNode | undefined): node is Extract<GraphNode, { readonly kind: 'approval' | 'wait' }> {
   return node?.kind == 'approval' || node?.kind == 'wait'
@@ -34,6 +45,111 @@ function graphDiagnostic(
   mismatch?: SchemaMismatch,
 ): Diagnostic {
   return { code, column: 0, line: 1, message, mismatch, path, ...(values == null ? {} : { values }) }
+}
+
+/** Execution reachability is independent of data bindings and selected runtime branches. */
+export function executionReachableNodes(graph: Graph, source: string): ReadonlySet<string> {
+  const reachable = new Set([source])
+  for (const id of reachable) for (const edge of graph.edges) if (edge.source === id) reachable.add(edge.target)
+  return reachable
+}
+
+export function webhookResponseDiagnostics(graph: Graph, triggerId: string, path = `/document/graph/nodes/${triggerId}`): readonly Diagnostic[] {
+  const trigger = graph.nodes[triggerId]
+  if (trigger?.kind != 'webhook') return []
+  const options = trigger.options ?? {}
+  const response = options.responseBody
+  const statusOutput = options.responseStatusCodeOutput
+  const statusPath = `${path}/options/responseStatusCodeOutput`
+  const diagnostics: Diagnostic[] = []
+  const headersSource = options.responseHeadersSource
+  const headerOutputs = options.responseHeaderOutputs
+  const headersPath = `${path}/options/${headersSource == null ? 'responseHeaderOutputs' : 'responseHeadersSource'}`
+  if (response?.kind !== 'workflow-outputs') {
+    if (statusOutput != null)
+      diagnostics.push(
+        graphDiagnostic('trigger.webhook-response-status-source', 'Choose workflow outputs as the response source to use a status output.', statusPath),
+      )
+    if (headersSource != null || headerOutputs != null)
+      diagnostics.push(
+        graphDiagnostic('trigger.webhook-response-headers-source', 'Choose workflow outputs as the response source to use dynamic headers.', headersPath),
+      )
+    if (response?.kind === 'webhook-response') {
+      const location = `${path}/options/responseBody/nodeId`
+      const { nodeId } = response
+      if (nodeId == null || graph.nodes[nodeId]?.kind !== 'webhook-response')
+        diagnostics.push(graphDiagnostic('trigger.webhook-response-node-missing', 'Select a Webhook Response node.', location))
+      else if (!executionReachableNodes(graph, triggerId).has(nodeId))
+        diagnostics.push(graphDiagnostic('trigger.webhook-response-node-unreachable', 'Connect this Webhook to the selected Webhook Response node.', location))
+    }
+    return diagnostics
+  }
+  if (headersSource == null) {
+    for (const [headers, location] of [
+      [options.responseHeaders, `${path}/options/responseHeaders`],
+      [headerOutputs, headersPath],
+    ] as const) {
+      const names: string[] = []
+      for (const name of Object.keys(headers ?? {})) {
+        if (webhookHeaderNameIssue(name, names) != null)
+          diagnostics.push(graphDiagnostic('trigger.webhook-response-header-name', 'Use valid, unique HTTP header names.', location))
+        names.push(name)
+      }
+    }
+  }
+  const responsePath = `${path}/options/responseBody`
+  const outputs = Object.entries(graph.nodes).filter(([, node]) => node.kind == 'outputs')
+  if (outputs.length == 0) {
+    diagnostics.push(graphDiagnostic('trigger.webhook-response-outputs-missing', 'Add a workflow Outputs node for the HTTP response.', responsePath))
+  } else if (outputs.length == 1) {
+    const output = outputs[0]!
+    const reachable = executionReachableNodes(graph, triggerId)
+    if (!reachable.has(output[0]))
+      diagnostics.push(graphDiagnostic('trigger.webhook-response-unreachable', 'Connect this Webhook to the workflow Outputs node.', responsePath))
+    const field = response.output
+    if (field != null && output[1].kind == 'outputs' && !output[1].outputDefs.some((port) => port.handle == field))
+      diagnostics.push(
+        graphDiagnostic('trigger.webhook-response-output-missing', `Workflow output "${field}" does not exist.`, `${responsePath}/output`, { output: field }),
+      )
+    if (statusOutput != null && output[1].kind == 'outputs') {
+      const port = output[1].outputDefs.find((candidate) => candidate.handle == statusOutput)
+      if (port == null)
+        diagnostics.push(
+          graphDiagnostic('trigger.webhook-response-status-output-missing', `Workflow status output "${statusOutput}" does not exist.`, statusPath, {
+            output: statusOutput,
+          }),
+        )
+      else if (!portsAssignable(port, webhookStatusCodePort))
+        diagnostics.push(
+          graphDiagnostic('trigger.webhook-response-status-output-type', 'Choose a numeric workflow output for the response status code.', statusPath),
+        )
+    }
+    if (output[1].kind == 'outputs') {
+      const fields = output[1].outputDefs
+      const checkHeaderSource = (headerField: string | undefined, target: PortDefinition, location: string) => {
+        const port = headerField == null ? workflowOutputsPort(fields) : fields.find((candidate) => candidate.handle == headerField)
+        if (port == null)
+          diagnostics.push(
+            graphDiagnostic('trigger.webhook-response-header-output-missing', `Workflow output "${headerField}" does not exist.`, location, {
+              output: headerField!,
+            }),
+          )
+        else if (!portsAssignable(port, target))
+          diagnostics.push(
+            graphDiagnostic('trigger.webhook-response-header-output-type', 'Choose a compatible workflow output for the response headers.', location),
+          )
+      }
+      if (headersSource != null) checkHeaderSource(headersSource.output, webhookHeadersPort, headersPath)
+      else
+        for (const [name, headerField] of Object.entries(headerOutputs ?? {}))
+          checkHeaderSource(headerField, webhookHeaderValuePort, `${headersPath}/${name.replaceAll('~', '~0').replaceAll('/', '~1')}`)
+    }
+  }
+  if (statusOutput == null && !webhookResponseAllowsBody(options.responseStatusCode ?? 200))
+    diagnostics.push(
+      graphDiagnostic('trigger.webhook-response-status-invalid', 'Choose a response status code that permits a body.', `${path}/options/responseStatusCode`),
+    )
+  return diagnostics
 }
 
 function validateTrigger(triggerId: string, trigger: TriggerNode, path: string, diagnostics: Diagnostic[]): void {
@@ -88,6 +204,8 @@ function validateTrigger(triggerId: string, trigger: TriggerNode, path: string, 
 
 export function nodeInputPorts(node: GraphNode): Readonly<Record<string, InputPortDefinition>> {
   switch (node.kind) {
+    case 'webhook-response':
+      return portsByHandle(webhookResponseInputs)
     case 'outputs':
       return portsByHandle(node.outputDefs)
     case 'condition':
@@ -153,6 +271,7 @@ export function resolutionOutputPorts(node: Extract<GraphNode, { readonly kind: 
 
 export function nodeOutputPorts(node: GraphNode): Readonly<Record<string, PortDefinition>> {
   switch (node.kind) {
+    case 'webhook-response':
     case 'outputs':
     case 'condition':
       return {}
@@ -575,6 +694,32 @@ function validateGraph(graph: Graph, document: FlowDocument, path: string, diagn
     for (const [nodeId] of errorTriggers)
       diagnostics.push(graphDiagnostic('graph.error-trigger-duplicate', 'A graph can contain only one Flow Error node.', `${path}/nodes/${nodeId}`))
   const outputNodes = Object.entries(graph.nodes).filter(([, node]) => node.kind == 'outputs')
+  for (const [nodeId, node] of Object.entries(graph.nodes)) {
+    if (node.kind == 'webhook') diagnostics.push(...webhookResponseDiagnostics(graph, nodeId, `${path}/nodes/${nodeId}`))
+    if (node.kind === 'webhook-response') {
+      const status = node.inputs.statusCode
+      if (status?.kind === 'value' && !validWebhookStatus(status.value))
+        diagnostics.push(
+          graphDiagnostic(
+            'webhook.response-status-invalid',
+            'Use an integer status from 200 to 599, excluding 204, 205 and 304.',
+            `${path}/nodes/${nodeId}/inputs/statusCode`,
+          ),
+        )
+      const headers = node.inputs.headers
+      if (
+        headers?.kind === 'value' &&
+        (webhookHeaderValues(headers.value) == null || Object.values(headers.value as Record<string, unknown>).some((value) => typeof value !== 'string'))
+      )
+        diagnostics.push(
+          graphDiagnostic(
+            'webhook.response-headers-invalid',
+            'Use valid, unique HTTP header names and single-line text values.',
+            `${path}/nodes/${nodeId}/inputs/headers`,
+          ),
+        )
+    }
+  }
   if (outputNodes.length > 1)
     for (const [nodeId] of outputNodes)
       diagnostics.push(graphDiagnostic('graph.outputs-duplicate', 'A graph can contain only one Outputs node.', `${path}/nodes/${nodeId}`))

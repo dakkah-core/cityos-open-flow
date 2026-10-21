@@ -7,7 +7,6 @@ import type { VariablePickerProps } from '../../../../ui/browser/variable-picker
 import type { JsonValue } from '../api.ts'
 import type { InputSourceQuery } from '../revisionView.ts'
 
-import { Tooltip as TooltipPrimitive } from '@base-ui/react/tooltip'
 import { Fragment, useEffect, useState } from 'react'
 import { useTranslate } from 'val-i18n-react'
 import { variableInputCompatible } from '../../../../flow/common/schema.ts'
@@ -15,8 +14,7 @@ import { sourceOutputLabel } from '../../../../flow/common/sourceField.ts'
 import { editorComponentIcons } from '../../../../form/browser/editorComponentIcon.tsx'
 import { ValueEditorFeedback } from '../../../../form/browser/fieldControl.tsx'
 import { FieldValueEditor } from '../../../../form/browser/fieldValueEditor.tsx'
-import { selectionMenuContentClass, selectionMenuItemClass } from '../../../../form/browser/selectionMenuStyles.ts'
-import { Button } from '../../../../ui/browser/button.tsx'
+import { selectionMenuContentClass } from '../../../../form/browser/selectionMenuStyles.ts'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,7 +25,6 @@ import {
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
 } from '../../../../ui/browser/dropdown-menu.tsx'
 import { Field, FieldLabel } from '../../../../ui/browser/field.tsx'
 import { ContentIcon } from '../../../../ui/browser/icons/ContentIcon.tsx'
@@ -35,6 +32,8 @@ import { MenuHeader } from '../../../../ui/browser/menu-header.tsx'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../../../ui/browser/tooltip.tsx'
 import { LlmInputEditor, supportsLlmInput } from './llmInputEditor.tsx'
 import { schemaMismatchMessage } from './schemaMismatchMessage.ts'
+import { SourceMenuOption, sourceMenuItemClass as sourceItemClass } from './sourceMenuOption.tsx'
+import { SourceSelectorTrigger } from './sourceSelectorTrigger.tsx'
 import { useInputSourceQuery } from './useInputSourceQuery.ts'
 
 export type InputVariables = Pick<VariablePickerProps, 'enabled' | 'loaded' | 'loading' | 'names'> & { readonly onOpen?: () => void }
@@ -63,7 +62,6 @@ const draftIssue = () => {}
 const variableSource = (name: string) => JSON.stringify(['variable', name])
 const upstreamSource = (nodeId: string, output: string, field?: string, system?: true) =>
   JSON.stringify(system ? ['upstream', nodeId, output, field, true] : ['upstream', nodeId, output, field])
-const sourceItemClass = `${selectionMenuItemClass} gap-2 px-2`
 const sourceEmptyItemClass = `${sourceItemClass} font-normal text-muted-foreground data-disabled:opacity-100`
 const sourceSubTriggerClass = sourceItemClass
 
@@ -110,7 +108,6 @@ function SelectedSourceValue({
   readonly variables: InputVariables
 }) {
   const t = useTranslate()
-  const [tooltipContainer, setTooltipContainer] = useState<HTMLDivElement | null>(null)
   let checks: InputSourcesCheck | undefined
   let checkFailed = false
   if (upstream?.query != null && upstream.current.length > 0) {
@@ -153,55 +150,87 @@ function SelectedSourceValue({
   const sourceTooltip = connected && current?.length ? [sourceLabel, ...sourceDescriptions].join('\n') : undefined
   return (
     <>
-      <ValueEditorFeedback error={sourceIssue}>
-        {(errorId) => (
-          <div
-            ref={setTooltipContainer}
-            data-field-control
-            data-value-control
-            className={`${styles.sourceControl} flex h-[30px] min-w-0 items-center rounded-[var(--ui-control-radius,var(--ui-radius))] border border-input bg-[var(--ui-control-background,var(--ui-muted))] px-[7px] text-xs`}
-            aria-invalid={sourceIssue != null}
-            aria-describedby={errorId}
-            tabIndex={sourceIssue ? 0 : undefined}
-          >
-            {bound ? (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <span role="img" aria-label={t('nodeInput.variable')} className="-my-px mr-2 flex h-[30px] shrink-0 items-center text-muted-foreground" />
-                  }
-                >
-                  <i aria-hidden="true" className="i-lucide-light:sliders-horizontal size-3.5" />
-                </TooltipTrigger>
-                <TooltipContent container={tooltipContainer} sideOffset={0}>
-                  {t('nodeInput.variable')}
-                </TooltipContent>
-              </Tooltip>
-            ) : (
-              connected &&
-              current?.length === 1 && (
-                <ContentIcon
-                  src={selectedUpstreamIcon}
-                  className="mr-2 size-3.5 shrink-0 data-[icon-kind=initials]:text-[16px]"
-                  fallback={<i aria-hidden="true" className="i-lucide-light:workflow mr-2 size-3.5 shrink-0 text-muted-foreground" />}
-                />
-              )
-            )}
-            <Tooltip disabled={sourceTooltip == null}>
-              <TooltipTrigger render={<span className="min-w-0 flex-1 truncate" aria-description={sourceTooltip} />}>{sourceLabel}</TooltipTrigger>
-              <TooltipContent container={tooltipContainer} sideOffset={11} positionMethod="fixed" collisionBoundary={[]} className="whitespace-pre-wrap">
-                {sourceTooltip}
-              </TooltipContent>
-            </Tooltip>
-          </div>
-        )}
-      </ValueEditorFeedback>
+      <SourceValueControl
+        label={sourceLabel ?? ''}
+        description={sourceTooltip}
+        variable={bound}
+        node={connected && current?.length === 1}
+        icon={selectedUpstreamIcon}
+        error={sourceIssue}
+      />
       {checkFailed && (
         <p role="status" className="text-xs text-muted-foreground">
           {t('inspector.sources.checkFailed')}
         </p>
       )}
     </>
+  )
+}
+
+/** The selected source surface shared by node inputs and response projections. */
+export function SourceValueControl({
+  label,
+  description,
+  variable = false,
+  node = false,
+  icon,
+  error,
+  name,
+}: {
+  readonly label: string
+  readonly description?: string
+  readonly variable?: boolean
+  readonly node?: boolean
+  readonly icon?: string
+  readonly error?: string
+  readonly name?: string
+}) {
+  const t = useTranslate()
+  const [tooltipContainer, setTooltipContainer] = useState<HTMLDivElement | null>(null)
+  return (
+    <ValueEditorFeedback error={error}>
+      {(errorId) => (
+        <div
+          ref={setTooltipContainer}
+          data-field-control
+          data-value-control
+          className={`${styles.sourceControl} flex h-[30px] min-w-0 items-center rounded-[var(--ui-control-radius,var(--ui-radius))] border border-input bg-[var(--ui-control-background,var(--ui-muted))] px-[7px] text-xs`}
+          aria-invalid={error != null}
+          aria-label={name}
+          aria-describedby={errorId}
+          tabIndex={error ? 0 : undefined}
+        >
+          {variable ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span role="img" aria-label={t('nodeInput.variable')} className="-my-px mr-2 flex h-[30px] shrink-0 items-center text-muted-foreground" />
+                }
+              >
+                <i aria-hidden="true" className="i-lucide-light:sliders-horizontal size-3.5" />
+              </TooltipTrigger>
+              <TooltipContent container={tooltipContainer} sideOffset={0}>
+                {t('nodeInput.variable')}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            node && (
+              <ContentIcon
+                src={icon}
+                className="mr-2 size-3.5 shrink-0 data-[icon-kind=initials]:text-[16px]"
+                fallback={<i aria-hidden="true" className="i-lucide-light:workflow mr-2 size-3.5 shrink-0 text-muted-foreground" />}
+              />
+            )
+          )}
+          <Tooltip disabled={description == null}>
+            <TooltipTrigger render={<span className="min-w-0 flex-1 truncate" aria-description={description} />}>{label}</TooltipTrigger>
+            <TooltipContent container={tooltipContainer} sideOffset={11} positionMethod="fixed" collisionBoundary={[]} className="whitespace-pre-wrap">
+              {description}
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      )}
+    </ValueEditorFeedback>
   )
 }
 
@@ -249,6 +278,10 @@ export function SourceValueEditor({
     | 'onDefinitionChange'
     | 'compact'
     | 'hideOptions'
+    | 'hideValueTools'
+    | 'hideChildTypes'
+    | 'valueOnly'
+    | 'validateObjectFieldName'
   >
   readonly upstream?: NodeInputUpstreamSources
   readonly embedded?: boolean
@@ -297,58 +330,21 @@ export function SourceValueEditor({
   const sourcePortal = sourceContainer?.closest<HTMLElement>('.editor-context-panel') ?? sourceContainer
   const sourceOption = (nodeId: string, { description, output, field, fields, check, system }: InputSourceCandidate, label: string) => {
     const selected = sourceKind === 'upstream' && currentSource === upstreamSource(nodeId, output, field, system)
-    const status = check.kind == 'schema' ? t('inspector.sources.incompatible') : check.kind == 'schema-error' ? t('inspector.sources.unverified') : undefined
     const itemKey = upstreamSource(nodeId, output, field, system)
-    const sourceDescription = description?.trim()
-    const item = (
-      <DropdownMenuRadioItem
-        key={itemKey}
-        className={`${sourceItemClass} ${status == null || selected ? 'pr-8' : 'pr-20'}`}
-        value={itemKey}
-        closeOnClick
-        aria-description={sourceDescription}
-      >
-        <i
-          aria-hidden="true"
-          className={`${
-            fields?.length
-              ? `${editorComponentIcons.object} ${status == null ? 'text-muted-foreground' : ''}`
-              : check.kind == 'available'
-                ? 'i-lucide-light:corner-down-right text-muted-foreground'
-                : check.kind == 'schema'
-                  ? 'i-lucide-light:triangle-alert'
-                  : 'i-lucide-light:circle-help'
-          } size-3.5 shrink-0`}
-          style={status == null ? undefined : { color: 'var(--warning-foreground)' }}
-        />
-        <span className="min-w-0 flex-1 truncate font-mono" title={label}>
-          {label}
-        </span>
-        {!selected && status != null && (
-          <span className="pointer-events-none absolute right-2 shrink-0 text-[10px] leading-4" style={{ color: 'var(--warning-foreground)' }}>
-            {status}
-          </span>
-        )}
-        {selected && status != null && <span className="sr-only">{status}</span>}
-      </DropdownMenuRadioItem>
-    )
-    if (sourceDescription == null || sourceDescription === '') return item
-    // Intentionally use Base UI directly: source-option tooltips belong to a nested menu surface
-    // and require its pointer-transparent portal and fixed side positioning, not the shared control-tooltip contract.
     return (
-      <TooltipPrimitive.Root key={itemKey}>
-        <TooltipPrimitive.Trigger render={item} />
-        <TooltipPrimitive.Portal container={sourcePortal} className="contents">
-          <TooltipPrimitive.Positioner side="right" align="start" sideOffset={8} positionMethod="fixed" className="pointer-events-none isolate z-[1000]">
-            <TooltipPrimitive.Popup className="pointer-events-none max-w-64 rounded-[6px] bg-foreground px-3 py-2 text-xs leading-5 text-background shadow-md outline-none">
-              {sourceDescription}
-              <TooltipPrimitive.Arrow className="size-2.5 rotate-45 rounded-[2px] bg-foreground fill-foreground data-[side=bottom]:top-1 data-[side=left]:-right-1 data-[side=right]:-left-1 data-[side=top]:-bottom-2.5" />
-            </TooltipPrimitive.Popup>
-          </TooltipPrimitive.Positioner>
-        </TooltipPrimitive.Portal>
-      </TooltipPrimitive.Root>
+      <SourceMenuOption
+        key={itemKey}
+        value={itemKey}
+        label={label}
+        selected={selected}
+        compatibility={check.kind === 'schema' ? 'incompatible' : check.kind === 'schema-error' ? 'unverified' : 'available'}
+        icon={fields?.length ? editorComponentIcons.object : undefined}
+        description={description}
+        container={sourcePortal}
+      />
     )
   }
+
   const selectUpstream = (next: string) => {
     const [, nodeId, output, field, system] = JSON.parse(next) as [string, string, string, string | null, true?]
     upstream?.onChange?.({ nodeId, output, ...(system ? { system } : {}), ...(field == null ? {} : { field }) })
@@ -363,28 +359,14 @@ export function SourceValueEditor({
             if (open && variables.enabled) variables.onOpen?.()
           }}
         >
-          <Tooltip disabled={sourceOpen}>
-            <TooltipTrigger
-              render={
-                <DropdownMenuTrigger
-                  render={
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-xs"
-                      className="aria-pressed:bg-[var(--ui-control-hover-background,var(--ui-muted))] aria-pressed:text-foreground"
-                      aria-label={`${fieldLabel} ${t('inspector.sources.select')}`}
-                      aria-pressed={sourceKind !== 'literal'}
-                      disabled={disabled}
-                    >
-                      <i aria-hidden="true" className="i-lucide-light:link" />
-                    </Button>
-                  }
-                />
-              }
-            />
-            <TooltipContent container={sourcePortal}>{t('inspector.sources.select')}</TooltipContent>
-          </Tooltip>
+          <SourceSelectorTrigger
+            label={`${fieldLabel} ${t('inspector.sources.select')}`}
+            description={t('inspector.sources.select')}
+            open={sourceOpen}
+            pressed={sourceKind !== 'literal'}
+            disabled={disabled}
+            container={sourcePortal}
+          />
           <DropdownMenuContent align="start" sideOffset={6} className={`w-44 min-w-44 ${selectionMenuContentClass}`} container={sourcePortal}>
             <MenuHeader>{t('inspector.sources.title')}</MenuHeader>
             {!sourceOnly && (

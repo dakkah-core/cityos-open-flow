@@ -1,8 +1,14 @@
+// @vitest-environment happy-dom
+import type { WebhookOptions } from '../api.ts'
+
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nProvider } from 'val-i18n-react'
 import { describe, expect, it, vi } from 'vitest'
+import { click, render } from '../../../../../test/support/render.tsx'
+import { webhookResponseDiagnostics } from '../../../../flow/common/graph.ts'
 import { createI18n } from '../i18n.ts'
 import { WebhookEditor } from './webhookEditor.tsx'
+import { WebhookHeadersEditor } from './webhookHeadersEditor.tsx'
 
 function renderWebhook(method: 'GET' | 'POST') {
   return renderToStaticMarkup(
@@ -13,6 +19,88 @@ function renderWebhook(method: 'GET' | 'POST') {
 }
 
 describe('Webhook configuration', () => {
+  it.each(
+    (
+      [
+        ['workflow-outputs', 'Webhook Response', 'webhook-response'],
+        ['webhook-response', 'Workflow outputs', 'workflow-outputs'],
+        ['workflow-outputs', 'Fixed content', undefined],
+      ] as const
+    ).flatMap(([kind, label, target]) => [undefined, 12000].map((timeoutMs) => ({ kind, label, target, timeoutMs }))),
+  )('preserves timeout $timeoutMs when changing $kind to $label', async ({ kind, label, target, timeoutMs }) => {
+    const onChange = vi.fn()
+    const fixed = { responseData: 'saved', responseStatusCode: 202, responseHeaders: { 'X-Fixed': 'kept' } }
+    const options: WebhookOptions = {
+      ...fixed,
+      responseBody: {
+        kind,
+        ...(timeoutMs == null ? {} : { timeoutMs }),
+      },
+      responseStatusCodeOutput: 'status',
+      responseHeadersSource: { kind: 'workflow-outputs', output: 'headers' },
+      responseHeaderOutputs: { 'X-Dynamic': 'header' },
+    }
+    const { container } = render(<WebhookEditor bodyFields={[]} method="POST" options={options} disabled={false} onChange={onChange} />)
+    await click(container.querySelector<HTMLButtonElement>('[aria-label="Response source"]')!)
+    const choice = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((option) => option.textContent === label)!
+    expect(choice).toBeDefined()
+    await click(choice)
+    expect(onChange).toHaveBeenLastCalledWith({
+      bodyFields: [],
+      method: 'POST',
+      options: {
+        ...fixed,
+        ...(target == null ? {} : { responseBody: { kind: target, ...(timeoutMs == null ? {} : { timeoutMs }) } }),
+      },
+    })
+  })
+
+  it.each([false, true])('offers a status source only in workflow-output response mode (%s)', (dynamic) => {
+    const markup = renderToStaticMarkup(
+      <I18nProvider i18n={createI18n('en')}>
+        <WebhookEditor
+          bodyFields={[]}
+          method="POST"
+          options={dynamic ? { responseBody: { kind: 'workflow-outputs' }, responseStatusCode: 202 } : { responseStatusCode: 202 }}
+          disabled={false}
+          onChange={vi.fn()}
+        />
+      </I18nProvider>,
+    )
+    expect(markup.includes('aria-label="Response status code source"')).toBe(dynamic)
+    expect(markup).toContain('value="202"')
+  })
+
+  it.each([false, true])('offers creation only when the Outputs node is absent (exists: %s)', (exists) => {
+    const trigger = { kind: 'webhook', name: 'Webhook', method: 'POST', bodyFields: [], options: { responseBody: { kind: 'workflow-outputs' } } } as const
+    const graph = {
+      nodes: { hook: trigger, ...(exists ? { outputs: { kind: 'outputs' as const, name: 'Outputs', outputDefs: [], outputMappings: {} } } : {}) },
+      edges: [],
+    }
+    const markup = renderToStaticMarkup(
+      <I18nProvider i18n={createI18n('en')}>
+        <WebhookEditor
+          bodyFields={[]}
+          method="POST"
+          options={trigger.options}
+          disabled={false}
+          responseDiagnostics={webhookResponseDiagnostics(graph, 'hook')}
+          onAddWorkflowOutputs={vi.fn()}
+          onChange={vi.fn()}
+        />
+      </I18nProvider>,
+    )
+    if (exists) {
+      expect(markup).not.toContain('Add workflow Outputs')
+      expect(markup).toContain('aria-label="Response content"')
+      expect(markup).toContain('Connect this Webhook to the workflow Outputs node.')
+    } else {
+      expect(markup).toContain('Add workflow Outputs')
+      expect(markup).not.toContain('aria-label="Response content"')
+      expect(markup).toContain('Add a workflow Outputs node for the HTTP response.')
+    }
+  })
+
   it.each(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const)('renders %s as one of the five single-select methods', (method) => {
     const markup = renderToStaticMarkup(
       <I18nProvider i18n={createI18n('en')}>
@@ -35,7 +123,7 @@ describe('Webhook configuration', () => {
     expect(post.indexOf('Request body fields')).toBeLessThan(post.indexOf('The request body accepts an empty object.'))
   })
 
-  it('orders Request, Outputs, and collapsed Advanced settings', () => {
+  it('orders Request, Outputs, HTTP response, and collapsed Advanced settings', () => {
     const markup = renderToStaticMarkup(
       <I18nProvider i18n={createI18n('en')}>
         <WebhookEditor bodyFields={[]} method="POST" options={{}} disabled={false} outputSection={<section>Outputs marker</section>} onChange={vi.fn()} />
@@ -43,7 +131,9 @@ describe('Webhook configuration', () => {
     )
     expect(markup.indexOf('Request method')).toBeLessThan(markup.indexOf('Outputs marker'))
     expect(markup.indexOf('Outputs marker')).toBeLessThan(markup.indexOf('Advanced settings'))
-    expect(markup.indexOf('Allowed request origins')).toBeLessThan(markup.indexOf('Response status code'))
+    expect(markup.indexOf('Outputs marker')).toBeLessThan(markup.indexOf('HTTP response'))
+    expect(markup.indexOf('HTTP response')).toBeLessThan(markup.indexOf('Advanced settings'))
+    expect(markup.indexOf('Response status code')).toBeLessThan(markup.indexOf('Allowed request origins'))
   })
 
   it('uses an empty response body field to represent no response body', () => {
@@ -64,6 +154,50 @@ describe('Webhook configuration', () => {
     const responseBody = markup.match(/<textarea\b[^>]*placeholder="Leave blank to return no response body\."[^>]*>/)?.[0]
     expect(origins).toContain('placeholder:text-muted-foreground/60')
     expect(responseBody).toContain('placeholder:text-muted-foreground/60')
+  })
+
+  it.each([false, true])('keeps header literals as single-line text without type controls (dynamic: %s)', (dynamic) => {
+    const markup = renderToStaticMarkup(
+      <I18nProvider i18n={createI18n('en')}>
+        <WebhookHeadersEditor
+          options={{ responseHeaders: { 'X-Text': '123' }, ...(dynamic ? { responseBody: { kind: 'workflow-outputs' as const } } : {}) }}
+          disabled={false}
+          sourceDisabled={false}
+          diagnostics={[]}
+          onChange={vi.fn()}
+        />
+      </I18nProvider>,
+    )
+    expect(markup).toContain('value="X-Text"')
+    expect(markup).toContain('value="123"')
+    expect(markup).not.toContain('<textarea')
+    expect(markup).not.toContain('type="number"')
+    expect(markup).not.toContain('role="combobox"')
+    expect(markup.includes('aria-label="Response headers source"')).toBe(dynamic)
+  })
+
+  it('shows a whole-object source without exposing saved child configuration or readonly mutation controls', () => {
+    const markup = renderToStaticMarkup(
+      <I18nProvider i18n={createI18n('en')}>
+        <WebhookHeadersEditor
+          options={{
+            responseBody: { kind: 'workflow-outputs' },
+            responseHeadersSource: { kind: 'workflow-outputs', output: 'headers' },
+            responseHeaders: { 'X-Saved': 'hidden' },
+          }}
+          outputs={{ name: 'Order result', outputDefs: [] }}
+          disabled
+          readOnly
+          sourceDisabled={false}
+          diagnostics={[]}
+          onChange={vi.fn()}
+        />
+      </I18nProvider>,
+    )
+    expect(markup).toContain('Order result · headers')
+    expect(markup).not.toContain('X-Saved')
+    expect(markup).not.toContain('aria-label="Response headers source"')
+    expect(markup).not.toContain('Add field')
   })
 
   it('prevents configuration edits while retaining existing response values', () => {

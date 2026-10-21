@@ -6,9 +6,14 @@ import type { ManagedTaskDefinition } from '../../../packages/open-flow/src/flow
 
 import { controlErrorCode } from '@oomol-lab/open-flow/control-api'
 import { currentFlowModelVersion } from '@oomol-lab/open-flow/flow-change'
-import { canonicalJsonBytes, digestBytes } from '@oomol-lab/open-flow/flow-encoding'
+import { canonicalJsonBytes, decodeRevision, digestBytes } from '@oomol-lab/open-flow/flow-encoding'
+import { prepareFlow } from '@oomol-lab/open-flow/flow-semantics'
+import { currentEngineContract } from '@oomol-lab/open-flow/runtime-contract'
+import { runFlow, waitRetentionMs } from '@oomol-lab/open-flow/scheduler'
 import * as Effect from 'effect/Effect'
+import * as Fiber from 'effect/Fiber'
 import { TestClock } from 'effect/testing'
+import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -298,6 +303,116 @@ async function waitForStatus(service: ServerService, runId: string, status: stri
 }
 
 describe('Server application service', () => {
+  it.each(
+    ['open-flow-engine/v6', 'open-flow-engine/v6/nodejs-compat-v1'].flatMap((engineContract) =>
+      ['queued', 'waiting'].map((status) => ({ engineContract, status })),
+    ),
+  )('recovers persisted $engineContract work in $status without changing its identity', async ({ engineContract, status }) => {
+    const file = await databaseFile()
+    let service = await openService(file)
+    const base = waitFlow()
+    const accepted = await acceptRun(service, {
+      flowId: 'legacy',
+      idempotencyKey: 'legacy',
+      revisionId: 'legacy',
+      revision: {
+        ...base,
+        modules: {
+          legacy: {
+            name: 'Legacy',
+            imports: [],
+            source: "import { engineContract } from 'open-flow:platform'; export default () => ({ contract: engineContract })",
+          },
+        },
+        document: {
+          ...base.document,
+          graph: {
+            edges: [{ source: 'approval', sourceHandle: 'approve', target: 'verify' }],
+            nodes: {
+              ...base.document.graph.nodes,
+              verify: { kind: 'task', inputs: {}, task: { name: 'Verify', moduleId: 'legacy', inputs: [], outputs: [{ ...port, handle: 'contract' }] } },
+            },
+          },
+        },
+      },
+    })
+    if (accepted.kind !== 'accepted') throw new Error('Expected a queued Run.')
+    await closeService(service)
+    const database = Database.open(file)
+    database.connection
+      .prepare('UPDATE runs SET engine_contract = ?, engine_digest = ? WHERE run_id = ?')
+      .run(engineContract, 'sha256:1d4de22503410f3ae83e38e7e487446c8d71fa5e2af6697f46add32c3b84bac6', accepted.runId)
+    if (status === 'waiting') {
+      const store = new Store(database, Date.now)
+      const run = store.runs.claim()!
+      store.runs.start(run.runId, { kind: 'run.started', payload: { flowId: run.flowId, scopeId: run.runId } })
+      const prepared = await prepareFlow(decodeRevision(new TextEncoder().encode(run.content)), engineContract)
+      if (prepared.kind !== 'prepared' || run.trigger == null) throw new Error('Expected a prepared legacy Run.')
+      const outcome = await Effect.runPromise(
+        TestClock.testClockWith((clock) =>
+          Effect.gen(function* () {
+            const fiber = yield* Effect.forkChild(
+              runFlow(prepared.flow, {
+                flowId: run.flowId,
+                runId: run.runId,
+                createId: randomUUID,
+                trigger: run.trigger!,
+                invokeTask: () => Effect.fail(new Error('The Code task must remain behind the approval.')),
+                waits: {
+                  create: (wait) => Effect.sync(() => store.runs.createWait(run.runId, wait, undefined)),
+                  resolutions: (_ids, block) => (block ? Effect.never : Effect.succeed({})),
+                },
+              }),
+            )
+            for (let step = 0; step < 100 && fiber.pollUnsafe() == null; step++) yield* clock.adjust(waitRetentionMs)
+            if (fiber.pollUnsafe() == null) return yield* Effect.fail(new Error('The legacy Run did not checkpoint.'))
+            return yield* Fiber.join(fiber)
+          }),
+        ).pipe(Effect.provide(TestClock.layer())),
+      )
+      if (outcome.kind !== 'waiting') throw new Error('Expected a durable Wait checkpoint.')
+      expect(store.runs.wait(run.runId, outcome, 60000)).toBe(true)
+    }
+    database.close()
+    service = await openService(file)
+    expect(service.control.runs.getRun(accepted.runId)).toMatchObject({ status, engineContract })
+    await startService(service)
+    await expect.poll(() => service.control.runs.getRun(accepted.runId).waits.length).toBe(1)
+    const wait = service.control.runs.getRun(accepted.runId).waits[0]!
+    service.control.runs.resolveRunWait(accepted.runId, wait.waitId, 'approve')
+    await service.waitForIdle()
+    expect(service.control.runs.getRun(accepted.runId)).toMatchObject({ status: 'completed', engineContract })
+    expect(service.control.runs.getRunEvents(accepted.runId, 0, 100).events).toContainEqual(
+      expect.objectContaining({ kind: 'node.completed', payload: expect.objectContaining({ nodeId: 'verify', outputs: { contract: engineContract } }) }),
+    )
+  })
+
+  it.each(['open-flow-engine/v6', 'open-flow-engine/v6/nodejs-compat-v1'])(
+    'keeps an existing %s Publication runnable after restart',
+    async (engineContract) => {
+      const file = await databaseFile()
+      let service = await openService(file)
+      const stored = await storeRevision(service, fullFlow(), 'legacy-publication')
+      const revision = service.control.getRevision(stored.flowId, stored.revisionId)
+      const published = await service.publisher.publish({
+        ...stored,
+        revision: revision.content,
+        engineContract,
+        expectedLivePublicationId: null,
+        idempotencyKey: 'legacy-publication',
+      })
+      if (published.kind !== 'published') throw new Error('Expected a published Flow.')
+      await closeService(service)
+      service = await openService(file)
+      expect(service.control.getLiveDetails(stored.flowId, 'http://localhost')).toMatchObject({ status: 'runnable' })
+      await startService(service)
+      const accepted = await service.control.runs.createLiveRun(published.publicationId, {}, 'legacy-live', { nodeId: 'start', outputs: {} })
+      await service.waitForIdle()
+      expect(service.control.runs.getRun(accepted.run.runId)).toMatchObject({ status: 'completed', engineContract, revisionDigest: revision.digest })
+      expect(service.control.getRevision(stored.flowId, stored.revisionId)).toEqual(revision)
+    },
+  )
+
   it.each([false, true])('runs a valid Draft branch across restart with unrelated incomplete nodes (wait: %s)', async (wait) => {
     const file = await databaseFile()
     let service = await openService(file)
@@ -355,13 +470,13 @@ describe('Server application service', () => {
       },
     ])
     const revisionId = changed.revision.revisionId
-    expect((await service.control.checkFlow(stored.flowId, revisionId, 'open-flow-engine/v6')).valid).toBe(false)
-    const accepted = await service.control.runs.createDraftRun(stored.flowId, revisionId, 'open-flow-engine/v6', {}, 'partial-run', {
+    expect((await service.control.checkFlow(stored.flowId, revisionId, currentEngineContract)).valid).toBe(false)
+    const accepted = await service.control.runs.createDraftRun(stored.flowId, revisionId, currentEngineContract, {}, 'partial-run', {
       nodeId: 'start',
       outputs: {},
     })
     await expect(
-      service.control.runs.createDraftRun(stored.flowId, revisionId, 'open-flow-engine/v6', {}, 'invalid-entry', { nodeId: 'other', outputs: { payload: {} } }),
+      service.control.runs.createDraftRun(stored.flowId, revisionId, currentEngineContract, {}, 'invalid-entry', { nodeId: 'other', outputs: { payload: {} } }),
     ).rejects.toMatchObject({ code: 'flow.invalid' })
     await closeService(service)
     service = await openService(file)
@@ -1364,7 +1479,7 @@ describe('Server application service', () => {
             },
           }
     const stored = await storeRevision(service, revision, `account-check-${kind}-${authenticated}-${connectionId}`)
-    const check = await service.control.checkFlow(stored.flowId, stored.revisionId, 'open-flow-engine/v6')
+    const check = await service.control.checkFlow(stored.flowId, stored.revisionId, currentEngineContract)
     const diagnostics = check.diagnostics.filter((item) => item.code === 'task.action-connection-required')
     expect(diagnostics).toHaveLength(missing ? 1 : 0)
     if (missing) {
@@ -1384,7 +1499,7 @@ describe('Server application service', () => {
     const unavailable = await openService(await databaseFile())
     const stored = await storeRevision(unavailable, llmFlow(), 'llm-check-unavailable')
 
-    expect(await unavailable.control.checkFlow(stored.flowId, stored.revisionId, 'open-flow-engine/v6')).toMatchObject({
+    expect(await unavailable.control.checkFlow(stored.flowId, stored.revisionId, currentEngineContract)).toMatchObject({
       diagnostics: [
         {
           code: 'llm.unconfigured',
@@ -1415,7 +1530,7 @@ describe('Server application service', () => {
         }),
         revision.revisionId,
       )
-      await expect(service.control.checkFlow(revision.flowId, revision.revisionId, 'open-flow-engine/v6')).rejects.toMatchObject({
+      await expect(service.control.checkFlow(revision.flowId, revision.revisionId, currentEngineContract)).rejects.toMatchObject({
         code: controlErrorCode.flowInvalid,
         status: 400,
       })
@@ -1637,7 +1752,7 @@ describe('Server application service', () => {
       })
       expect(database.prepare('SELECT content FROM revisions WHERE revision_id = ?').get(source.revisionId)).toEqual({ content })
 
-      const accepted = await service.control.runs.createDraftRun(source.flowId, source.revisionId, 'open-flow-engine/v6', {}, 'legacy-run', {
+      const accepted = await service.control.runs.createDraftRun(source.flowId, source.revisionId, currentEngineContract, {}, 'legacy-run', {
         nodeId: 'start',
         outputs: {},
       })
@@ -1653,9 +1768,9 @@ describe('Server application service', () => {
     const service = await openService(await databaseFile(), { capabilities: { llm: () => llm }, clock: Date.now })
     const stored = await storeRevision(service, llmFlow(), 'llm-current')
 
-    expect(await service.control.checkFlow(stored.flowId, stored.revisionId, 'open-flow-engine/v6')).toMatchObject({ valid: false })
+    expect(await service.control.checkFlow(stored.flowId, stored.revisionId, currentEngineContract)).toMatchObject({ valid: false })
     llm = async () => ({ kind: 'completed', value: { answer: 'current' }, version: 1 })
-    expect(await service.control.checkFlow(stored.flowId, stored.revisionId, 'open-flow-engine/v6')).toMatchObject({ diagnostics: [], valid: true })
+    expect(await service.control.checkFlow(stored.flowId, stored.revisionId, currentEngineContract)).toMatchObject({ diagnostics: [], valid: true })
 
     await startService(service)
     const accepted = await acceptRun(service, { flowId: 'main', idempotencyKey: 'llm-current', revision: llmFlow(), revisionId: 'llm-current' })
@@ -1701,7 +1816,7 @@ describe('Server application service', () => {
       'llm-check-unreferenced',
     )
 
-    expect(await unavailable.control.checkFlow(stored.flowId, stored.revisionId, 'open-flow-engine/v6')).toMatchObject({
+    expect(await unavailable.control.checkFlow(stored.flowId, stored.revisionId, currentEngineContract)).toMatchObject({
       diagnostics: [],
       valid: true,
     })

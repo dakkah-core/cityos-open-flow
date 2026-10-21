@@ -47,7 +47,9 @@
     "startDescription": "透過啟動參數開始工作流程，支援手動執行和 API 呼叫。",
     "outputs": "工作流程輸出",
     "outputsDescription": "定義工作流程輸出及其取值，在上游執行相依完成後計算。",
-    "workflow": "呼叫工作流程"
+    "workflow": "呼叫工作流程",
+    "webhookResponse": "Webhook 回應",
+    "webhookResponseDescription": "傳回 HTTP 回應後繼續執行工作流程。"
   },
   "connectorAccess": {
     "searchServices": "搜尋服務",
@@ -892,7 +894,18 @@
         "config-invalid": "Trigger「{{triggerId}}」的設定與固定定義不相符。",
         "connection-invalid": "Trigger 繫結「{{bindingId}}」必須是 Connection。",
         "connection-missing": "請選擇觸發器的連線帳號。",
-        "input-duplicate": "Webhook Trigger 輸入「{{input}}」被重複宣告。"
+        "input-duplicate": "Webhook Trigger 輸入「{{input}}」被重複宣告。",
+        "webhook-response-outputs-missing": "請新增工作流程輸出節點作為 HTTP 回應。",
+        "webhook-response-unreachable": "請將此 Webhook 連接至工作流程輸出節點。",
+        "webhook-response-output-missing": "工作流程輸出欄位「{{output}}」不存在。",
+        "webhook-response-status-invalid": "請選擇允許回應本文的狀態碼。",
+        "webhook-response-status-source": "回應來源設為工作流程輸出後，才能引用狀態碼欄位。",
+        "webhook-response-status-output-missing": "狀態碼引用的工作流程輸出欄位「{{output}}」不存在。",
+        "webhook-response-headers-source": "回應來源選擇工作流程輸出後，才能引用輸出作為回應標頭。",
+        "webhook-response-header-name": "請輸入有效且不重複的 HTTP 回應標頭名稱。",
+        "webhook-response-header-output-missing": "工作流程輸出「{{output}}」不存在。",
+        "webhook-response-header-output-type": "請選擇文字、數值、布林值，或僅包含這些值的物件。",
+        "webhook-response-status-output-type": "請選擇數字類型的工作流程輸出欄位作為狀態碼。"
       },
       "leina": {
         "robot-required": "請選擇 Leina 機器人，或綁定機器人識別碼的資料來源。"
@@ -1100,6 +1113,7 @@
     "webhookHeaderName": "標頭名稱",
     "webhookHeaderNameDuplicate": "標頭名稱不可重複。",
     "webhookHeaderNameInvalid": "請輸入有效的 HTTP 標頭名稱。",
+    "webhookHeadersSource": "回應標頭來源",
     "webhookHeaders": "回應標頭",
     "webhookHeaderValue": "標頭值",
     "webhookMethod": "請求方法",
@@ -1115,7 +1129,26 @@
     "webhookStatusInvalid": "請輸入 200 到 599 之間的整數。",
     "webhookBodyFields": "請求體欄位",
     "webhookNoBodyFields": "請求體接受空物件。",
-    "webhookNoHeaders": "尚未新增回應標頭。"
+    "webhookNoHeaders": "尚未新增回應標頭。",
+    "webhookResponse": "HTTP 回應",
+    "webhookResponseMode": "回應來源",
+    "webhookImmediate": "固定內容",
+    "webhookAfterWorkflow": "工作流程輸出",
+    "webhookResponseContent": "回應內容",
+    "webhookAllOutputs": "完整輸出物件",
+    "webhookMissingOutput": "{{output}}（已失效）",
+    "webhookTimeout": "等候逾時（秒）",
+    "webhookTimeoutInvalid": "請輸入 1–60 秒的等候時間。",
+    "webhookTimeoutDescription": "等候逾時後傳回 HTTP 504，工作流程繼續執行。等候時間包含排隊、重試、人工確認與子工作流程。",
+    "webhookDynamicStatusInvalid": "請輸入 200–599 的整數，204、205、304 除外。",
+    "webhookAddOutputs": "新增工作流程輸出",
+    "webhookOutputsDisconnected": "未連接工作流程輸出",
+    "webhookStatusSource": "回應狀態碼來源",
+    "webhookAddResponse": "新增 Webhook 回應節點",
+    "webhookSelectResponse": "請選擇 Webhook 回應節點",
+    "webhookResponseDisconnected": "未連接 Webhook 回應節點",
+    "webhookConnectResponse": "請在畫布上選擇 Webhook 回應節點進行連接。",
+    "webhookMissingResponse": "所選 Webhook 回應節點已不存在"
   },
   "conditionEditor": {
     "addCondition": "新增條件",

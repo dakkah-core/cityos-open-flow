@@ -8,8 +8,9 @@ import { checkJsonDepth } from './json.ts'
 import { retryConfigurationSchema } from './retry.ts'
 import { triggerScheduleSchema } from './triggerScheduleSchema.ts'
 import { webhookMethods } from './webhookMethod.ts'
+import { webhookResponseTimeout } from './webhookResponse.ts'
 
-export const currentFlowModelVersion = 9
+export const currentFlowModelVersion = 10
 const text = z.string()
 const actionConnection = text.describe(
   'Account selection: omit while unconfigured; use an account ID to select it; use "" to explicitly defer configuration. Deferred Actions fail if called; deferred Agent tools are excluded from the callable tool set. Not supported by Triggers.',
@@ -160,9 +161,26 @@ const webhookOptions = z.object({
   allowedMethods: z.never().optional(),
   allowedOrigins: strings.optional(),
   noResponseBody: z.never().optional(),
+  responseBody: z
+    .discriminatedUnion('kind', [
+      z.strictObject({
+        kind: z.literal('workflow-outputs'),
+        output: text.optional(),
+        timeoutMs: z.number().int().min(webhookResponseTimeout.minMs).max(webhookResponseTimeout.maxMs).optional(),
+      }),
+      z.strictObject({
+        kind: z.literal('webhook-response'),
+        nodeId: text.optional(),
+        timeoutMs: z.number().int().min(webhookResponseTimeout.minMs).max(webhookResponseTimeout.maxMs).optional(),
+      }),
+    ])
+    .optional(),
   responseData: text.optional(),
   responseHeaders: z.record(text, text).optional(),
+  responseHeadersSource: z.strictObject({ kind: z.literal('workflow-outputs'), output: text.optional() }).optional(),
+  responseHeaderOutputs: z.record(text, text).optional(),
   responseStatusCode: z.number().int().min(200).max(599).optional(),
+  responseStatusCodeOutput: text.optional(),
 })
 const webhook = {
   bodyFields: z.array(input),
@@ -199,6 +217,7 @@ const base = {
   onError: z.enum(['stop', 'error']).optional(),
 }
 const node = z.union([
+  z.strictObject({ ...base, kind: z.literal('webhook-response'), retry: z.never().optional(), onError: z.never().optional() }),
   z.strictObject({ ...base, kind: z.literal('outputs'), outputDefs: z.array(port.strict()), outputMappings: inputs }).omit({ inputs: true }),
   z.object({ ...base, inputs: z.record(text, z.never()), kind: z.literal('condition'), ...condition }),
   z.object({
@@ -263,7 +282,7 @@ const document = z.preprocess(
   }),
 )
 const revision = z.object({
-  modelVersion: z.union([z.literal(2), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8), z.literal(currentFlowModelVersion)]),
+  modelVersion: z.union([z.literal(2), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8), z.literal(9), z.literal(currentFlowModelVersion)]),
   document,
   modules: z.record(text, module),
 })
@@ -663,6 +682,18 @@ export function changeOperationsSchema(kind?: string): JsonValue {
 }
 
 function checkModelVersion(content: RevisionContent): void {
+  if (
+    content.modelVersion < 10 &&
+    Object.values(content.document.graph.nodes).some(
+      (candidateNode) =>
+        candidateNode.kind == 'webhook' &&
+        (candidateNode.options?.responseBody != null ||
+          candidateNode.options?.responseStatusCodeOutput != null ||
+          candidateNode.options?.responseHeadersSource != null ||
+          candidateNode.options?.responseHeaderOutputs != null),
+    )
+  )
+    throw new TypeError('Dynamic Webhook responses require Flow model version 10.')
   if (content.modelVersion < 9 && Object.values(content.document.graph.nodes).some((candidateNode) => 'retry' in candidateNode && candidateNode.retry != null))
     throw new TypeError('Node retries require Flow model version 9.')
   if (
@@ -695,6 +726,8 @@ function checkModelVersion(content: RevisionContent): void {
     })
   )
     throw new TypeError('Node error handling requires Flow model version 9.')
+  if (content.modelVersion < 10 && Object.values(content.document.graph.nodes).some((candidate) => candidate.kind === 'webhook-response'))
+    throw new TypeError('Webhook response nodes require Flow model version 10.')
   if (content.modelVersion < 8 && Object.values(content.document.graph.nodes).some((candidateNode) => candidateNode.kind == 'outputs'))
     throw new TypeError('Workflow outputs require Flow model version 8.')
   if (content.modelVersion < 7 && Object.values(content.document.graph.nodes).some((candidateNode) => candidateNode.kind == 'start'))

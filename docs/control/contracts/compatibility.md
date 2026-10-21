@@ -1,5 +1,40 @@
 # Public contracts and version evolution
 
+## Dynamic Webhook responses: Flow model v10 and Engine v7
+
+Model v10 adds optional Webhook `options.responseBody` with
+`{ kind: "workflow-outputs", output?: string, timeoutMs?: number }`. A missing field preserves
+immediate `responseData`; the new mode waits for the accepted Run to succeed and returns only its
+business outputs. Timeout defaults to 30000 ms and accepts 1000–60000 ms. It includes queueing and
+durable waits, and does not cancel the Run. Field omission returns the complete object; strings
+return plain text and other JSON values return JSON. Missing executed outputs are an HTTP error. Optional `responseStatusCodeOutput` selects a numeric
+top-level output as the HTTP status only in workflow-output response mode. Fixed
+`responseStatusCode` is preserved; missing or invalid dynamic statuses return 500. This addition
+shares the unreleased v10 boundary. Optional `responseHeadersSource` selects the complete business
+output object or one top-level object, and `responseHeaderOutputs` maps HTTP header names to top-level
+output names. These policies require workflow-output response mode and share v10. Header values
+support text, numbers and booleans, with scalar conversion to text. Whole-object selection replaces
+fixed/per-header values while preserving their configuration; invalid dynamic headers return 500.
+Deployment-owned response header restrictions remain unchanged.
+
+The published npm `0.1.0-beta.69` artifact (gitHead
+`026f74f27383188f3f771352e10e7a84bca89550`) uses model v9. A new model boundary prevents old
+servers from discarding the response policy and acknowledging requests immediately. Model v9 and
+older readable Revisions retain their original bytes and digests; editing uses the existing explicit
+Draft upgrade. Historical Publications and Runs are unchanged. Dynamic configuration is rejected
+in older model envelopes. The workflow-output response projection alone preserves Engine v6. This release also adds
+`webhook-response` nodes and `responseBody: { kind: "webhook-response", nodeId?, timeoutMs? }`,
+requiring Engine v7 and a new isolation digest. A node completes with response metadata separately
+from its empty business outputs. Its first committed root-Run response is persisted independently
+of event history; HTTP returns immediately while execution continues. Checkpoint shape remains v6.
+The published v6 and v6/nodejs-compat-v1 contracts remain available for existing Publications and
+Runs, preserving their platform identity and builtin allowlist. They cannot prepare Webhook response
+nodes or select them as response sources. Server also supports the beta.69 isolated runtime digest
+for these two contracts: its execution and v6 checkpoint protocol remain compatible for graphs
+without response nodes. Unknown digests and older incompatible contracts remain rejected. Pinned
+Runs, checkpoints, Publications and Revision bytes are not rewritten. New Draft Runs and Publications
+use v7. Upgrade Server and clients together before publishing v10 Revisions.
+
 ## Node retries and error handling: Flow model v9 and Engine v6
 
 Flow model v9 adds optional node-owned `retry: { maxRetries, intervalMs }` and `onError` settings, plus a separate system source namespace. Only ordinary Code,
@@ -53,9 +88,9 @@ Public entry points, serialization formats, Control API, and execution semantics
 | ----------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | npm package       | Exact version in the package manifest                             | Pins implementation, types, Workbench assets, and the conformance suite. Deployments pin the same version. |
 | Revision envelope | `kind: open-flow-flow-revision`, `version: 1`                     | UTF-8 JSON envelope fields and canonical byte rules.                                                       |
-| Flow model        | `modelVersion: 9`                                                 | Serialization of documents, modules, nodes, and ports.                                                     |
+| Flow model        | `modelVersion: 10`                                                | Serialization of documents, modules, nodes, and ports.                                                     |
 | Control API       | `/v1`; Run creation request `version: 2`, all others `version: 1` | Request fields, responses, error codes, CAS, and idempotency.                                              |
-| Engine Contract   | `open-flow-engine/v6`                                             | Execution, Trigger, Task return, Wait, and cancellation semantics.                                         |
+| Engine Contract   | `open-flow-engine/v7`                                             | Execution, Trigger, Task return, Wait, and cancellation semantics.                                         |
 | MCP               | `2026-07-28`                                                      | Streamable HTTP negotiation; tool product semantics reuse Control API.                                     |
 
 Equal or different version numbers do not establish compatibility. Older formats may also have used `modelVersion: 1`; do not accept content based only on this field. Decode the complete structure before semantic validation and execution. Reject execution of Revisions that do not match the current structure. Do not rewrite them or recompute their original digest on read. Create a new Revision through a separate, auditable migration or rebuild.

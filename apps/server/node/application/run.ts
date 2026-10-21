@@ -22,7 +22,7 @@ import { executeAgent } from '../deployment/agent.ts'
 import { assertConnectionNotDeferred, ConnectorTaskError } from '../deployment/connector-contract.ts'
 import { OpenApiTaskError, executeOpenApi } from '../deployment/openapi.ts'
 import { errorKind } from '../logger.ts'
-import { isolatedVmEngineDigest, IsolatedVmHost } from '../runtime/isolated-vm.ts'
+import { supportsIsolatedVmEngine, IsolatedVmHost } from '../runtime/isolated-vm.ts'
 import { checkCodeActions, checkCodePermissions } from './connector-capabilities.ts'
 
 const encoder = new TextEncoder()
@@ -41,6 +41,8 @@ const nodeFailureCodes: ReadonlySet<string> = new Set([
   'llm.unavailable',
   'node.failed',
   'node.input-invalid',
+  'webhook.response-status-invalid',
+  'webhook.response-headers-invalid',
   'node.output-invalid',
   'openapi.input-invalid',
   'openapi.response-invalid',
@@ -121,7 +123,7 @@ export class RunExecutor {
     unknown
   > {
     return Effect.gen({ self: this }, function* () {
-      if (run.engineDigest != isolatedVmEngineDigest) {
+      if (!supportsIsolatedVmEngine(run.engineContract, run.engineDigest)) {
         return yield* Effect.fail(new Error('Fixed Run Engine implementation is not available.'))
       }
       const revisionDigest = yield* Effect.tryPromise({
@@ -258,7 +260,7 @@ export class RunExecutor {
           emit: async (event) => {
             if (event.type == 'run.started' && event.runId == run.runId) return
             const projected = await projectEvent(event)
-            if (projected != null) this.#store.runs.append(run.runId, projected)
+            if (projected != null && this.#store.runs.append(run.runId, projected)) this.#runChanged(run.flowId, run.runId)
           },
           flowId: run.flowId,
           ...launch,

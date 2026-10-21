@@ -112,6 +112,69 @@ Drafts may retain an unselected robot for editing, but `flow_check` reports `lei
 
 Action account selections use an omitted `connectionId` for unconfigured, a nonempty ID for selected, and `""` for explicitly deferred. Deferral is supported by Connector Tasks, independent Code Actions, Agent tools and notifications, but not Provider Triggers. It bypasses only account readiness checks. A deferred Action fails if called; deferred Agent tools are excluded from the callable tool set. Preserve this distinction in public reads, edits and exports.
 
+## Webhook HTTP responses
+
+Webhook response configuration is static business configuration applied after Run admission, not
+an input binding. Set `config.options.responseBody` to
+`{ "kind": "workflow-outputs", "output": "message", "timeoutMs": 30000 }` to return a top-level
+workflow output after the Run succeeds. Omit `output` for the complete output object. Connect the
+Webhook execution path to the singleton Outputs node and define/map its fields through the ordinary
+Outputs authoring interface. Response selection does not add an execution edge or data port.
+
+The timeout accepts 1000–60000 ms, defaults to 30000 ms and includes queueing, retries, approvals and
+called workflows. HTTP timeout returns 504 and the Run continues. Keyed retries reuse the accepted
+Run. A string returns plain text; other values, including null, return JSON. An executed empty
+Outputs node returns `{}`; a skipped Outputs node or missing selected field returns 500. Failed,
+canceled and indeterminate Runs return 500; execution deadlines return 504. Errors have a fixed JSON
+body without internal exception details. Success uses the configured status (default 200); dynamic
+responses reject 204, 205 and 304. In workflow-output response mode, optional
+`responseStatusCodeOutput` selects a numeric top-level output as the status. It overrides the saved
+fixed `responseStatusCode`. Missing, null, fractional, out-of-range or bodyless status values return
+500 with a fixed error body. No string-to-number conversion or fallback is applied. Existing response
+header restrictions and CORS still apply.
+
+Fixed `responseHeaders` remains a map of text values. In workflow-output response mode,
+`responseHeaderOutputs: { "X-Count": "count" }` maps header names to top-level outputs and overrides
+fixed values by case-insensitive name. Values accept string, number and boolean; number and boolean
+are converted to text. `responseHeadersSource: { kind: "workflow-outputs", output: "headers" }`
+replaces the entire header object, or omits `output` to use all business outputs. It preserves but
+ignores fixed headers and per-header bindings until cleared. Empty objects are valid. Missing fields,
+null, arrays, nested objects, invalid names/values and case-insensitive duplicates return a fixed
+500 `webhook.response-headers-invalid` error without fallback. Deployment-owned header restrictions,
+CORS and Content-Type encoding policy remain authoritative. References are limited to the singleton
+Outputs node; names and literal values are edited as single-line text.
+
+Omitted `responseBody` retains immediate `responseData` behavior. Updating dynamic configuration
+preserves saved fixed text. Switch back by clearing `responseBody` and any
+`responseStatusCodeOutput`, `responseHeadersSource` and `responseHeaderOutputs`; the fixed status, text and headers remain saved.
+Explicit output renames update response selections through shared editing; removals preserve stale
+selections for diagnostics. Drafts can retain incomplete configuration; checks and publication reject
+missing, unreachable or undeclared response outputs. Live reads expose the published configuration
+independently of later Draft edits.
+
+### Early Webhook response nodes
+
+Public type `webhook-response` has fixed inputs `body` (any JSON, default empty text),
+`statusCode` (number, default 200), and `headers` (default `{}`). Create multiple nodes without
+changing the singleton Outputs contract. Set Webhook `options.responseBody` to
+`{ kind: "webhook-response", nodeId: "selected-node", timeoutMs: 30000 }` and connect its execution
+path. Same-batch authoring supports `$alias` in `nodeId`. Clear the old responseBody and its
+workflow-output-specific status/header policies before switching modes through recursive updates.
+Static Webhook content, status and headers remain saved but inactive in this mode.
+
+Each node accepts ordinary upstream and variable sources; it exposes no business outputs and
+allows downstream execution edges. Headers accept fixed text entries or one whole-object source;
+per-entry sources are not supported. Object-source values support text, number and boolean.
+The first successful execution commits an immutable response snapshot, before continuing execution.
+HTTP returns that snapshot without waiting for the Run to end. Later failures, loop executions and
+idempotent retries do not replace it. A successful Run which skips the selected node returns 500.
+Timeout, disconnect and shutdown retain the existing HTTP waiting and cleanup policies.
+
+New nodes and selectors share pending model v10; execution uses Engine v7 with unchanged checkpoint
+v6 structure. The response receipt is committed independently of logs and retained for the Run’s
+lifetime, including across recovery and log truncation. Nested workflow scopes cannot respond for
+an enclosing Run. Existing workflow-output responses continue to wait for complete Run success.
+
 ## Node retries
 
 Ordinary Code, Connector, OpenAPI, LLM and AI Decision Tasks support node-level

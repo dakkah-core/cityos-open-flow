@@ -6,6 +6,20 @@ import { fulfillmentSamples, fulfillmentStages } from './fulfillment.ts'
 
 export const scenarios = [
   {
+    id: 'webhook-response-node',
+    entry: { kind: 'webhook' },
+    name: 'Respond before the workflow completes',
+    version: 1,
+    task: 'Create a published POST Webhook with required text message. Add two Webhook Response nodes and explicitly select one reachable node with a 15-second timeout. Return the input message as plain text with status 201 and whole-object headers X-Count=3 and X-Enabled=false, prepared by an upstream Code node. Preserve fixed Webhook content/status/headers as inactive settings. Keep the second response node independently executable, but it must not respond to this Webhook. Connect a Wait after the selected response; HTTP must return before the Wait resolves, and retries with the same key must reuse the same response and Run. Publish and leave Live enabled.',
+  },
+  {
+    id: 'webhook-response',
+    entry: { kind: 'webhook' },
+    name: 'Return workflow outputs over HTTP',
+    version: 3,
+    task: 'Create a POST Webhook named Published hook with a required string message field, an Echo code node forwarding the message, and Workflow Outputs declaring message and an integer status with literal value 201. Configure a workflow-output response selecting message with a 30-second timeout, preserving fixed response text accepted and fixed status 202. Bind the status code to output status, then rename status to httpStatus and confirm that reference follows. Rename the output field to reply through public editing and confirm the Webhook follows the rename. Change only its timeout to 15 seconds. Switch to immediate response by explicitly clearing responseBody and responseStatusCodeOutput and read back the preserved fixed text; restore the dynamic reply body and httpStatus status. Check and publish, inspect the online configuration, then change only the Draft hook method to PUT and name to Draft hook. Also declare enabled as a boolean output with literal false and headers as an object allowing text, numeric and boolean values, with literal value {"X-Object":"whole","X-Count":3,"X-Enabled":false}. Preserve fixed headers X-Reply="saved reply" and X-Fixed="kept". Bind X-Reply to the message output, X-Status to the numeric status and X-Enabled to enabled; verify references follow the output renames. Select headers as a whole-object responseHeadersSource, read and check it, then clear all dynamic response policies when switching to immediate mode. Restore the dynamic body, status and per-header bindings before publishing. Leave Live enabled; its POST response must return the request message as plain text with HTTP status 201 and the text, number and boolean response headers.',
+  },
+  {
     id: 'node-errors',
     entry: { kind: 'start' },
     name: 'Handle node errors',
@@ -172,6 +186,8 @@ export function initialOperations(id: string): ChangeOperation[] {
     id == 'connector-responses' ||
     id == 'order-alert' ||
     id == 'fulfillment-ops' ||
+    id == 'webhook-response-node' ||
+    id == 'webhook-response' ||
     id == 'webhook-live'
   )
     return []
@@ -349,6 +365,7 @@ export function samples(id: string, stage = 0): Sample[] {
     return cases.map((sample) => Object.assign({}, sample, { orders: [], order }))
   }
   if (id == 'fulfillment-ops') return fulfillmentSamples(stage)
+  if (id == 'webhook-response-node') return []
   if (id == 'connector-responses')
     return [
       [],
@@ -466,7 +483,8 @@ export function assertions(id: string, base: RevisionContent, current: RevisionC
       return ['Declare required message/amount and nullable note parameters while preserving their schemas.']
     return []
   }
-  if (id == 'connector-responses' || id == 'fulfillment-ops' || id == 'webhook-live') return []
+  if (id == 'webhook-response-node') return []
+  if (id == 'connector-responses' || id == 'fulfillment-ops' || id == 'webhook-live' || id == 'webhook-response') return []
   const errors: string[] = []
   const allowed = new Set(
     id.startsWith('specialize-summary') ? ['customer'] : id == 'customer-redaction' ? ['notify'] : id == 'repair-amount' ? ['format'] : ['notify', 'notes'],

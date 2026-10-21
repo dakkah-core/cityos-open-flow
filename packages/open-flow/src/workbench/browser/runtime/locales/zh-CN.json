@@ -47,7 +47,9 @@
     "startDescription": "通过启动参数开始工作流，支持手动运行和 API 调用。",
     "outputs": "工作流输出",
     "outputsDescription": "定义工作流输出及其取值，在上游执行依赖完成后计算。",
-    "workflow": "调用工作流"
+    "workflow": "调用工作流",
+    "webhookResponse": "Webhook 响应",
+    "webhookResponseDescription": "返回 HTTP 响应后继续执行工作流。"
   },
   "connectorAccess": {
     "searchServices": "搜索服务",
@@ -892,7 +894,18 @@
         "config-invalid": "Trigger“{{triggerId}}”的配置与固定定义不匹配。",
         "connection-invalid": "Trigger 绑定“{{bindingId}}”必须是 Connection。",
         "connection-missing": "请选择触发器的连接账号。",
-        "input-duplicate": "Webhook Trigger 输入“{{input}}”被重复声明。"
+        "input-duplicate": "Webhook Trigger 输入“{{input}}”被重复声明。",
+        "webhook-response-outputs-missing": "请添加工作流输出节点作为 HTTP 响应。",
+        "webhook-response-unreachable": "请将此 Webhook 连接到工作流输出节点。",
+        "webhook-response-output-missing": "工作流输出字段“{{output}}”不存在。",
+        "webhook-response-status-invalid": "请选择允许返回响应体的状态码。",
+        "webhook-response-status-source": "响应来源设为工作流输出后，才能引用状态码字段。",
+        "webhook-response-status-output-missing": "状态码引用的工作流输出字段“{{output}}”不存在。",
+        "webhook-response-headers-source": "响应来源选择工作流输出后，才能引用输出作为响应头。",
+        "webhook-response-header-name": "请输入有效且不重复的 HTTP 响应头名称。",
+        "webhook-response-header-output-missing": "工作流输出“{{output}}”不存在。",
+        "webhook-response-header-output-type": "请选择文本、数值、布尔值，或仅包含这些值的对象。",
+        "webhook-response-status-output-type": "请选择数字类型的工作流输出字段作为状态码。"
       },
       "leina": {
         "robot-required": "请选择 Leina 机器人，或绑定机器人标识的数据来源。"
@@ -1100,6 +1113,7 @@
     "webhookHeaderName": "响应头名称",
     "webhookHeaderNameDuplicate": "响应头名称不能重复。",
     "webhookHeaderNameInvalid": "请输入有效的 HTTP 响应头名称。",
+    "webhookHeadersSource": "响应头来源",
     "webhookHeaders": "响应头",
     "webhookHeaderValue": "响应头值",
     "webhookMethod": "请求方法",
@@ -1115,7 +1129,26 @@
     "webhookStatusInvalid": "请输入 200 到 599 之间的整数。",
     "webhookBodyFields": "请求体字段",
     "webhookNoBodyFields": "请求体接受空对象。",
-    "webhookNoHeaders": "未添加响应头。"
+    "webhookNoHeaders": "未添加响应头。",
+    "webhookResponse": "HTTP 响应",
+    "webhookResponseMode": "响应来源",
+    "webhookImmediate": "固定内容",
+    "webhookAfterWorkflow": "工作流输出",
+    "webhookResponseContent": "响应内容",
+    "webhookAllOutputs": "完整输出对象",
+    "webhookMissingOutput": "{{output}}（已失效）",
+    "webhookTimeout": "等待超时（秒）",
+    "webhookTimeoutInvalid": "请输入 1–60 秒的等待时间。",
+    "webhookTimeoutDescription": "等待超时后返回 HTTP 504，工作流继续执行。等待时间包含排队、重试、人工确认和子工作流。",
+    "webhookDynamicStatusInvalid": "请输入 200–599 的整数，204、205、304 除外。",
+    "webhookAddOutputs": "添加工作流输出",
+    "webhookOutputsDisconnected": "未连接工作流输出",
+    "webhookStatusSource": "响应状态码来源",
+    "webhookAddResponse": "添加 Webhook 响应节点",
+    "webhookSelectResponse": "请选择 Webhook 响应节点",
+    "webhookResponseDisconnected": "未连接 Webhook 响应节点",
+    "webhookConnectResponse": "请在画布上选择 Webhook 响应节点进行连接。",
+    "webhookMissingResponse": "所选 Webhook 响应节点已不存在"
   },
   "conditionEditor": {
     "addCondition": "添加条件",

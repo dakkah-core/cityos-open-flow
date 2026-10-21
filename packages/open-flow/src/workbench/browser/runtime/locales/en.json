@@ -47,7 +47,9 @@
     "startDescription": "Start the workflow manually or through an API call with startup parameters.",
     "outputs": "Workflow Outputs",
     "outputsDescription": "Define the workflow outputs and their values. Runs after its upstream dependencies settle.",
-    "workflow": "Call Workflow"
+    "workflow": "Call Workflow",
+    "webhookResponse": "Webhook Response",
+    "webhookResponseDescription": "Prepare an HTTP response and continue the workflow."
   },
   "connectorAccess": {
     "searchServices": "Search services",
@@ -892,7 +894,18 @@
         "config-invalid": "Trigger \"{{triggerId}}\" config does not match its fixed definition.",
         "connection-invalid": "Trigger binding \"{{bindingId}}\" must be a Connection.",
         "connection-missing": "Select a connection account for this trigger.",
-        "input-duplicate": "Webhook Trigger input \"{{input}}\" is declared more than once."
+        "input-duplicate": "Webhook Trigger input \"{{input}}\" is declared more than once.",
+        "webhook-response-outputs-missing": "Add a workflow Outputs node for the HTTP response.",
+        "webhook-response-unreachable": "Connect this Webhook to the workflow Outputs node.",
+        "webhook-response-output-missing": "Workflow output \"{{output}}\" does not exist.",
+        "webhook-response-status-invalid": "Choose a response status code that permits a body.",
+        "webhook-response-status-source": "Choose workflow outputs as the response source to use a status output.",
+        "webhook-response-status-output-missing": "Workflow status output \"{{output}}\" does not exist.",
+        "webhook-response-headers-source": "Choose workflow outputs as the response source to use dynamic headers.",
+        "webhook-response-header-name": "Use valid, unique HTTP header names.",
+        "webhook-response-header-output-missing": "Workflow output \"{{output}}\" does not exist.",
+        "webhook-response-header-output-type": "Choose text, number or boolean values, or an object containing only these values.",
+        "webhook-response-status-output-type": "Choose a numeric workflow output for the response status code."
       },
       "leina": {
         "robot-required": "Select a Leina robot or bind its identifier to an input source."
@@ -1100,6 +1113,7 @@
     "webhookHeaderName": "Header name",
     "webhookHeaderNameDuplicate": "Header names must be unique.",
     "webhookHeaderNameInvalid": "Enter a valid HTTP header name.",
+    "webhookHeadersSource": "Response headers source",
     "webhookHeaders": "Response headers",
     "webhookHeaderValue": "Header value",
     "webhookMethod": "Request method",
@@ -1115,7 +1129,26 @@
     "webhookStatusInvalid": "Enter an integer from 200 to 599.",
     "webhookBodyFields": "Request body fields",
     "webhookNoBodyFields": "The request body accepts an empty object.",
-    "webhookNoHeaders": "No response headers."
+    "webhookNoHeaders": "No response headers.",
+    "webhookResponse": "HTTP response",
+    "webhookResponseMode": "Response source",
+    "webhookImmediate": "Fixed content",
+    "webhookAfterWorkflow": "Workflow outputs",
+    "webhookResponseContent": "Response content",
+    "webhookAllOutputs": "Complete output object",
+    "webhookMissingOutput": "{{output}} (missing)",
+    "webhookTimeout": "Wait timeout (seconds)",
+    "webhookTimeoutInvalid": "Enter a timeout from 1 to 60 seconds.",
+    "webhookTimeoutDescription": "A wait timeout returns HTTP 504; the workflow continues. Waiting includes queueing, retries, approvals and called workflows.",
+    "webhookDynamicStatusInvalid": "Enter an integer from 200 to 599, except 204, 205 and 304.",
+    "webhookAddOutputs": "Add workflow Outputs",
+    "webhookOutputsDisconnected": "Workflow Outputs not connected",
+    "webhookStatusSource": "Response status code source",
+    "webhookAddResponse": "Add Webhook Response node",
+    "webhookSelectResponse": "Select a Webhook Response node",
+    "webhookResponseDisconnected": "Webhook Response node is not connected",
+    "webhookConnectResponse": "Select a Webhook Response node on the canvas to connect it.",
+    "webhookMissingResponse": "Selected Webhook Response node is missing"
   },
   "conditionEditor": {
     "addCondition": "Add condition",

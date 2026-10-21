@@ -18,7 +18,9 @@ import type { WebhookDeploymentProps } from './webhookDeployment.tsx'
 import { useEffect, useRef } from 'react'
 import { useTranslate } from 'val-i18n-react'
 import { decisionModel } from '../../../../decision/common/decision.ts'
+import { executionReachableNodes, webhookResponseDiagnostics } from '../../../../flow/common/graph.ts'
 import { inputValue } from '../../../../flow/common/inputValue.ts'
+import { webhookResponseInputs } from '../../../../flow/common/webhookResponse.ts'
 import { Field, FieldLabel } from '../../../../ui/browser/field.tsx'
 import { Input } from '../../../../ui/browser/input.tsx'
 import { ScrollArea } from '../../../../ui/browser/scroll-area.tsx'
@@ -55,6 +57,7 @@ import { TriggerScheduleEditor } from './triggerScheduleEditor.tsx'
 import { TriggerSummary } from './triggerSummary.tsx'
 import { WebhookDeployment } from './webhookDeployment.tsx'
 import { WebhookEditor } from './webhookEditor.tsx'
+import { WebhookResponseEditor } from './webhookResponseEditor.tsx'
 import { WorkflowSection, WorkflowInterfaceAlert, useWorkflowActions } from './workflowSection.tsx'
 
 export function inspectorIcon(node: ResolvedSelection | undefined): IconName {
@@ -63,6 +66,7 @@ export function inspectorIcon(node: ResolvedSelection | undefined): IconName {
   if (node?.kind == 'value') return 'value'
   if (node?.kind == 'approval') return 'check'
   if (node?.kind == 'wait') return 'wait'
+  if (node?.kind === 'webhook-response') return 'response'
   if (node?.kind == 'outputs') return 'outputs'
   if (node?.kind == 'task' && node.definition != null && 'executor' in node.definition) {
     if (node.definition.executor.kind == 'decision') return 'decision'
@@ -80,6 +84,8 @@ function nodePurposePlaceholder(
   displays?: Readonly<Record<string, TriggerDisplay>>,
 ): string | undefined {
   switch (selection.kind) {
+    case 'webhook-response':
+      return t('addNode.webhookResponseDescription')
     case 'condition':
       return t('addNode.conditionDescription')
     case 'outputs':
@@ -192,6 +198,8 @@ function inputUpstreamSources({
 }
 
 interface Props {
+  readonly onAddResponseNode?: () => void
+  readonly onAddWorkflowOutputs?: () => void
   readonly webhookDeployment?: WebhookDeploymentProps
   readonly readOnly?: boolean
   readonly variables?: InputVariables
@@ -241,6 +249,8 @@ type InspectorProps = Props &
   )
 
 export function NodeInspector({
+  onAddWorkflowOutputs,
+  onAddResponseNode,
   webhookDeployment,
   variables = { enabled: false, loaded: false, loading: false, names: [], onOpen: undefined },
   readOnly = false,
@@ -279,6 +289,19 @@ export function NodeInspector({
   const disabled = readOnly || temporarilyDisabled || store == null
   const t = useTranslate()
   const content = useRef<HTMLDivElement>(null)
+  const outputNodes =
+    selection?.kind === 'trigger' && selection.trigger.kind === 'webhook'
+      ? Object.entries(revision.graph().nodes).filter(([, node]) => node.kind === 'outputs')
+      : []
+  const outputNode = outputNodes.length === 1 ? outputNodes[0] : undefined
+  const responseReachable =
+    selection?.kind === 'trigger' && selection.trigger.kind === 'webhook' ? executionReachableNodes(revision.graph(), selection.id) : undefined
+  const responseNodes =
+    responseReachable == null
+      ? []
+      : Object.entries(revision.graph().nodes).flatMap(([id, node]) =>
+          node.kind === 'webhook-response' ? [{ id, name: node.name ?? t('addNode.webhookResponse'), reachable: responseReachable.has(id) }] : [],
+        )
   const providerTrigger =
     selection?.kind === 'trigger' && (selection.trigger.kind === 'integration' || selection.trigger.kind === 'poll') ? selection.trigger : undefined
   const providerDisplay = providerTrigger == null ? undefined : triggerDisplays?.[providerTrigger.definition.key]
@@ -524,6 +547,37 @@ export function NodeInspector({
             }
           />
         )}
+        {selection?.kind === 'webhook-response' && (
+          <WebhookResponseEditor
+            entries={webhookResponseInputs.map((definition) => {
+              const mapping = selection.node.inputs[definition.handle]
+              const source = mapping?.kind === 'sources' ? mapping.sources.find((item) => item.kind === 'binding') : undefined
+              const binding = source?.kind === 'binding' ? revision.binding(source.bindingId) : undefined
+              return {
+                definition,
+                value: inputValue(mapping, definition.value),
+                connected: mapping?.kind === 'sources' && binding == null,
+                variableName: binding?.target,
+                onReset:
+                  mapping == null
+                    ? undefined
+                    : () => {
+                        void store?.nodes.resetInputs(selection.id, [definition.handle])
+                      },
+              }
+            })}
+            disabled={disabled}
+            readOnly={readOnly}
+            variables={variables}
+            renderSource={(handle) => inputUpstreamSources({ revision, sourceNodeIcons, selection, store, handleName: handle, t, triggerDisplays })}
+            onValue={(handle, value) => {
+              void store?.nodes.setInputValue(selection.id, handle, value)
+            }}
+            onVariable={(handle, name) => {
+              void store?.nodes.setInputVariable(selection.id, handle, name)
+            }}
+          />
+        )}
         {selection?.kind === 'trigger' && selection.trigger.kind === 'webhook' && (
           <WebhookEditor
             readOnly={readOnly}
@@ -531,6 +585,13 @@ export function NodeInspector({
             bodyFields={selection.trigger.bodyFields}
             method={selection.trigger.method}
             options={selection.trigger.options ?? {}}
+            workflowOutputs={
+              outputNode?.[1].kind === 'outputs' ? { ...outputNode[1], icon: sourceNodeIcons?.[outputNode[0]] ?? outputNode[1].icon } : undefined
+            }
+            responseDiagnostics={webhookResponseDiagnostics(revision.graph(), selection.id)}
+            onAddWorkflowOutputs={readOnly ? undefined : onAddWorkflowOutputs}
+            onAddResponseNode={readOnly ? undefined : onAddResponseNode}
+            responseNodes={responseNodes}
             disabled={disabled}
             outputSection={<TriggerSummary trigger={selection.trigger} />}
             onChange={(settings, deletion) => {

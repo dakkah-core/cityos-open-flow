@@ -110,6 +110,8 @@ function canonicalNode(value: GraphNode): JsonValue {
     ...(value.retry == null ? {} : { retry: { maxRetries: value.retry.maxRetries, intervalMs: value.retry.intervalMs } }),
   }
   switch (value.kind) {
+    case 'webhook-response':
+      return { ...common, kind: value.kind }
     case 'outputs':
       return { ...common, kind: value.kind, outputDefs: canonicalPorts(value.outputDefs), outputMappings: canonicalInputs(value.outputMappings) }
     case 'condition':
@@ -277,9 +279,34 @@ function canonicalTriggerDefinition(snapshot: TriggerKeySnapshot): JsonValue {
 function canonicalWebhookOptions(value: WebhookOptions): JsonValue {
   return {
     ...(value.allowedOrigins == null ? {} : { allowedOrigins: value.allowedOrigins }),
+    ...(value.responseBody == null
+      ? {}
+      : {
+          responseBody: {
+            kind: value.responseBody.kind,
+            ...(value.responseBody.kind === 'workflow-outputs'
+              ? value.responseBody.output == null
+                ? {}
+                : { output: value.responseBody.output }
+              : value.responseBody.nodeId == null
+                ? {}
+                : { nodeId: value.responseBody.nodeId }),
+            ...(value.responseBody.timeoutMs == null ? {} : { timeoutMs: value.responseBody.timeoutMs }),
+          },
+        }),
     ...(value.responseData == null ? {} : { responseData: value.responseData }),
     ...(value.responseHeaders == null ? {} : { responseHeaders: value.responseHeaders }),
+    ...(value.responseHeadersSource == null
+      ? {}
+      : {
+          responseHeadersSource: {
+            kind: value.responseHeadersSource.kind,
+            ...(value.responseHeadersSource.output == null ? {} : { output: value.responseHeadersSource.output }),
+          },
+        }),
+    ...(value.responseHeaderOutputs == null ? {} : { responseHeaderOutputs: value.responseHeaderOutputs }),
     ...(value.responseStatusCode == null ? {} : { responseStatusCode: value.responseStatusCode }),
+    ...(value.responseStatusCodeOutput == null ? {} : { responseStatusCodeOutput: value.responseStatusCodeOutput }),
   }
 }
 
