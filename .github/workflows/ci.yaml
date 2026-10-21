@@ -110,6 +110,9 @@ jobs:
       - name: Check
         run: bun run check
 
+      - name: Test release CI gate
+        run: node --test .github/scripts/wait-for-ci.test.mjs
+
   package:
     needs: changes
     if: needs.changes.outputs.package == 'true'

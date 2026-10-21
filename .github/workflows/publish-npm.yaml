@@ -9,6 +9,7 @@ on:
         type: string
 
 permissions:
+  actions: read
   contents: read
   id-token: write
 
@@ -27,6 +28,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Wait for commit CI
+        timeout-minutes: 25
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/wait-for-ci.sh
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2.2.0
         with:
@@ -42,10 +49,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Verify package
-        run: |
-          bun run check
-          bun run test
-          bun run test:npm-package
+        run: bun run test:npm-package
 
       - name: Verify version
         env:
