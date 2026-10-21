@@ -35,7 +35,7 @@ it('imports once, keeps layout and node identities, and isolates actor scopes on
   const editor = await client.getEditor(created.flowId)
   expect(editor.presentation.value).toEqual(file.presentation)
   expect(editor.draft.content.document.graph.nodes).toEqual({
-    start: { kind: 'start', name: 'Start' },
+    start: { inputDefs: [], kind: 'start', name: 'Start' },
     error: { kind: 'error', name: 'Error', sourceFlowIds: [] },
   })
   expect(file.content.document.graph.nodes.start).toEqual({ kind: 'manual', name: 'Start' })

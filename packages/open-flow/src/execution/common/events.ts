@@ -1,5 +1,9 @@
+import type { WebhookResponseSnapshot } from '../../flow/common/webhookResponse.ts'
+
+import { validWebhookStatus, webhookHeaderValues } from '../../flow/common/webhookResponse.ts'
 export type ProjectedRunEvent =
   | {
+      readonly response?: WebhookResponseSnapshot
       readonly kind: 'node.completed'
       readonly payload: Readonly<Record<string, unknown>>
       readonly value: unknown
@@ -10,7 +14,21 @@ export type ProjectedRunEvent =
     }
 
 const encoder = new TextEncoder()
-const nodeKinds = new Set(['agent', 'approval', 'condition', 'connector', 'decision', 'javascript', 'openapi', 'llm', 'value', 'wait', 'outputs'])
+const nodeKinds = new Set([
+  'agent',
+  'approval',
+  'condition',
+  'connector',
+  'decision',
+  'javascript',
+  'openapi',
+  'llm',
+  'value',
+  'wait',
+  'outputs',
+  'workflow',
+  'webhook-response',
+])
 
 function object(value: unknown, description: string): Record<string, unknown> {
   if (value == null || typeof value != 'object' || Array.isArray(value)) throw new TypeError(`${description} must be an object.`)
@@ -28,12 +46,39 @@ function optionalString(value: unknown, description: string): string | undefined
 
 function nodeKind(
   value: unknown,
-): 'agent' | 'approval' | 'condition' | 'connector' | 'decision' | 'javascript' | 'openapi' | 'llm' | 'value' | 'wait' | 'outputs' | undefined {
+):
+  | 'agent'
+  | 'approval'
+  | 'condition'
+  | 'connector'
+  | 'decision'
+  | 'javascript'
+  | 'openapi'
+  | 'llm'
+  | 'value'
+  | 'wait'
+  | 'outputs'
+  | 'workflow'
+  | 'webhook-response'
+  | undefined {
   if (value === undefined) return
   if (!nodeKinds.has(value as string)) {
     throw new TypeError('Runtime node.started nodeKind is invalid.')
   }
-  return value as 'agent' | 'approval' | 'condition' | 'connector' | 'decision' | 'javascript' | 'openapi' | 'llm' | 'value' | 'wait' | 'outputs'
+  return value as
+    | 'agent'
+    | 'approval'
+    | 'condition'
+    | 'connector'
+    | 'decision'
+    | 'javascript'
+    | 'openapi'
+    | 'llm'
+    | 'value'
+    | 'wait'
+    | 'outputs'
+    | 'workflow'
+    | 'webhook-response'
 }
 
 function runId(event: Record<string, unknown>): string {
@@ -54,11 +99,16 @@ function nodeContext(
   const flowId = flows.get(rawRunId)
   if (flowId == null) throw new TypeError('Runtime node event preceded its run.started event.')
   return {
-    executionId: opaqueId('execution', platformRunId, rawRunId, string(event.jobId, 'Runtime node event jobId')),
+    executionId: projectExecutionId(platformRunId, rawRunId, string(event.jobId, 'Runtime node event jobId')),
     flowId,
     nodeId: string(event.nodeId, 'Runtime node event nodeId'),
     rawRunId,
   }
+}
+
+/** Stable public identity shared by events and durable workflow-call provenance. */
+export function projectExecutionId(platformRunId: string, rawRunId: string, jobId: string): Promise<string> {
+  return opaqueId('execution', platformRunId, rawRunId, jobId)
 }
 
 async function opaqueId(prefix: 'execution' | 'scope', ...parts: readonly string[]): Promise<string> {
@@ -77,6 +127,8 @@ function message(value: unknown): string {
     .replace(/Bearer\s+\S+/gi, 'Bearer [REDACTED]')
     .replace(/\b(api[-_ ]?key|authorization|password|secret|token)\s*[:=]\s*\S+/gi, '$1=[REDACTED]')
 }
+
+export { message as sanitizeRuntimeErrorMessage }
 
 function nodeFailureCode(value: unknown, allowed: ReadonlySet<string>): string {
   const code = string(value, 'Runtime node.failed code')
@@ -207,6 +259,8 @@ export function createEventProjector(platformRunId: string, nodeFailureCodes: Re
         flowId: context.flowId,
         nodeId: context.nodeId,
         scopeId: await opaqueId('scope', platformRunId, context.rawRunId),
+        ...(event.systemOutputs === undefined ? {} : { systemOutputs: object(event.systemOutputs, 'Runtime system outputs') }),
+        ...(event.handled === true ? { handled: true } : {}),
       }
       switch (type) {
         case 'node.completed':
@@ -214,6 +268,7 @@ export function createEventProjector(platformRunId: string, nodeFailureCodes: Re
             kind: type,
             payload,
             value: object(event.outputs, 'Runtime node.completed outputs'),
+            ...(event.response == null || context.rawRunId !== platformRunId ? {} : { response: responseSnapshot(event.response) }),
           }
         case 'node.started': {
           jobs.set(JSON.stringify([context.rawRunId, event.jobId]), context.nodeId)
@@ -257,4 +312,17 @@ export function createEventProjector(platformRunId: string, nodeFailureCodes: Re
 
     throw new TypeError(`Runtime event type ${JSON.stringify(type)} is not supported.`)
   }
+}
+
+function responseSnapshot(value: unknown): WebhookResponseSnapshot {
+  const source = object(value, 'Runtime response')
+  const headers = webhookHeaderValues(source.headers)
+  if (
+    !validWebhookStatus(source.status) ||
+    typeof source.body !== 'string' ||
+    !['text/plain;charset=UTF-8', 'application/json'].includes(String(source.contentType)) ||
+    headers == null
+  )
+    throw new TypeError('Invalid runtime response.')
+  return { status: source.status, body: source.body, contentType: String(source.contentType), headers }
 }

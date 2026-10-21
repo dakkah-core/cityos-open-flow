@@ -3,6 +3,8 @@ import type { ConnectorConnection } from '../api.ts'
 import { currentFlowModelVersion } from '@oomol-lab/open-flow/flow-change'
 import { describe, expect, it, vi } from 'vitest'
 import { inputValues } from '../../../../flow/common/inputValue.ts'
+import { resolveTriggerConfig } from '../../../../trigger/common/config.ts'
+import { integrationDefinitions } from '../../../../trigger/providers/definitions.ts'
 import { WorkbenchClient } from '../api.ts'
 import { createI18n } from '../i18n.ts'
 import { providerIcon } from '../providerIcon.ts'
@@ -31,9 +33,10 @@ const connectionFetcher = () => vi.fn(async (_service: string, _flowId: string |
 function createSetup(language: 'en' | 'zh-CN' = 'en') {
   const requests: string[] = []
   const fetchConnections = connectionFetcher()
+  let revision = 1
   const request = vi.fn(async (path: string, init?: RequestInit) => {
     requests.push(path)
-    if (path == '/v1/flows?limit=50&includeTotal=true') return Response.json({ flows: [flow], total: 1, version: 1 })
+    if (path == '/v1/flows?limit=50&includeTotal=true') return Response.json({ flows: [{ ...flow, referenceCount: 0 }], total: 1, version: 1 })
     if (path == `/v1/flows/${flow.flowId}/editor`) {
       return Response.json({
         flow,
@@ -94,8 +97,8 @@ function createSetup(language: 'en' | 'zh-CN' = 'en') {
           digest: 'next-digest',
           flowId: flow.flowId,
           modelVersion: currentFlowModelVersion,
-          parentRevisionId: flow.draftRevisionId,
-          revisionId: 'revision-2',
+          parentRevisionId: `revision-${revision}`,
+          revisionId: `revision-${++revision}`,
           version: 1,
         },
         version: 1,
@@ -108,7 +111,7 @@ function createSetup(language: 'en' | 'zh-CN' = 'en') {
       return Response.json({
         closureDigest: 'closure',
         diagnostics: [],
-        engineContract: 'open-flow-engine/v5',
+        engineContract: 'open-flow-engine/v6',
         flowId: flow.flowId,
         modelVersion: currentFlowModelVersion,
         revisionDigest: 'digest',
@@ -246,12 +249,14 @@ describe('TriggerStore', () => {
           y: 0,
         })
         expect(nodeId).toBeDefined()
-        const node = workspace.$.draft.value!.content.document.graph.nodes[nodeId!]!
-        if (node.kind != 'integration') throw new Error('Expected Integration Trigger.')
-        const expected = scenario == 'default' ? 'preferred' : scenario == 'only' ? 'other' : scenario == 'explicit' ? 'chosen' : ''
-        expect(node.connectionId).toEqual(expected || undefined)
+        await vi.waitFor(() => {
+          const node = workspace.$.draft.value!.content.document.graph.nodes[nodeId!]!
+          if (node.kind != 'integration') throw new Error('Expected Integration Trigger.')
+          const expected = scenario == 'default' ? 'preferred' : scenario == 'only' ? 'other' : scenario == 'explicit' ? 'chosen' : ''
+          expect(node.connectionId).toEqual(expected || undefined)
+        })
         if (scenario == 'explicit') expect(list).not.toHaveBeenCalled()
-        else expect(list).toHaveBeenCalledWith('github', flow.flowId)
+        else await vi.waitFor(() => expect(list).toHaveBeenCalledWith('github', flow.flowId))
       } finally {
         triggers.dispose()
         workspace.dispose()
@@ -277,9 +282,11 @@ describe('TriggerStore', () => {
         { ...option, trigger: { ...option.trigger, definition: { ...option.trigger.definition, key: 'feishu_app_bot.on_event', provider: 'feishu_app_bot' } } },
         { x: 0, y: 0 },
       )
-      const node = workspace.$.draft.value!.content.document.graph.nodes[nodeId!]!
-      if (node.kind != 'integration') throw new Error('Expected Integration Trigger.')
-      expect(node.connectionId).toEqual('feishu-default')
+      await vi.waitFor(() => {
+        const node = workspace.$.draft.value!.content.document.graph.nodes[nodeId!]!
+        if (node.kind != 'integration') throw new Error('Expected Integration Trigger.')
+        expect(node.connectionId).toEqual('feishu-default')
+      })
       expect(list).toHaveBeenCalledOnce()
     } finally {
       triggers.dispose()
@@ -287,19 +294,91 @@ describe('TriggerStore', () => {
     }
   })
 
-  it('does not create a Trigger after leaving the Flow during connection lookup', async () => {
+  it('creates the Trigger before connection lookup completes and does not configure it after leaving the Flow', async () => {
     const { client, workspace, triggers, signal, requests } = createSetup()
     const pending = Promise.withResolvers<readonly ConnectorConnection[]>()
     const list = connectionRequests.get(client)!.mockReturnValue(pending.promise)
     try {
       await workspace.start(flow.flowId)
       const option = (await resourceValue(triggers.browseAddNodeOptions(signal)))![0]!
-      const adding = workspace.addNode(option, { x: 0, y: 0 })
+      const nodeId = await workspace.addNode(option, { x: 0, y: 0 })
+      expect(nodeId).toBeDefined()
+      expect(workspace.$.draft.value!.content.document.graph.nodes[nodeId!]).toMatchObject({ kind: 'integration' })
       await vi.waitFor(() => expect(list).toHaveBeenCalled())
       await workspace.selectFlow(undefined)
       pending.resolve([])
-      expect(await adding).toBeUndefined()
-      expect(requests.some((path) => path.endsWith('/draft/changes'))).toBe(false)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(requests.filter((path) => path.endsWith('/draft/changes'))).toHaveLength(1)
+    } finally {
+      triggers.dispose()
+      workspace.dispose()
+    }
+  })
+
+  it.each([
+    ['slackbot.on_event', 'app_mention'],
+    ['intercom.on_conversation_event', 'conversation.user.created'],
+    ['sentry.on_issue_alert', 'issue.alert'],
+    ['zoom.on_recording_ready', 'recording.completed'],
+    ['fireflies.on_meeting_ready', 'meeting.transcribed'],
+    ['jira.on_issue_event', 'jira:issue_created'],
+  ])('selects a source for %s without introducing foreign config fields', async (key, eventType) => {
+    const { workspace, triggers, request } = createSetup()
+    const definition = integrationDefinitions.find((item) => item.snapshot.key === key)!.snapshot
+    const original = request.getMockImplementation()!
+    request.mockImplementation(async (path, init) => {
+      const response = await original(path, init)
+      if (!path.endsWith('/editor')) return response
+      const data = await response.json()
+      data.draft.content.document.graph.nodes.linear = {
+        kind: 'integration',
+        name: 'Events',
+        definition,
+        connectionId: 'old-connection',
+        config: inputValues({ sourceId: 'source_0123456789abcdef0123456789abcdef', eventTypes: [eventType], resource: {}, chatIds: ['legacy'] }),
+      }
+      return Response.json(data)
+    })
+    try {
+      await workspace.start(flow.flowId)
+      const before = workspace.$.draft.value!.content
+      expect(
+        await workspace.nodes.setTriggerEventSource('linear', {
+          version: 1,
+          sourceId: 'source_0123456789abcdef0123456789abcdef',
+          revision: 1,
+          name: 'Events',
+          provider: definition.provider as 'slackbot',
+          appId: 'app',
+          connectionId: 'new-connection',
+          teamId: null,
+          enabled: true,
+          eventTypes: [eventType],
+          manageSubscriptions: false,
+          verificationTokenConfigured: false,
+          encryptKeyConfigured: false,
+          endpointUrl: null,
+          verifiedAt: null,
+          lastReceivedAt: null,
+          updatedAt: timestamp,
+          consumers: [],
+        }),
+      ).toBe(true)
+      await workspace.nodes.saveTriggerConfig('linear', 'eventTypes', [eventType])
+      const node = workspace.$.draft.value!.content.document.graph.nodes.linear!
+      if (node.kind !== 'integration') throw new Error('Expected integration')
+      expect(node.connectionId).toBe('new-connection')
+      expect(resolveTriggerConfig(node.definition.configInputs, node.config)).toMatchObject({
+        sourceId: 'source_0123456789abcdef0123456789abcdef',
+        eventTypes: [eventType],
+      })
+      expect(node.config).not.toHaveProperty('resource')
+      expect(node.config).not.toHaveProperty('chatIds')
+      const after = workspace.$.draft.value!.content
+      await workspace.undo()
+      expect(workspace.$.draft.value!.content).toEqual(before)
+      await workspace.redo()
+      expect(workspace.$.draft.value!.content).toEqual(after)
     } finally {
       triggers.dispose()
       workspace.dispose()
@@ -309,32 +388,22 @@ describe('TriggerStore', () => {
   it('keeps Feishu filters compatible when changing sources and event types', async () => {
     const { workspace, triggers, request } = createSetup()
     const original = request.getMockImplementation()!
-    let revision = 1
     request.mockImplementation(async (path, init) => {
       const response = await original(path, init)
-      if (path.endsWith('/draft/changes')) {
-        const data = await response.json()
-        data.revision.parentRevisionId = `revision-${revision}`
-        data.revision.revisionId = `revision-${++revision}`
-        data.revision.digest = `digest-${revision}`
-        return Response.json(data)
-      }
       if (!path.endsWith('/editor')) return response
       const data = await response.json()
       const node = data.draft.content.document.graph.nodes.linear
       node.kind = 'integration'
-      node.definition.type = 'integration'
-      node.definition.endpoint = { body: { formats: ['json'], allowArray: false, allowEmpty: false }, methods: ['POST'], successStatus: 200 }
-      node.definition.provider = 'feishu_app_bot'
-      node.definition.key = 'feishu_app_bot.on_event'
+      node.definition = integrationDefinitions.find((definition) => definition.snapshot.key === 'feishu_app_bot.on_event')!.snapshot
       node.config = inputValues({ sourceId: 'old-source', eventTypes: ['drive.file.edit_v1'], resource: { kind: 'document', id: 'doc' } })
       delete node.pollTimes
       return Response.json(data)
     })
     try {
       await workspace.start(flow.flowId)
+      const before = workspace.$.draft.value!.content
       expect(
-        await workspace.setTriggerEventSource('linear', {
+        await workspace.nodes.setTriggerEventSource('linear', {
           version: 1,
           sourceId: 'new-source',
           revision: 1,
@@ -365,13 +434,18 @@ describe('TriggerStore', () => {
       })
       expect(node.connectionId).toEqual('app-connection')
       expect(request.mock.calls.filter(([path]) => path.endsWith('/draft/changes'))).toHaveLength(1)
-      await workspace.saveTriggerConfig('linear', 'chatIds', ['chat'])
-      await workspace.saveTriggerConfig('linear', 'eventTypes', ['drive.file.edit_v1'])
+      const after = workspace.$.draft.value!.content
+      await workspace.undo()
+      expect(workspace.$.draft.value!.content).toEqual(before)
+      await workspace.redo()
+      expect(workspace.$.draft.value!.content).toEqual(after)
+      await workspace.nodes.saveTriggerConfig('linear', 'chatIds', ['chat'])
+      await workspace.nodes.saveTriggerConfig('linear', 'eventTypes', ['drive.file.edit_v1'])
       expect(workspace.$.draft.value!.content.document.graph.nodes.linear).toHaveProperty('config.chatIds.kind', 'unset')
-      await workspace.saveTriggerConfig('linear', 'resource', { kind: 'document', id: 'token', documentType: 'docx' })
-      await workspace.saveTriggerConfig('linear', 'eventTypes', ['drive.file.title_updated_v1'])
+      await workspace.nodes.saveTriggerConfig('linear', 'resource', { kind: 'document', id: 'token', documentType: 'docx' })
+      await workspace.nodes.saveTriggerConfig('linear', 'eventTypes', ['drive.file.title_updated_v1'])
       expect(workspace.$.draft.value!.content.document.graph.nodes.linear).toHaveProperty('config.resource.value.id', 'token')
-      await workspace.saveTriggerConfig('linear', 'eventTypes', ['contact.user.created_v3'])
+      await workspace.nodes.saveTriggerConfig('linear', 'eventTypes', ['contact.user.created_v3'])
       expect(workspace.$.draft.value!.content.document.graph.nodes.linear).toHaveProperty('config.resource.kind', 'unset')
     } finally {
       triggers.dispose()
@@ -390,7 +464,7 @@ describe('TriggerStore', () => {
     const options = vi.spyOn(client, 'listTriggerConfigOptions').mockResolvedValue([{ value: 'state-new', label: 'Ready' }])
     try {
       await workspace.start(flow.flowId)
-      const saving = workspace.saveTriggerConfig('linear', 'teamId', 'team-new')
+      const saving = workspace.nodes.saveTriggerConfig('linear', 'teamId', 'team-new')
       const loading = workspace.loadTriggerConfigOptions('linear', 'stateIds', new AbortController().signal)
       await Promise.resolve()
       expect(options).not.toHaveBeenCalled()
@@ -409,8 +483,9 @@ describe('TriggerStore', () => {
     const { workspace, triggers, request } = createSetup()
     try {
       await workspace.start(flow.flowId)
-      if (change == 'team') await workspace.saveTriggerConfig('linear', 'teamId', 'team-new')
-      else await workspace.setTriggerConnection('linear', 'connection-new')
+      const before = workspace.$.draft.value!.content
+      if (change == 'team') await workspace.nodes.saveTriggerConfig('linear', 'teamId', 'team-new')
+      else await workspace.nodes.setTriggerConnection('linear', 'connection-new')
       const node = workspace.$.draft.value!.content.document.graph.nodes.linear!
       if (node.kind != 'poll') throw new Error('Expected Poll.')
       expect(node.config).toEqual({ teamId: change == 'team' ? { kind: 'value', value: 'team-new' } : { kind: 'unset' }, stateIds: { kind: 'unset' } })
@@ -418,6 +493,11 @@ describe('TriggerStore', () => {
       expect(saves).toHaveLength(1)
       const body = JSON.parse(String(saves[0]![1]?.body))
       expect(body.operations).toHaveLength(change == 'team' ? 2 : 3)
+      const after = workspace.$.draft.value!.content
+      await workspace.undo()
+      expect(workspace.$.draft.value!.content).toEqual(before)
+      await workspace.redo()
+      expect(workspace.$.draft.value!.content).toEqual(after)
     } finally {
       triggers.dispose()
       workspace.dispose()

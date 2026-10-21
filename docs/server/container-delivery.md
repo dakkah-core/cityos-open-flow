@@ -185,6 +185,8 @@ The image declares `SIGTERM` as its stop signal. The process stops accepting HTT
 
 ## 6. Persistence and recovery
 
+When deploying the node-owned workflow interface update, stop the old container and back up its data volume, then start the new image with the same volume. Schema migration 49 converts legacy Start/Outputs configuration and fills Publication interface snapshots before serving requests. It preserves workflow and publication identities and commits the upgrade atomically. Do not delete the volume. Rolling back to an older image requires restoring the pre-upgrade backup; see [interface migration details](../control/contracts/compatibility.md#node-owned-interfaces-and-publication-snapshots).
+
 The data volume’s SQLite file stores Flows, Revisions, Publications, Runs, RunEvents, Wait checkpoints, the Wait notification outbox, Variables, Trigger bindings, Provider callback verifiers, deployment capability settings, persisted Operator credential digests, browser session signing secrets, and migration versions. Callback verifiers belong only to Trigger runtime state and do not enter Flow Revisions, Workbench, or RunEvents.
 
 After committing `waiting`, Server sends Connector notifications through a persistent outbox. Crash recovery reclaims unfinished work or expired leases, so a Connector action may receive repeated requests with the same invocation identity. A unique SQLite Wait record still constrains Run state and decisions. Notification failure records only a delivery failure; the Run keeps waiting until resolution, cancellation, or expiry 7 days after entering the wait.
@@ -204,3 +206,10 @@ The Server browser host integrates PostHog. Its public SDK token belongs to the 
 Other deployments can set `VITE_POSTHOG_KEY` and `VITE_POSTHOG_HOST` at Vite build time to use their own project. An explicitly empty key disables analytics. These are build settings. Setting them after container startup does not change built static assets.
 
 Analytics uses anonymous browser identity rather than the Operator identity shared across deployments. It records page views, unhandled browser exceptions, successful Flow creation, configuration save/delete, and Variable create/update/delete events. Business events contain no Variable names, values, credentials, or Flow content. DOM autocapture and session recording are disabled.
+
+### Upgrading to node retries
+
+Flow model v9 requires Engine v6, checkpoint v6 and the matching isolated runtime digest. Finish or cancel active
+Runs on the previous Engine before replacing the deployment, unless its matching recovery runtime
+is retained. Republish old Engine-pinned Publications before executing them on the new Engine.
+Existing Revisions, Publications and Run history are preserved; Draft upgrades are explicit.

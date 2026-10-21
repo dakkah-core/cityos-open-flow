@@ -62,7 +62,7 @@ describe('CLI', () => {
       ]) {
         const output = runtime()
         const request = vi.fn(async (path: string, init?: RequestInit) => {
-          if (path == '/v1/flows?limit=100') return Response.json({ flows: [flow], version: 1 })
+          if (path == '/v1/flows?limit=100') return Response.json({ flows: [{ ...flow, referenceCount: 0 }], version: 1 })
           if (path == '/v1/flows/Main') return Response.json({ version: 1, error: { code: 'flow.not-found', message: 'Not found' } }, { status: 404 })
           if (path == `/v1/flows/${flow.flowId}`) return Response.json(flow)
           expect(path).toBe(`/v1/flows/${flow.flowId}/canvas`)
@@ -183,12 +183,12 @@ describe('CLI', () => {
     const output = runtime()
     const request = vi.fn(async (path: string) => {
       expect(path).toBe('/v1/flows?limit=100')
-      return Response.json({ flows: [flow], version: 1 })
+      return Response.json({ flows: [{ ...flow, referenceCount: 0 }], version: 1 })
     })
 
     await expect(runCli(['list', '--json'], { request }, output.value)).resolves.toBe(0)
 
-    expect(JSON.parse(output.stdout())).toEqual({ flows: [flow], kind: 'flow.list', version: 1 })
+    expect(JSON.parse(output.stdout())).toEqual({ flows: [{ ...flow, referenceCount: 0 }], kind: 'flow.list', version: 1 })
   })
 
   it('lists independent event sources and guides an empty catalog to Workbench', async () => {
@@ -235,12 +235,12 @@ describe('CLI', () => {
     const output = runtime()
     const request = vi.fn(async (path: string) => {
       if (path == '/v1/flows/Main') return Response.json({ error: { code: 'flow.not-found', message: 'Missing.' }, version: 1 }, { status: 404 })
-      if (path == '/v1/flows?limit=100') return Response.json({ flows: [flow], version: 1 })
+      if (path == '/v1/flows?limit=100') return Response.json({ flows: [{ ...flow, referenceCount: 0 }], version: 1 })
       if (path == '/v1/flows/flow-1/authoring/check') {
         return Response.json({
           closureDigest: 'closure-1',
           diagnostics: [],
-          engineContract: 'open-flow-engine/v5',
+          engineContract: 'open-flow-engine/v6',
           flowId: flow.flowId,
           modelVersion: currentFlowModelVersion,
           revisionDigest: 'digest-1',
@@ -281,7 +281,7 @@ describe('CLI', () => {
     const request = vi.fn(async (path: string) =>
       path == '/v1/flows/Main'
         ? Response.json({ error: { code: 'flow.not-found', message: 'Missing.' }, version: 1 }, { status: 404 })
-        : Response.json({ flows: [flow], version: 1 }),
+        : Response.json({ flows: [{ ...flow, referenceCount: 0 }], version: 1 }),
     )
     const getWorkbenchUrl = vi.fn(async (flowId?: string) => `https://console.example/flows/${flowId ?? ''}`)
 
@@ -319,13 +319,20 @@ it.each([
           modelVersion: legacy ? 6 : currentFlowModelVersion,
           modules: {},
           document: {
-            inputDefs: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: true }],
             bindings: {},
 
             graph: {
               edges: [],
               nodes: {
-                start: legacy ? { kind: 'manual', name: 'Start' } : { kind: 'start', name: 'Start' },
+                start: {
+                  ...(legacy
+                    ? { kind: 'manual', name: 'Start' }
+                    : ({ inputDefs: [], kind: 'start', name: 'Start' } as Extract<
+                        import('../../../../open-flow/src/flow/common/change.ts').GraphNode,
+                        { kind: 'start' }
+                      >)),
+                  inputDefs: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: true }],
+                },
                 ...(multiple ? { other: { kind: 'cron', name: 'Other', cronTimes: [] } } : {}),
               },
             },
@@ -344,7 +351,7 @@ it.each([
         version: 1,
         waits: [],
         closureDigest: 'closure',
-        engineContract: 'open-flow-engine/v5',
+        engineContract: 'open-flow-engine/v6',
         engineDigest: 'engine',
         modelVersion: legacy ? 6 : currentFlowModelVersion,
         sharedAccessDigest: 'implicit:1',
@@ -372,7 +379,7 @@ const runFixture = {
   version: 1,
   waits: [],
   closureDigest: 'closure',
-  engineContract: 'open-flow-engine/v5',
+  engineContract: 'open-flow-engine/v6',
   engineDigest: 'engine',
   modelVersion: currentFlowModelVersion,
   sharedAccessDigest: 'implicit:1',
@@ -562,7 +569,7 @@ describe('agent command contract', () => {
     const output = runtime()
     const request = vi.fn(async (path: string) => {
       expect(path).toBe('/v1/flows?cursor=before&limit=2')
-      return Response.json({ flows: [flow], nextCursor: 'after', version: 1 })
+      return Response.json({ flows: [{ ...flow, referenceCount: 0 }], nextCursor: 'after', version: 1 })
     })
     expect(await runCli(['list', '--cursor=before', '--limit', '2', '--json'], { request }, output.value)).toBe(0)
     expect(JSON.parse(output.stdout())).toMatchObject({ nextCursor: 'after' })
@@ -589,7 +596,7 @@ describe('agent command contract', () => {
               waits: [],
               closureDigest: 'closure',
               diagnostics: [],
-              engineContract: 'open-flow-engine/v5',
+              engineContract: 'open-flow-engine/v6',
               flowId: flow.flowId,
               modelVersion: currentFlowModelVersion,
               revisionDigest: 'digest',
@@ -817,7 +824,7 @@ it('checks a fixed Revision and changes only the observed Live publication enabl
         waits: [],
         closureDigest: 'closure',
         diagnostics: [],
-        engineContract: 'open-flow-engine/v5',
+        engineContract: 'open-flow-engine/v6',
         flowId: flow.flowId,
         modelVersion: currentFlowModelVersion,
         revisionDigest: 'digest',
@@ -828,7 +835,7 @@ it('checks a fixed Revision and changes only the observed Live publication enabl
     if (path.endsWith('/enabled')) {
       const body = JSON.parse(String(init?.body))
       expect(body).toEqual({ expectedPublicationId: 'published', enabled: expect.any(Boolean), version: 1 })
-      return Response.json({ ...flow, live: { enabled: body.enabled, publicationId: 'published', revisionId: 'historical' } })
+      return Response.json({ ...flow, live: { hasStart: true, enabled: body.enabled, publicationId: 'published', revisionId: 'historical' } })
     }
     throw new Error(path)
   }

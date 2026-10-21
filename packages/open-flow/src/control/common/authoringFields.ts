@@ -49,5 +49,5 @@ export function fieldsToPorts(fields: unknown, previous: readonly (InputPort | G
 
 /** The workflow input contract shared by draft authoring and published views. */
 export function flowInputDefinitions(content: RevisionContent) {
-  return fieldsView(content.document.inputDefs ?? [])
+  return fieldsView(Object.values(content.document.graph.nodes).find((node) => node.kind == 'start')?.inputDefs ?? [])
 }

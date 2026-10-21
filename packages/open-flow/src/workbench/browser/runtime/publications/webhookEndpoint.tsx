@@ -1,24 +1,35 @@
+import type { SetNotice } from '../stores/workbenchNotice.ts'
+
 import { useEffect, useState } from 'react'
 import { useTranslate } from 'val-i18n-react'
 import { Button } from '../../../../ui/browser/button.tsx'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../../../ui/browser/tooltip.tsx'
 
-export function WebhookCopyButton({ endpointUrl, iconOnly = false }: { readonly endpointUrl: string; readonly iconOnly?: boolean }) {
+export function WebhookCopyButton({
+  endpointUrl,
+  notify,
+  iconOnly = false,
+}: {
+  readonly endpointUrl: string
+  readonly notify: SetNotice
+  readonly iconOnly?: boolean
+}) {
   const t = useTranslate()
-  const [copyResult, setCopyResult] = useState<'copied' | 'failed'>()
+  const [copied, setCopied] = useState(false)
   const [container, setContainer] = useState<HTMLSpanElement | null>(null)
   useEffect(() => {
-    if (copyResult !== 'copied') return
-    const timer = globalThis.setTimeout(() => setCopyResult(undefined), 1_500)
+    if (!copied) return
+    const timer = globalThis.setTimeout(() => setCopied(false), 1_500)
     return () => globalThis.clearTimeout(timer)
-  }, [copyResult])
-  const label = t(copyResult === 'copied' ? 'publication.webhookCopied' : copyResult === 'failed' ? 'webhookDeployment.copyFailed' : 'publication.webhookCopy')
+  }, [copied])
+  const label = t(copied ? 'publication.webhookCopied' : 'publication.webhookCopy')
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(endpointUrl)
-      setCopyResult('copied')
+      setCopied(true)
     } catch {
-      setCopyResult('failed')
+      setCopied(false)
+      notify({ kind: 'error', message: t('webhookDeployment.copyFailed') })
     }
   }
   return (
@@ -26,7 +37,7 @@ export function WebhookCopyButton({ endpointUrl, iconOnly = false }: { readonly 
       {iconOnly ? (
         <Tooltip>
           <TooltipTrigger render={<Button aria-label={label} size="icon-sm" variant="ghost" onClick={copy} />}>
-            <i aria-hidden="true" className={copyResult === 'copied' ? 'i-lucide-light:check text-base' : 'i-lucide-light:copy text-base'} />
+            <i aria-hidden="true" className={copied ? 'i-lucide-light:check text-base' : 'i-lucide-light:copy text-base'} />
           </TooltipTrigger>
           <TooltipContent container={container} side="bottom" align="end">
             {label}
@@ -34,21 +45,21 @@ export function WebhookCopyButton({ endpointUrl, iconOnly = false }: { readonly 
         </Tooltip>
       ) : (
         <Button size="sm" variant="outline" onClick={copy}>
-          {t(copyResult === 'copied' ? 'publication.webhookCopied' : 'publication.webhookCopy')}
+          {label}
         </Button>
       )}
-      <span className={iconOnly || copyResult !== 'failed' ? 'sr-only' : 'text-xs text-destructive'} role="status">
-        {copyResult == null ? '' : label}
+      <span className="sr-only" role="status">
+        {copied ? label : ''}
       </span>
     </span>
   )
 }
 
-export function WebhookEndpoint({ endpointUrl }: { readonly endpointUrl: string }) {
+export function WebhookEndpoint({ endpointUrl, notify }: { readonly endpointUrl: string; readonly notify: SetNotice }) {
   return (
     <div className="flex min-w-0 items-start gap-2">
       <code className="min-w-0 flex-1 select-text break-all text-foreground text-xs leading-5">{endpointUrl}</code>
-      <WebhookCopyButton key={endpointUrl} endpointUrl={endpointUrl} />
+      <WebhookCopyButton notify={notify} key={endpointUrl} endpointUrl={endpointUrl} />
     </div>
   )
 }

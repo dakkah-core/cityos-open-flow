@@ -6,7 +6,7 @@ import type { ProviderTriggerDefinition } from '@oomol-lab/open-flow/provider-tr
 import type * as Deferred from 'effect/Deferred'
 import type { Logger } from 'pino'
 import type { ConnectorAccessHost } from '../deployment/connector-access.ts'
-import type { ConnectorHost } from '../deployment/connector.ts'
+import type { ConnectorHost } from '../deployment/connector-contract.ts'
 import type { LlmHost } from '../deployment/llm.ts'
 import type { IntegrationOptions, IntegrationResponse, IntegrationRuntimeState, IntegrationTarget } from '../runtime/integration-runtime.ts'
 import type { Database } from '../storage/database.ts'
@@ -25,7 +25,8 @@ import * as Queue from 'effect/Queue'
 import * as Scope from 'effect/Scope'
 import * as Semaphore from 'effect/Semaphore'
 import { ConfiguredConnectorAccessHost, ImplicitConnectorAccessHost } from '../deployment/connector-access.ts'
-import { ConnectorClient, ConnectorTaskError } from '../deployment/connector.ts'
+import { ConnectorTaskError } from '../deployment/connector-contract.ts'
+import { ConnectorClient } from '../deployment/connector.ts'
 import { ControlError } from '../error.ts'
 import { silentLogger } from '../logger.ts'
 import { IntegrationRuntime } from '../runtime/integration-runtime.ts'
@@ -41,6 +42,7 @@ import { RunExecutor } from './run.ts'
 import { validateCapabilities, validateRuntime } from './service-options.ts'
 import { Supervisor } from './supervisor.ts'
 import { WaitActions } from './wait-actions.ts'
+import { waitForWebhookRun } from './webhook-response.ts'
 import { WebhookTargets } from './webhook-targets.ts'
 
 export type { ServerCapabilities, ServerRuntime, ServerServiceOptions } from './service-options.ts'
@@ -138,6 +140,7 @@ export class ServerService {
       this.#logger,
       (flowId, runId) => this.#runChanged(flowId, runId),
       () => this.#maintenance.wake(),
+      (...args) => this.control.runs.invokeWorkflow(...args),
     )
     const pollDefinitions = triggerDefinitions.filter((definition): definition is PollDefinition => definition.snapshot.type == 'poll')
     const integrationDefinitions = triggerDefinitions.filter((definition): definition is IntegrationDefinition => definition.snapshot.type == 'integration')
@@ -399,6 +402,19 @@ export class ServerService {
     return this.#store.runViews.run(runId)
   }
 
+  waitForWebhookRun(flowId: string, runId: string, timeoutMs: number, signal: AbortSignal, nodeId?: string) {
+    return waitForWebhookRun(
+      () => this.run(runId),
+      (changed) =>
+        this.subscribeFlow(flowId, (event) => {
+          if (event.kind == 'run.changed' && event.runId == runId) changed()
+        }),
+      timeoutMs,
+      signal,
+      nodeId == null ? undefined : () => this.#store.runViews.webhookResponse(runId, nodeId),
+    )
+  }
+
   start(): Effect.Effect<void, never, Scope.Scope> {
     return Effect.gen({ self: this }, function* () {
       yield* Effect.promise(async () => {
@@ -449,6 +465,10 @@ export class ServerService {
     return this.#integration.endpoint(flowId, triggerNodeId)
   }
 
+  receiveApplicationEvent(kind: string, appId: string, request: Request): Promise<Response> {
+    return this.#integration.sources.receiveApplication(kind, appId, request)
+  }
+
   receiveSourceEvent(sourceId: string, request: Request): Promise<Response> {
     return this.#integration.sources.receive(sourceId, request)
   }
@@ -486,6 +506,10 @@ export class ServerService {
 
   #notifyFlow(event: FlowChangeEvent): void {
     for (const listener of this.#flowSubscribers.get(event.flowId) ?? []) listener(event)
+    if (event.kind == 'run.created' || event.kind == 'run.changed') {
+      const caller = this.#store.runs.workflowOrigin(event.runId)
+      if (caller != null) this.#notifyFlow({ kind: 'run.changed', flowId: caller.flowId, runId: caller.runId, version: 1 })
+    }
   }
 
   #notifyFlowCatalog(event: FlowCatalogEvent = { kind: 'flows.changed', version: 1 }, ownerId?: string): void {

@@ -79,7 +79,7 @@ export interface FlowCanvasViewNodeRun {
   readonly logs?: readonly { readonly message: string; readonly level: string; readonly time: string }[]
   readonly artifacts?: readonly unknown[]
   readonly progress?: number
-  readonly status: 'error' | 'idle' | 'running' | 'success' | 'waiting'
+  readonly status: 'handled' | 'error' | 'idle' | 'running' | 'success' | 'waiting'
   readonly successCount?: number
 }
 
@@ -96,6 +96,8 @@ interface FlowCanvasViewNodeBase {
   readonly contentHidden?: boolean
   readonly description?: string
   readonly diagnostics?: number
+  /** Node-type artwork used when the primary icon cannot be loaded or embedded. */
+  readonly fallbackIcon?: string
   readonly icon?: string
   readonly id: string
   readonly inputs: readonly (FlowCanvasViewInput | GroupDividerDef)[]
@@ -111,6 +113,7 @@ export interface FlowCanvasViewTaskNode extends FlowCanvasViewNodeBase {
     readonly providers: readonly { readonly id: string; readonly icon: string; readonly label: string }[]
   }
   readonly additionalInputs?: readonly FlowCanvasViewInput[]
+  readonly connectionDeferred?: boolean
   readonly connectionRequired?: boolean
   readonly executorName?: string
   readonly kind: 'task'
@@ -163,7 +166,7 @@ export interface FlowCanvasViewCommentNode {
 }
 
 export type FlowCanvasViewNode =
-  | (FlowCanvasViewNodeBase & { readonly kind: 'outputs' })
+  | (FlowCanvasViewNodeBase & { readonly kind: 'outputs' | 'webhook-response' })
   | FlowCanvasViewCommentNode
   | FlowCanvasViewConditionNode
   | FlowCanvasViewTaskNode

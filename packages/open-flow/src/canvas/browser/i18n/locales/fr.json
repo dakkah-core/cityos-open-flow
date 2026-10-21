@@ -345,6 +345,7 @@
     "hide": "Masquer le contenu"
   },
   "nodeStatus": {
+    "connectionDeferred": "Aucun compte configuré pour le moment. Configurez un compte avant d’exécuter ce nœud.",
     "connectionRequired": "La connexion est manquante ou indisponible. Reconnectez-vous ou sélectionnez une connexion disponible dans les paramètres du nœud.",
     "error": "Erreur",
     "hasError": "Contient des erreurs",
@@ -590,7 +591,8 @@
       "running": "En cours",
       "success": "Terminé",
       "error": "Échec",
-      "waiting": "En attente"
+      "waiting": "En attente",
+      "handled": "Échec traité"
     },
     "triggerSource": {
       "manual": "Manuel",
@@ -608,7 +610,8 @@
       "value": "Valeurs fixes",
       "input": "Entrée",
       "output": "Sortie",
-      "outputs": "Sorties du workflow"
+      "outputs": "Sorties du workflow",
+      "webhook-response": "Réponse Webhook"
     },
     "units": {
       "minute": "minutes",

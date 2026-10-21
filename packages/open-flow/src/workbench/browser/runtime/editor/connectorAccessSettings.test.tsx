@@ -142,7 +142,6 @@ describe('Connector access settings', () => {
     expect(markup).toContain('href="https://console.example/flow/mail"')
     expect(markup).toContain('href="https://console.example/flow/mail?app=account"')
     expect(markup).not.toContain('disabled=""')
-    expect(markup).toContain('Accounts used by this draft')
     expect(markup).toContain('Personal')
     expect(markup.match(/aria-label="Mail"/g)).toHaveLength(1)
     expect(markup).not.toContain('Current account status: Unknown')
@@ -154,7 +153,13 @@ describe('Connector access settings', () => {
     expect(markup).not.toContain('Add service')
   })
 
-  it.each([false, true])('distinguishes missing account selections from services that need no setup (%s)', (noSetup) => {
+  it.each([
+    { noSetup: false, connectionId: undefined, accountStatus: 'loaded' },
+    { noSetup: true, connectionId: undefined, accountStatus: 'loaded' },
+    { noSetup: false, connectionId: '', accountStatus: 'loaded' },
+    { noSetup: false, connectionId: '', accountStatus: 'loading' },
+    { noSetup: false, connectionId: '', accountStatus: 'failed' },
+  ])('renders account usage for $connectionId with noSetup=$noSetup and accounts=$accountStatus', ({ noSetup, connectionId, accountStatus }) => {
     const store = {
       connectors: { $: { actions: val({}) } },
       connectorAccess: { $: val({ access: { version: 1, mode: 'implicit', bindings: [] }, loading: false }) },
@@ -164,12 +169,14 @@ describe('Connector access settings', () => {
           live: val(undefined),
           revision: val({
             node: () => undefined,
-            connectorReferences: { accounts: [{ providerId: 'mail', nodeId: 'send', name: 'Send mail', kind: 'connector' }] },
+            connectorReferences: { accounts: [{ providerId: 'mail', nodeId: 'send', name: 'Send mail', kind: 'connector', connectionId }] },
           }),
         },
         catalogs: {
           providers: { get: () => val({ data: [{ serviceId: 'mail', serviceName: 'Mail', noSetup }] }) },
-          connections: { get: () => val({ data: [] }) },
+          connections: {
+            get: () => val({ data: accountStatus == 'loaded' ? [] : undefined, error: accountStatus == 'failed' ? new Error('Unavailable') : undefined }),
+          },
         },
       },
     } as unknown as WorkbenchStore
@@ -178,9 +185,13 @@ describe('Connector access settings', () => {
         <ConnectorAccessSettings store={store} onSelectReference={() => {}} />
       </I18nProvider>,
     )
-    expect(markup.includes('Needs an account')).toBe(!noSetup)
+    expect(markup.includes('Needs an account')).toBe(!noSetup && connectionId == null)
+    expect(markup.includes('Not configured for now')).toBe(connectionId === '')
     expect(markup.includes('Send mail')).toBe(!noSetup)
     expect(markup.includes('This draft does not use any accounts.')).toBe(noSetup)
+    expect(markup.includes('Loading connections')).toBe(accountStatus == 'loading')
+    expect(markup.includes('Account status could not be loaded.')).toBe(accountStatus == 'failed')
+    expect(markup.includes('Retry')).toBe(accountStatus == 'failed')
   })
 
   it('distinguishes a permission group from its connection', () => {

@@ -56,6 +56,7 @@ export type AddNodeOption = AddNodeOptionBase &
     | { readonly kind: 'decision' }
     | { readonly kind: 'agent' }
     | { readonly kind: 'openapi' }
+    | { readonly kind: 'workflow' }
     | { readonly kind: 'llm' }
     | { readonly kind: 'new-task' }
     | {
@@ -66,6 +67,7 @@ export type AddNodeOption = AddNodeOptionBase &
     | { readonly kind: 'value' }
     | { readonly kind: 'wait' }
     | { readonly kind: 'outputs' }
+    | { readonly kind: 'webhook-response' }
   )
 
 export function indexAddNodeOptions(options: readonly AddNodeOption[]): ReadonlyMap<string, AddNodeOption> {
@@ -78,7 +80,7 @@ export function indexAddNodeOptions(options: readonly AddNodeOption[]): Readonly
   return indexed
 }
 
-function builtinOptions(t: TFunction): readonly AddNodeOption[] {
+function builtinOptions(_draft: Draft, t: TFunction): readonly AddNodeOption[] {
   const group = t('addNode.blocks')
   return [
     {
@@ -136,6 +138,36 @@ function builtinOptions(t: TFunction): readonly AddNodeOption[] {
       outputs: [{ handle: 'value', jsonSchema: {} }],
     },
     {
+      description: t('workflow.description'),
+      group,
+      icon: ':lucide-light:workflow:',
+      id: 'workflow',
+      inputs: [],
+      outputs: [],
+      kind: 'workflow',
+      label: t('addNode.workflow'),
+    },
+    {
+      id: 'webhook-response',
+      kind: 'webhook-response',
+      group,
+      label: t('addNode.webhookResponse'),
+      description: t('addNode.webhookResponseDescription'),
+      icon: ':lucide-light:reply:',
+      inputs: [],
+      outputs: [],
+    },
+    {
+      id: 'outputs',
+      kind: 'outputs',
+      label: t('addNode.outputs'),
+      description: t('addNode.outputsDescription'),
+      group: t('addNode.blocks'),
+      icon: ':lucide-light:log-out:',
+      inputs: [],
+      outputs: [],
+    },
+    {
       description: t('addNode.commentDescription'),
       group,
       id: 'comment',
@@ -150,19 +182,7 @@ function builtinOptions(t: TFunction): readonly AddNodeOption[] {
 
 export function deriveAddNodeOptions(draft: Draft | undefined, t: TFunction): readonly AddNodeOption[] {
   if (draft == null) return []
-  const options: AddNodeOption[] = [
-    ...builtinOptions(t),
-    {
-      id: 'outputs',
-      kind: 'outputs',
-      label: t('addNode.outputs'),
-      description: t('addNode.outputsDescription'),
-      group: t('addNode.blocks'),
-      icon: ':lucide-light:log-out:',
-      inputs: revisionView(draft).outputDefs(),
-      outputs: [],
-    },
-  ]
+  const options = builtinOptions(draft, t)
   const group = t('addNode.triggers')
   const triggers: readonly AddNodeOption[] = [
     {
@@ -184,7 +204,7 @@ export function deriveAddNodeOptions(draft: Draft | undefined, t: TFunction): re
       inputs: [],
       kind: 'trigger',
       label: t('addNode.webhook'),
-      outputs: triggerOutputDefinitions({ kind: 'webhook', method: 'POST', name: 'Webhook', bodyFields: [] }, []),
+      outputs: triggerOutputDefinitions({ kind: 'webhook', method: 'POST', name: 'Webhook', bodyFields: [] }),
       trigger: { kind: 'webhook' },
     },
     {
@@ -195,7 +215,7 @@ export function deriveAddNodeOptions(draft: Draft | undefined, t: TFunction): re
       inputs: [],
       kind: 'trigger',
       label: t('addNode.cron'),
-      outputs: triggerOutputDefinitions({ kind: 'cron', name: 'Cron', cronTimes: [] }, []),
+      outputs: triggerOutputDefinitions({ kind: 'cron', name: 'Cron', cronTimes: [] }),
       trigger: { kind: 'cron' },
     },
     {
@@ -206,7 +226,7 @@ export function deriveAddNodeOptions(draft: Draft | undefined, t: TFunction): re
       inputs: [],
       kind: 'trigger',
       label: t('errorWorkflow.trigger'),
-      outputs: triggerOutputDefinitions({ kind: 'error', name: 'Flow Error' }, []),
+      outputs: triggerOutputDefinitions({ kind: 'error', name: 'Flow Error' }),
       trigger: { kind: 'error' },
     },
     ...options,
@@ -246,6 +266,10 @@ export function deriveAddNodeOptions(draft: Draft | undefined, t: TFunction): re
 
 export function addNodeIntent(option: AddNodeOption, revision: RevisionView, t: TFunction): AddNodeIntent | undefined {
   switch (option.kind) {
+    case 'workflow':
+      return { kind: 'workflow', name: t('addNode.workflow') }
+    case 'webhook-response':
+      return { kind: 'webhook-response', name: t('addNode.webhookResponse') }
     case 'outputs':
       return { kind: 'outputs', name: t('addNode.outputs') }
     case 'new-task': {

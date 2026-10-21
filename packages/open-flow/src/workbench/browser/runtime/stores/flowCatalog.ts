@@ -1,6 +1,7 @@
 import type { I18n } from 'val-i18n'
 import type { ReadonlyVal, Val } from 'value-enhancer'
 import type { RevisionContent } from '../../../../flow/common/change.ts'
+import type { WorkflowFile } from '../../../../flow/common/workflowFile.ts'
 import type { WorkbenchClient, Flow } from '../api.ts'
 import type { SetNotice } from './workbenchNotice.ts'
 
@@ -12,6 +13,8 @@ import { errorNotice } from './workbenchNotice.ts'
 
 const pageLimit = 50
 
+export type FlowCatalogItem = Flow & { readonly referenceCount?: number }
+
 interface State {
   readonly failed: boolean
   readonly loaded: boolean
@@ -20,7 +23,7 @@ interface State {
   readonly loadMoreFailed: boolean
   readonly refreshing: boolean
   readonly nextCursor?: string
-  readonly flows: readonly Flow[]
+  readonly flows: readonly FlowCatalogItem[]
   readonly total?: number
 }
 
@@ -31,7 +34,7 @@ export interface FlowCatalog$ {
   readonly loadMoreFailed: ReadonlyVal<boolean>
   readonly refreshing: ReadonlyVal<boolean>
   readonly nextCursor: ReadonlyVal<string | undefined>
-  readonly flows: ReadonlyVal<readonly Flow[]>
+  readonly flows: ReadonlyVal<readonly FlowCatalogItem[]>
   readonly total: ReadonlyVal<number | undefined>
 }
 
@@ -131,11 +134,12 @@ export class FlowCatalog {
     try {
       const page = await this.#client.listFlows({ cursor: nextCursor, limit: pageLimit })
       if (!current()) return
-      const seen = new Set(this.#state.value.flows.map((flow) => flow.flowId))
+      const flows = new Map(this.#state.value.flows.map((flow) => [flow.flowId, flow]))
+      for (const flow of page.flows) flows.set(flow.flowId, flow)
       this.#set({
         loadingMore: false,
         nextCursor: page.nextCursor,
-        flows: [...this.#state.value.flows, ...page.flows.filter((flow) => !seen.has(flow.flowId))],
+        flows: [...flows.values()],
       })
     } catch (error) {
       if (!current()) return
@@ -191,16 +195,75 @@ export class FlowCatalog {
     }
   }
 
+  public create(name: string, create?: (name: string) => Promise<string>): Promise<Flow | undefined> {
+    return this.#create(async () => (create == null ? this.#client.createFlow(name) : this.#client.getFlow(await create(name))))
+  }
+
+  public import(
+    file: WorkflowFile,
+    name: string,
+    key: string,
+    importer?: (file: WorkflowFile, name: string, key: string) => Promise<string>,
+  ): Promise<Flow | undefined> {
+    return this.#create(async () =>
+      importer == null ? this.#client.importFlow(file, { name, idempotencyKey: key }) : this.#client.getFlow(await importer(file, name, key)),
+    )
+  }
+
+  async #create(create: () => Promise<Flow>): Promise<Flow | undefined> {
+    try {
+      const created = await create()
+      if (this.#disposed) return
+      this.#insert(created)
+      return created
+    } catch (error) {
+      if (!this.#disposed) this.#setNotice(errorNotice(error, this.#i18n.t))
+    }
+  }
+
+  public async delete(flowId: string): Promise<boolean> {
+    const flow = this.flow(flowId)
+    if (flow == null || flow.status == 'retiring') return false
+    try {
+      await this.#client.deleteFlow(flowId)
+      if (this.#disposed) return false
+      this.#remove(flowId)
+      this.#setNotice({ kind: 'success', message: this.#i18n.t('notice.flowDeleteAccepted', { name: flow.name }) })
+      return true
+    } catch (error) {
+      if (!this.#disposed) this.#setNotice(errorNotice(error, this.#i18n.t))
+      return false
+    }
+  }
+
+  public async rename(flowId: string, name: string): Promise<boolean> {
+    const flow = this.flow(flowId)
+    const nextName = name.trim()
+    if (flow == null || nextName.length == 0) return false
+    if (flow.name == nextName) return true
+    try {
+      const changed = await this.#client.renameFlow(flowId, nextName)
+      if (this.#disposed) return false
+      this.include(changed)
+      this.#setNotice({ kind: 'success', message: this.#i18n.t('notice.flowRenamed', { name: nextName }) })
+      return true
+    } catch (error) {
+      if (!this.#disposed) this.#setNotice(errorNotice(error, this.#i18n.t))
+      return false
+    }
+  }
+
   public include(flow: Flow): void {
     const index = this.#state.value.flows.findIndex((candidate) => candidate.flowId == flow.flowId)
     if (index < 0) {
       this.#set({ flows: [...this.#state.value.flows, flow] })
       return
     }
-    this.#set({ flows: this.#state.value.flows.with(index, flow) })
+    const referenceCount = this.#state.value.flows[index]!.referenceCount
+    this.#set({ flows: this.#state.value.flows.with(index, { ...flow, ...(referenceCount == null ? {} : { referenceCount }) }) })
   }
 
-  public insert(flow: Flow): void {
+  #insert(flow: Flow): void {
     if (this.#state.value.flows.some((candidate) => candidate.flowId == flow.flowId)) return
     this.#set({
       flows: [...this.#state.value.flows, flow],
@@ -208,7 +271,7 @@ export class FlowCatalog {
     })
   }
 
-  public remove(flowId: string): void {
+  #remove(flowId: string): void {
     this.#set({
       flows: this.#state.value.flows.filter((flow) => flow.flowId != flowId),
       total: this.#state.value.total == null ? undefined : this.#state.value.total - 1,

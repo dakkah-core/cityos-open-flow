@@ -4,6 +4,7 @@ import type { FlowCatalogEvent } from '../contract.ts'
 import { currentFlowModelVersion } from '@oomol-lab/open-flow/flow-change'
 import { val } from 'value-enhancer'
 import { describe, expect, it, vi } from 'vitest'
+import { createInspectorSession } from '../../../../../dev/designer/inspectorSession.ts'
 import { WorkbenchClient } from '../api.ts'
 import { createI18n } from '../i18n.ts'
 import { NavigationStore } from '../navigation.ts'
@@ -108,6 +109,45 @@ function access(flowId: string) {
   }
 }
 
+it('opens a direct Flow route without loading the catalog, then loads the list on return', async () => {
+  const { client, store, navigation, navigate, list } = catalogSession('direct-flow')
+  const page = Promise.withResolvers<Awaited<ReturnType<WorkbenchClient['listFlows']>>>()
+  list.mockReturnValue(page.promise)
+  const watch = vi.spyOn(client, 'watchFlowCatalog')
+  vi.spyOn(client, 'getConnectorAccess').mockResolvedValue(access('direct-flow'))
+  try {
+    await navigation.start()
+
+    expect(navigation.$.ready.value).toBe(true)
+    expect(store.workspace.$.draft.value?.flowId).toBe('direct-flow')
+    expect(store.workspace.$.flow.value?.name).toBe('direct-flow')
+    expect(client.getEditor).toHaveBeenCalledExactlyOnceWith('direct-flow')
+    expect(list).not.toHaveBeenCalled()
+    expect(watch).not.toHaveBeenCalled()
+    expect(navigate).not.toHaveBeenCalled()
+
+    const opening = navigation.openFlows()
+    await vi.waitFor(() => expect(list).toHaveBeenCalledOnce())
+    expect(store.workspace.$.flowLoading.value).toBe(true)
+    expect(watch).toHaveBeenCalledOnce()
+    page.resolve({ flows: [], total: 0, version: 1 })
+    await opening
+    expect(store.workspace.$.flowId.value).toBeUndefined()
+    expect(store.workspace.$.flowLoading.value).toBe(false)
+    expect(store.workspace.$.flows.value).toEqual([])
+    expect(navigate).toHaveBeenLastCalledWith({ flowId: undefined, view: 'design' }, { replace: false })
+
+    await navigation.selectFlow({ flowId: 'direct-flow' })
+    await navigation.openFlows()
+    expect(list).toHaveBeenCalledOnce()
+    expect(watch).toHaveBeenCalledOnce()
+  } finally {
+    page.resolve({ flows: [], version: 1 })
+    navigation.dispose()
+    store.dispose()
+  }
+})
+
 describe('Trigger creation permissions', () => {
   const definition: TriggerKeySnapshot = {
     configInputs: [],
@@ -144,7 +184,7 @@ describe('Trigger creation permissions', () => {
     vi.spyOn(client, 'checkFlow').mockImplementation(async (flowId, revisionId) => ({
       closureDigest: 'closure',
       diagnostics: [],
-      engineContract: 'open-flow-engine/v5',
+      engineContract: 'open-flow-engine/v6',
       flowId,
       modelVersion: currentFlowModelVersion,
       revisionDigest: 'digest',
@@ -214,9 +254,11 @@ describe('Trigger creation permissions', () => {
       await navigation.start()
       await add()
       expect(nodes()).toEqual([expect.objectContaining({ kind: 'poll' })])
-      const node = nodes()[0]
-      expect('connectionId' in node ? node.connectionId : undefined).toBe(expected)
-      if (expected == null) expect(store.$.notice.value).toMatchObject({ kind: 'error', message: createI18n().t('connectorAccess.noAvailablePermissions') })
+      await vi.waitFor(() => {
+        const node = nodes()[0]
+        expect('connectionId' in node ? node.connectionId : undefined).toBe(expected)
+        if (expected == null) expect(store.$.notice.value).toMatchObject({ kind: 'error', message: createI18n().t('connectorAccess.noAvailablePermissions') })
+      })
     } finally {
       navigation.dispose()
       store.dispose()
@@ -228,7 +270,10 @@ describe('Trigger creation permissions', () => {
     try {
       await navigation.start()
       await add()
-      expect(nodes()).toEqual([expect.objectContaining({ connectionId: 'other' })])
+      await vi.waitFor(() => {
+        expect(nodes()).toEqual([expect.objectContaining({ connectionId: 'other' })])
+        expect(store.workspace.history$.value.canUndo).toBe(true)
+      })
       await store.workspace.undo()
       expect(nodes()).toEqual([])
       await store.workspace.redo()
@@ -240,12 +285,43 @@ describe('Trigger creation permissions', () => {
     }
   })
 
+  it('preserves movement redo when a pending default connection completes', async () => {
+    const { store, navigation, add, nodes, lookup } = setup([])
+    const pending = Promise.withResolvers<Awaited<ReturnType<WorkbenchClient['listProviderAccessBindingCandidates']>>>()
+    lookup.mockReturnValue(pending.promise)
+    try {
+      await navigation.start()
+      const nodeId = (await add())!
+      await vi.waitFor(() => expect(lookup).toHaveBeenCalledOnce())
+      await store.workspace.moveNodes({ [nodeId]: { x: 100, y: 100 } })
+      await store.workspace.undo()
+      expect(store.workspace.history$.value.canRedo).toBe(true)
+      pending.resolve({
+        version: 1,
+        results: [{ version: 1, mode: 'selectable', providerId: 'mail', candidates: [candidate('default', { allTriggers: true })] }],
+      })
+      await vi.waitFor(() => expect(nodes()).toEqual([expect.objectContaining({ connectionId: 'default' })]))
+      await vi.waitFor(() => expect(store.workspace.history$.value.canRedo).toBe(true))
+      await store.workspace.redo()
+      expect(store.workspace.history$.value.undo?.action).toBe('move')
+      await store.workspace.undo()
+      await store.workspace.undo()
+      expect(nodes()).toEqual([])
+      await store.workspace.redo()
+      expect(nodes()).toEqual([expect.objectContaining({ connectionId: 'default' })])
+    } finally {
+      pending.resolve({ version: 1, results: [] })
+      navigation.dispose()
+      store.dispose()
+    }
+  })
+
   it('uses Connector token authority in implicit mode without querying candidates', async () => {
     const { store, navigation, add, nodes, lookup } = setup([], true)
     try {
       await navigation.start()
       await add()
-      expect(nodes()).toEqual([expect.objectContaining({ connectionId: 'default' })])
+      await vi.waitFor(() => expect(nodes()).toEqual([expect.objectContaining({ connectionId: 'default' })]))
       expect(lookup).not.toHaveBeenCalled()
     } finally {
       navigation.dispose()
@@ -261,26 +337,57 @@ describe('Trigger creation permissions', () => {
       await add()
       expect(nodes()).toEqual([expect.objectContaining({ kind: 'poll' })])
       expect(nodes()[0]).not.toHaveProperty('connectionId')
-      expect(store.$.notice.value).toMatchObject({ kind: 'error', message: 'Permission lookup unavailable' })
+      await vi.waitFor(() => expect(store.$.notice.value).toMatchObject({ kind: 'error', message: 'Permission lookup unavailable' }))
     } finally {
       navigation.dispose()
       store.dispose()
     }
   })
 
-  it('does not create a node after leaving the Flow during permission lookup', async () => {
+  it.each(['choose', 'clear', 'delete', 'undo'] as const)('does not overwrite %s while default connection permissions are pending', async (action) => {
+    const { store, navigation, add, nodes, lookup } = setup([])
+    const pending = Promise.withResolvers<Awaited<ReturnType<WorkbenchClient['listProviderAccessBindingCandidates']>>>()
+    lookup.mockReturnValue(pending.promise)
+    try {
+      await navigation.start()
+      const nodeId = (await add())!
+      await vi.waitFor(() => expect(lookup).toHaveBeenCalledOnce())
+      if (action == 'choose' || action == 'clear') {
+        await store.workspace.nodes.setTriggerConnection(nodeId, 'manual')
+        if (action == 'clear') await store.workspace.nodes.setTriggerConnection(nodeId, undefined)
+      } else if (action == 'delete') await store.workspace.deleteSelectedNodes()
+      else await store.workspace.undo()
+      pending.resolve({
+        version: 1,
+        results: [{ version: 1, mode: 'selectable', providerId: 'mail', candidates: [candidate('default', { allTriggers: true })] }],
+      })
+      await vi.waitFor(() => expect(store.connectorAccess.$.value.loadingCandidates).toEqual([]))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      if (action == 'delete' || action == 'undo') expect(nodes()).toEqual([])
+      else if (action == 'choose') expect(nodes()).toEqual([expect.objectContaining({ connectionId: 'manual' })])
+      else expect(nodes()[0]).not.toHaveProperty('connectionId')
+    } finally {
+      pending.resolve({ version: 1, results: [] })
+      navigation.dispose()
+      store.dispose()
+    }
+  })
+
+  it('creates the node before permissions resolve and ignores results after leaving the Flow', async () => {
     const { client, store, navigation, add, nodes, lookup } = setup([])
     const pending = Promise.withResolvers<Awaited<ReturnType<WorkbenchClient['listProviderAccessBindingCandidates']>>>()
     lookup.mockReturnValue(pending.promise)
     try {
       await navigation.start()
-      const added = add()
+      const added = await add()
+      expect(added).toBeDefined()
+      expect(nodes()).toEqual([expect.objectContaining({ kind: 'poll' })])
       await vi.waitFor(() => expect(lookup).toHaveBeenCalledOnce())
       await store.selectFlow('second')
       pending.resolve({ version: 1, results: [] })
-      await added
+      await new Promise((resolve) => setTimeout(resolve, 0))
       expect(nodes()).toEqual([])
-      expect(client.changeDraft).not.toHaveBeenCalled()
+      expect(client.changeDraft).toHaveBeenCalledOnce()
     } finally {
       pending.resolve({ version: 1, results: [] })
       navigation.dispose()
@@ -456,20 +563,20 @@ describe('Flow creation notifications', () => {
         await connection.promise
         expect(list).toHaveBeenCalledOnce()
       }
-      initial.resolve({ flows: [flow], version: 1 })
+      initial.resolve({ flows: [{ ...flow, referenceCount: 0 }], version: 1 })
       await started
 
       expect(navigation.$.ready.value).toBe(true)
-      expect(store.workspace.$.flows.value).toEqual([flow])
+      expect(store.workspace.$.flows.value).toEqual([{ ...flow, referenceCount: 0 }])
       expect(store.workspace.$.flowLoading.value).toBe(false)
       if (timing == 'after') connection.resolve()
       await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2))
       expect(store.workspace.$.flowRefreshing.value).toBe(true)
-      expect(store.workspace.$.flows.value).toEqual([flow])
+      expect(store.workspace.$.flows.value).toEqual([{ ...flow, referenceCount: 0 }])
 
       const updated = { ...flow, name: 'Updated before connection' }
-      refreshed.resolve({ flows: [updated], version: 1 })
-      await vi.waitFor(() => expect(store.workspace.$.flows.value).toEqual([updated]))
+      refreshed.resolve({ flows: [{ ...updated, referenceCount: 0 }], version: 1 })
+      await vi.waitFor(() => expect(store.workspace.$.flows.value).toEqual([{ ...updated, referenceCount: 0 }]))
       expect(navigate).not.toHaveBeenCalled()
       expect(store.workspace.$.flowId.value).toBeUndefined()
     } finally {
@@ -497,13 +604,13 @@ describe('Flow creation notifications', () => {
       status: 'active',
       version: 1,
     } as const
-    list.mockResolvedValueOnce({ flows: [flow], version: 1 }).mockRejectedValueOnce(new Error('Catch-up failed'))
+    list.mockResolvedValueOnce({ flows: [{ ...flow, referenceCount: 0 }], version: 1 }).mockRejectedValueOnce(new Error('Catch-up failed'))
     try {
       await navigation.start()
       connection.resolve()
       await vi.waitFor(() => expect(store.$.notice.value?.message).toContain('Catch-up failed'))
       expect(navigation.$.ready.value).toBe(true)
-      expect(store.workspace.$.flows.value).toEqual([flow])
+      expect(store.workspace.$.flows.value).toEqual([{ ...flow, referenceCount: 0 }])
       expect(store.workspace.$.flowLoading.value).toBe(false)
       expect(store.workspace.$.flowRefreshing.value).toBe(false)
       expect(store.workspace.$.flowLoadFailed.value).toBe(false)
@@ -568,20 +675,25 @@ describe('Flow creation notifications', () => {
     }
   })
 
-  it('does not replace an initial detail route with a creation received during startup', async () => {
-    const { store, navigation, navigate, list, emit } = catalogSession('existing-flow')
-    const loading = Promise.withResolvers<Awaited<ReturnType<WorkbenchClient['listFlows']>>>()
-    list.mockReturnValueOnce(loading.promise)
+  it('does not replace a detail route with a creation received while the editor is loading', async () => {
+    const { client, store, navigation, navigate, emit } = catalogSession('existing-flow')
+    const loading = Promise.withResolvers<void>()
+    const read = vi.mocked(client.getEditor).getMockImplementation()!
+    vi.mocked(client.getEditor).mockImplementationOnce(async (flowId) => {
+      await loading.promise
+      return await read(flowId)
+    })
     try {
+      await store.workspace.start()
       const started = navigation.start()
-      await vi.waitFor(() => expect(list).toHaveBeenCalled())
+      await vi.waitFor(() => expect(client.getEditor).toHaveBeenCalled())
       emit({ kind: 'flow.created', flowId: 'new-flow', version: 1 })
-      loading.resolve({ flows: [], version: 1 })
+      loading.resolve()
       await started
       expect(store.workspace.$.flowId.value).toBe('existing-flow')
       expect(navigate).not.toHaveBeenCalled()
     } finally {
-      loading.resolve({ flows: [], version: 1 })
+      loading.resolve()
       navigation.dispose()
       store.dispose()
     }
@@ -628,7 +740,7 @@ it('loads Variable names on demand and reuses them until invalidated', async () 
     const second = store.refreshVariableNames()
     expect(request).toHaveBeenCalledOnce()
     expect(store.$.variableNamesLoading.value).toBe(true)
-    response.resolve(Response.json({ variables: [{ name: 'TOKEN', value: 'value', updatedAt: timestamp, version: 1 }], version: 1 }))
+    response.resolve(Response.json({ variables: [{ name: 'TOKEN', value: 'value', updatedAt: timestamp, version: 1, referenceCount: 0 }], version: 1 }))
     await Promise.all([first, second])
     expect(store.$.variableNames.value).toEqual(['TOKEN'])
     expect(store.$.variableNamesLoading.value).toBe(false)
@@ -990,7 +1102,7 @@ it.each(['unchanged', 'deleted', 'account selected', 'flow switched', 'failed'] 
     )
     vi.spyOn(store, 'prepareConnectorAction').mockReturnValue(preparation)
     const add = vi.spyOn(store.workspace, 'addNode').mockResolvedValue('new-node')
-    const setConnection = vi.spyOn(store.workspace, 'setConnectorConnection').mockResolvedValue(true)
+    const setConnection = vi.spyOn(store.workspace.nodes, 'setConnectorConnection').mockResolvedValue(true)
     const refresh = vi.spyOn(store.connectors, 'refresh').mockResolvedValue()
     try {
       await navigation.start()
@@ -1040,7 +1152,7 @@ it.each(['connected', 'unconfigured', 'failed'] as const)('keeps new Connector a
   const preparation = Promise.withResolvers<{ action: typeof action & { defaultConnection?: typeof connection }; connections: (typeof connection)[] }>()
   const saving = Promise.withResolvers<boolean>()
   vi.spyOn(store, 'prepareConnectorAction').mockReturnValue(preparation.promise)
-  const save = vi.spyOn(store.workspace, 'setConnectorConnection').mockReturnValue(saving.promise)
+  const save = vi.spyOn(store.workspace.nodes, 'setConnectorConnection').mockReturnValue(saving.promise)
   vi.spyOn(store.connectors, 'refresh').mockResolvedValue()
   try {
     await navigation.start()
@@ -1214,5 +1326,46 @@ it.each([false, true])('opens an imported draft and reports resource reconfigura
   } finally {
     navigation.dispose()
     store.dispose()
+  }
+})
+
+it('retains a deferred Provider account across catalog refresh, reconnection and undo', async () => {
+  const session = createInspectorSession(
+    'en',
+    vi.fn(),
+    {
+      modelVersion: currentFlowModelVersion,
+      modules: {},
+      document: {
+        bindings: {},
+        graph: {
+          edges: [],
+          nodes: {
+            send: {
+              kind: 'task',
+              inputs: {},
+              task: { name: 'Send', inputs: [], outputs: [], executor: { kind: 'connector', action: 'mail.send', connectionId: '' } },
+            },
+          },
+        },
+      },
+    },
+    {
+      providers: [{ service: 'mail', displayName: 'Mail', authTypes: ['oauth2'] }],
+      connections: [{ id: 'work', service: 'mail', displayName: 'Work', isDefault: true, status: 'active' }],
+    },
+  )
+  try {
+    await session.start()
+    session.store.selectNodes(['send'])
+    await session.connectors.refresh(true)
+    expect(session.store.$.draft.value?.content.document.graph.nodes.send).toMatchObject({ task: { executor: { connectionId: '' } } })
+    expect(session.connectors.$.diagnostics.value).toEqual([])
+    await session.connectors.setConnection('send', 'work')
+    await session.store.undo()
+    await session.connectors.refresh(true)
+    expect(session.store.$.draft.value?.content.document.graph.nodes.send).toMatchObject({ task: { executor: { connectionId: '' } } })
+  } finally {
+    session.dispose()
   }
 })

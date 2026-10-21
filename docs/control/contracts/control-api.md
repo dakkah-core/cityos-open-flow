@@ -53,28 +53,30 @@ interface Variable {
 }
 ```
 
-| Method   | Path                  | Request             | Success                                     | Missing                  |
-| -------- | --------------------- | ------------------- | ------------------------------------------- | ------------------------ |
-| `GET`    | `/v1/variables`       | No body/query       | `200 { variables: Variable[], version: 1 }` | Not applicable           |
-| `GET`    | `/v1/variables/:name` | No body/query       | `200 Variable`                              | `404 variable.not-found` |
-| `PUT`    | `/v1/variables/:name` | `{ value: string }` | `200 Variable`                              | Not applicable           |
-| `DELETE` | `/v1/variables/:name` | No body/query       | `200 { version: 1 }`                        | `404 variable.not-found` |
+| Method   | Path                  | Request             | Success                                             | Missing                  |
+| -------- | --------------------- | ------------------- | --------------------------------------------------- | ------------------------ |
+| `GET`    | `/v1/variables`       | No body/query       | `200 { variables: VariableListItem[], version: 1 }` | Not applicable           |
+| `GET`    | `/v1/variables/:name` | No body/query       | `200 Variable`                                      | `404 variable.not-found` |
+| `PUT`    | `/v1/variables/:name` | `{ value: string }` | `200 Variable`                                      | Not applicable           |
+| `DELETE` | `/v1/variables/:name` | No body/query       | `200 { version: 1 }`                                | `404 variable.not-found` |
 
 Names are case-sensitive, contain 1–256 ASCII characters, and match `^[A-Za-z_][A-Za-z0-9_]*$`. The `OO_` prefix is reserved case-insensitively. Lists use ascending ASCII/BINARY name order. Values may contain empty strings, NUL, newlines, and Unicode, up to 64 KiB in UTF-8. Each account permits 200 distinct names. Existing records remain editable at the limit. PUT with the same value preserves `updatedAt`. Invalid requests return `variable.invalid`; a 201st name returns `variable.limit-reached`.
 
 Each account, including administrators and the Operator, can enumerate and read only its own values. Variables are exportable account configuration. They provide no Secret Manager guarantees for nonexportable values, per-variable ACLs, KMS, rotation, or separate auditing.
 
+`VariableListItem` extends `Variable` with `referenceCount: number`, the number of distinct active Flows referencing the Variable in their current Draft or Live. Values and counts are read from one database snapshot. Single-Variable reads and writes still return `Variable`.
+
 ### Variable references
 
-`GET /v1/variables/:name/references` returns `{ version: 1, references, unknown }`.
+`GET /v1/variables/:name/references` returns `{ version: 1, references }`.
 The name follows the Variable name contract; missing Variables return `404 variable.not-found`.
-Only active Flows owned by the authenticated account are inspected, without catalog pagination.
+Only active Flows owned by the authenticated account are included, without catalog pagination.
+Reads use a resource-reference index maintained atomically with Draft and Live changes; they do not read Revision content.
 Each reference contains `flowId`, `flowName`, `draft: boolean`, and
 `live: { publicationId: string, enabled: boolean } | null`. A Flow appears once, ordered by
 name (BINARY), then ID. Draft and current Publication references are combined; disabled Live
 publications remain included, while historical publications and retiring Flows are excluded.
-Unknown versions are returned separately as `{ flowId, flowName, scope: 'draft' | 'live' }`.
-An unknown version must not be interpreted as having no references.
+Unparseable or missing revision content contributes no references for that scope; the other scope remains independent. Repair, upgrade, or a new publication refreshes the corresponding index.
 
 These are static references, not observed Run usage. No Variable values are returned.
 The response is an advisory snapshot, not a deletion lock. Deleting a referenced Variable remains
@@ -109,8 +111,8 @@ in Connector, Agent tools/notifications, Code capabilities (including supported 
 forms), and Triggers. Action declarations remain. Variable bindings and their input
 sources are removed; mixed sources retain node outputs, and an input without sources
 becomes unset. Condition operands follow the same rule. Error Trigger source Flow lists
-are emptied. Feishu event source and dependent event/resource/chat selections and Linear
-team/state selections become unset under their Trigger configuration contracts.
+are emptied. Shared event source IDs and event selections (including Jira), Feishu resource/chat filters, Slack channel filters, and Linear
+team/state selections become unset under their Trigger configuration contracts. External business resource selections, including Tally and Typeform `formId`, are preserved. After importing, select a Connection authorized to access those resources; saved resource IDs do not confer access.
 
 Node and Module IDs, edges, shared Module relationships, ports, code, prompts, fixed
 inputs, model selections, and Presentation values remain. Flow/Revision IDs are newly
@@ -172,6 +174,14 @@ interface FlowPage {
 ```
 
 Deployments generate `flowId`. Deletion moves a Flow to `retiring`. Draft mutation, Run, Publish, Rollback, and Trigger admission then fail closed. `total` is required only with `includeTotal=true`.
+
+`FlowListItem` extends `Flow` with required nonnegative integer `referenceCount`. Only
+Flow list responses use this type. The count is the number of distinct active source
+Flows calling the target in their current Draft or Live, including disabled Live,
+within the same owner. It excludes Error Trigger subscriptions and historical versions.
+The Server selects the cursor page and removes its lookahead row before one indexed,
+batched count query for the returned targets. Empty pages skip that query. Flow detail
+and mutation responses remain `Flow` and do not compute counts.
 
 `resourceReferences.draft` corresponds to `draftRevisionId`. It contains deduplicated, stably ordered Variable names, explicitly selected connection accounts, and Error Trigger source Flow IDs actually referenced by the Draft. These are static references across the whole Draft, not proof that a Run used every resource. An undecodable Draft or one requiring repair/upgrade returns `null`; a readable Draft without references returns three empty arrays. `sharedAccess` comes from independently maintained Flow shared account authorization, versioned by `accessRevision`.
 
@@ -358,7 +368,7 @@ Update bodies use `{ expectedRevision, value, version: 1 }`. Stale CAS returns `
 }
 ```
 
-Each field reuses its resource read contract. `flow.flowId`, `draft.flowId`, and `live.flowId` must match the requested Flow. `flow.draftRevisionId` must equal `draft.revisionId`; Live `hasUnpublishedChanges` refers to that Draft. This read creates no Revision, changes no Presentation revision, and runs no check. A missing Flow returns `flow.not-found`. Independent resource read/write interfaces remain available. Clients ignore extra fields at the editor response root and in Presentation responses, but validate required fields, types, versions, and resource consistency.
+Each field reuses its resource read contract. `flow.flowId`, `draft.flowId`, and `live.flowId` must match the requested Flow. `flow.draftRevisionId` must equal `draft.revisionId`; Live `hasUnpublishedChanges` refers to that Draft. This read creates no Revision, changes no Presentation revision, and runs no check. A missing Flow returns `flow.not-found`. Independent resource read/write interfaces remain available. Clients ignore and strip undeclared fields in ordinary response objects, including nested objects, while validating required fields, types, versions, and resource consistency. Request schemas, permission identities, access configuration, candidates and snapshots, embedded execution/authoring definitions, and dynamic field-map consistency retain their explicit validation contracts.
 
 ### Execution graphs and input sources
 
@@ -407,7 +417,7 @@ interface FlowCheck {
 }
 ```
 
-Check bodies use `{ engineContract: 'open-flow-engine/v5', version: 1 }` and always validate the Flow Revision pinned in the path. `message` is a stable canonical English fallback. Workbench may localize using `code`, optional `values.variant`, and other `values`. Unknown codes or variants must fall back to `message`.
+Check bodies use `{ engineContract: 'open-flow-engine/v7', version: 1 }` and always validate the Flow Revision pinned in the path. `message` is a stable canonical English fallback. Workbench may localize using `code`, optional `values.variant`, and other `values`. Unknown codes or variants must fall back to `message`.
 
 Publication `liveEnd` records enabled state and end time when a new Live replaces that version. The ordinary publish/rollback transaction writes it atomically. Asynchronous preparation does not write it; failure and idempotent replay do not rewrite it. A new rollback Publication does not inherit its source’s end state. Current Publications and older records without history omit it. It does not indicate Trigger health.
 
@@ -562,6 +572,18 @@ interface Run {
 }
 ```
 
+Run details include optional `initiator: { actorId?: string, channel: 'workbench' | 'cli' | 'mcp' | 'api' | 'trigger' | 'workflow' }`.
+`actorId` is the authenticated initiating account ID, fixed at admission. The HTTP adapter accepts
+`X-Open-Flow-Client: workbench | cli | api`, defaulting to `api`; Workbench and CLI clients set their
+own channel. This client-declared channel describes the caller and grants no authority. MCP assigns
+`mcp` on the server and does not accept client-supplied actor identities or internal channels.
+Background event admissions use `trigger` without an actor. Workflow calls use `workflow` and retain
+the parent's initiating actor, reusing `caller/calls` for lineage. No new parent/root association is
+introduced. Historical Runs omit `initiator` when the audit data is unavailable; clients show unknown
+rather than infer an actor from Flow ownership. Idempotent replay retains the original initiator even
+when retried through another channel; channel is not part of the execution request digest. Run list
+summaries retain their existing shape. Audit facts are retained independently of Run event logs.
+
 Run details add pinned `closureDigest`, `engineContract`, `engineDigest`, `modelVersion`, `sharedAccessDigest`, and `revisionDigest`. Live Runs add `publicationId`. Automatically triggered Runs are also Live and include `occurrenceId` and `triggerNodeId`.
 
 `RunStatus` includes `queued | starting | running | waiting | canceled | completed | failed | indeterminate`. Every Run detail must return its pending decision collection:
@@ -593,23 +615,21 @@ Draft Runs validate semantics, capabilities, and Variable admission only for nod
 
 Multiple simultaneous values are forbidden. Missing node references, cycles within the selected branch, and invalid code still return `flow.invalid`. Draft Run `revisionDigest` identifies the complete Revision; `closureDigest` identifies the entry’s execution closure and may differ from the whole-graph check. Reads and recovery do not modify the original Revision. Publish and Live Runs retain complete Flow validation.
 
-Start structure is `{ kind: "start", name: string, description?: string, icon?: string }` in Flow model 7. Its input contract belongs to `FlowDocument.inputDefs?: readonly Port[]`, alongside `graph` and `bindings`. Omitted `inputDefs` means no workflow inputs, equivalent to `[]` for querying and execution. Reading or editing unrelated fields does not insert an empty definition list. One graph may contain at most one Start or legacy Manual entry. Start has no input mappings, parameter defaults, or independent output definitions: its outputs derive from the workflow inputs. Workbench tests and REST Draft/Live calls share this contract. A future Flow invocation node can reuse it; this change adds no Flow invocation capability.
+Start stores `{ kind: "start", name: string, inputDefs: Port[], description?: string, icon?: string }`. One graph may contain at most one Start or legacy Manual entry. New Start nodes have `inputDefs: []`; their graph outputs derive from these definitions. There are no input mappings or parameter defaults.
 
-The `flow_read` outline returns `data.inputDefs` as `{ [name]: { schema, nullable, description? } }`, independently of node reads. Use `{ op: "flow.update", set: { inputDefs: { ... } }, clear?: [...] }` in the existing atomic authoring edit batch. Fields merge recursively, omitted fields remain unchanged, and schema arrays replace whole arrays. Omitted schema accepts any JSON; omitted nullable is true. Use `clear: [["inputDefs", "amount", "schema", "minimum"]]` to remove one constraint, `[["inputDefs", "amount"]]` to remove one definition, or `[["inputDefs"]]` to clear all definitions. A single-definition rename preserves downstream references; deletions retain unresolved references for diagnostics. Creating or deleting Start does not change `inputDefs`. Start authoring config is `{}`; the retired `config.parameters` is rejected. Stored legacy `Start.parameters` is decoded losslessly into workflow `inputDefs`; conflicting or invalid definitions are rejected without overwriting them.
+Use `node.add` with `config.inputDefs` or `node.update` with `set.config.inputDefs`, a named `{ schema, nullable, description? }` field map. Node details expose this configuration and the resulting `outputPorts`. Fields merge recursively; schema arrays replace whole arrays. Omitted schema accepts any JSON and omitted nullable is true. Clear paths are node-relative, such as `["config", "inputDefs", "amount", "schema", "minimum"]`. Renaming a single field preserves downstream references; deleting a field retains unresolved references for diagnostics. Configuration follows node deletion, undo and copying. Top-level document interface fields, `flow.update`, and legacy `Start.parameters` are unsupported.
 
-The shared low-level operation is `{ kind: "flow.input-defs.set", before: Port[], value: Port[] }`. It replaces the complete definition list with an optimistic before-value check; shared editors compile reference renames into the same batch. Workflow definition search hits omit `node`; diagnostics identify `inputDefs` fields without attributing them to a node.
+Shared editors compile configuration changes to optimistic `graph.node.replace` operations with dependent reference updates in the same batch. Search and diagnostics attribute interface fields to their owning node.
 
 ### Workflow outputs
 
-Flow model 8 adds `{ kind: "outputs", name?, description?, icon?, maxExecutions?, timeoutMs? }`. A graph contains at most one Outputs node. It accepts execution dependencies but has no outgoing execution connections or data ports that other nodes can reference. It waits for predecessors to complete or be skipped and runs when an incoming edge is selected, using the same invocation snapshot and source validation as an ordinary node. Completing Outputs does not complete the Run or cancel other branches.
+Flow model 8 adds `{ kind: "outputs", outputDefs: Port[], outputMappings: Record<string, InputMapping>, name?, description?, icon?, maxExecutions?, timeoutMs? }`. A graph contains at most one Outputs node. It accepts execution dependencies but has no outgoing execution connections or data ports that other nodes can reference. It waits for predecessors to complete or be skipped and runs when an incoming edge is selected, using the same invocation snapshot and source validation as an ordinary node. Completing Outputs does not complete the Run or cancel other branches.
 
-The workflow owns `outputDefs?: readonly Port[]` and `outputMappings?: Readonly<Record<string, InputMapping>>`, alongside `inputDefs`. Omitted values mean `[]` and `{}`. Creating or deleting the Outputs node preserves these properties. Definitions contain no default values. Mappings support literal values, unset, variables, and upstream outputs or fields. Missing values, nullability, mutually exclusive sources and type checks follow ordinary node input rules.
+Outputs owns `outputDefs: Port[]` and `outputMappings: Record<string, InputMapping>`, initialized to `[]` and `{}`. Deleting the node removes both; undo restores both. Definitions contain no defaults. Mappings support literals, unset, variables and upstream outputs or fields under ordinary node input rules.
 
-Public authoring uses `type: "outputs"` with `config: {}`. Declare named fields with `flow.update.set.outputDefs`, using the same schema/nullable/description field map and recursive merge/clear contract as `inputDefs`. Set their data through `node.add.inputs` or `input.set`; these operations write workflow mappings, not node-owned inputs. Unknown fields require an explicit definition. A single field rename carries its mapping; deleting a definition removes its mapping. Upstream output renames update workflow mappings, while deleting an upstream node or port retains unresolved references for diagnostics.
+Public authoring uses `type: "outputs"` and `config.outputDefs`, with the same named field map and merge/clear rules as Start definitions. Set sources through `node.add.inputs` or `input.set`; these write the node's `outputMappings`. Unknown fields require explicit definitions. Renaming a field carries its mapping, deleting a field removes its mapping, and upstream renames update mappings. Node details expose `config.outputDefs`, values as `inputs`, definitions as `inputPorts`, and empty `outputPorts`. Diagnostics identify `config.outputDefs.<field>` or `inputs.<field>`. Shared edits use optimistic node replacements and `graph.node.input.set`; all participate in atomic commits and undo/redo.
 
-`flow_read` outlines expose `outputDefs` and `outputMappings`, with public source names and node references. Outputs details expose those definitions as `inputPorts`, their values as `inputs`, and empty `outputPorts`. Search includes both workflow properties. Diagnostics use `outputDefs.<field>` or `outputMappings.<field>` and identify the Outputs node when present. The low-level optimistic operations are `flow.output-defs.set` and `flow.output-mappings.set`, each with optional `before` and `value`; absent `value` removes the property. `graph.node.input.set` targeting Outputs updates its workflow mapping. All operations participate in normal atomic commits and undo/redo.
-
-The completed Run result retains `{ kind: "node-results", nodes: [...] }` and additionally includes `outputs` when Outputs executed. This object is the workflow's business output, independent of logs and the terminal node result collection. Repeated execution retains the last successful value; skipped Outputs adds no property. An empty executed Outputs returns `{}`. This capability prepares a public output contract for future workflow invocation without implementing invocation itself.
+The completed Run result retains `{ kind: "node-results", nodes: [...] }` and additionally includes `outputs` when Outputs executed. This object is the workflow's business output, independent of logs and the terminal node result collection. Repeated execution retains the last successful value; skipped Outputs adds no property. An empty executed Outputs returns `{}`. Call Workflow returns this business output after the child Run succeeds, using an empty object when it is absent.
 
 Run requests retain `trigger: { nodeId, outputs }`. Start rejects unknown parameters and missing non-nullable parameters, validates every supplied value, and normalizes omitted nullable parameters to `null`. This complete normalized map supplies the Start execution result and Run admission snapshot. The idempotency request digest continues to use the original submitted map, so retries must preserve the original request body. Other Trigger output contracts retain their existing validation. Legacy `{ kind: "manual", name, description?, icon? }` Revisions remain readable and executable as Draft tests with `{}` outputs; new writes use Start. An empty-parameter Start preserves the old click behavior. Cron declares a `scheduledAt` string port. Poll and Integration declare outputs through their definitions. Explicit outputs can simulate other Triggers only through Draft Run requests. `POST /v1/runs` accepts only Start nodes in the current Publication's pinned Revision; Flows without Start cannot be invoked through this endpoint. Other Triggers create Live Runs through their event-source admission paths. Existing accepted Runs retain their idempotent replay behavior.
 
@@ -787,21 +807,39 @@ Clearing writes `unset`; resetting removes the override. Forms preserve unset st
 
 ### Event source management
 
-Event sources are deployment resources. Creation currently supports `feishu_app_bot` apps. Management reuses Control API authentication. Responses contain no Verification Token or Encrypt Key. `teamId` is an explicit Connector Team identity; deployments without Teams use `null`. `flowId` expresses Flow scope and cannot be replaced by Team identity.
+Event sources are deployment resources. Supported kinds are `feishu`, `slack`, `intercom`, `sentry`, `zoom`, `fireflies`, and `jira`. Management reuses Control API authentication. Responses never contain plaintext secrets. `teamId` is an explicit Connector Team identity; deployments without Teams use `null`. `flowId` expresses Flow scope and cannot be replaced by Team identity.
 
-| Method   | Route                           | Request                            | Success                                                  |
-| -------- | ------------------------------- | ---------------------------------- | -------------------------------------------------------- |
-| `GET`    | `/v1/event-sources`             | Optional `flowId` query            | `200 { version: 1, sources: EventSource[], teamId? }`    |
-| `GET`    | `/v1/event-sources/connections` | Optional `teamId` query            | `200 { version: 1, connections: ConnectorConnection[] }` |
-| `POST`   | `/v1/event-sources`             | `CreateEventSource`                | `201 EventSource`                                        |
-| `PUT`    | `/v1/event-sources/:sourceId`   | `UpdateEventSource`                | `200 EventSource`                                        |
-| `DELETE` | `/v1/event-sources/:sourceId`   | `{ version: 1, expectedRevision }` | `200 { version: 1 }`                                     |
+| Method   | Route                                       | Request                                               | Success                                                  |
+| -------- | ------------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------- |
+| `GET`    | `/v1/event-sources`                         | Optional `flowId` query                               | `200 { version: 1, sources: EventSource[], teamId? }`    |
+| `GET`    | `/v1/event-sources/connections`             | Optional `teamId` and `kind` query (default `feishu`) | `200 { version: 1, connections: ConnectorConnection[] }` |
+| `POST`   | `/v1/event-sources`                         | `CreateEventSource`                                   | `201 EventSource`                                        |
+| `PUT`    | `/v1/event-sources/:sourceId`               | `UpdateEventSource`                                   | `200 EventSource`                                        |
+| `DELETE` | `/v1/event-sources/:sourceId`               | `{ version: 1, expectedRevision }`                    | `200 { version: 1 }`                                     |
+| `POST`   | `/v1/event-sources/:sourceId/events`        | Provider callback                                     | Provider-specific response                               |
+| `POST`   | `/v1/event-source-apps/:kind/:appId/events` | Shared application callback                           | Provider-specific response                               |
 
-`CreateEventSource` is `{ version: 1, name, connectionId, teamId: string | null, verificationToken, encryptKey, eventTypes: string[], manageSubscriptions: boolean }`. `UpdateEventSource` is `{ version: 1, expectedRevision, name, enabled: boolean, eventTypes: string[], verificationToken?, encryptKey? }`; omitted secrets retain existing values. Updates cannot change Connection, Team, or app identity. Creation rejects caller-supplied `appId` or `provider`; the selected active Connection supplies identity.
+Callback routes authenticate through Connector-owned Provider signature/challenge verification, not Control API credentials. Application ingress is supported only for Slack, Intercom, Sentry, and Zoom. Other or unknown kinds return 404. Use the returned `endpointUrl`; do not construct callback URLs from account identities.
 
-Requests reject extra fields. Trimmed `name` permits 1–128 characters; Connection/Team IDs and secrets permit 1–256 characters. `eventTypes` contains 1–200 distinct values matching `^[a-z][a-z0-9_.]{0,127}$`. `expectedRevision` is a positive integer. Invalid requests return `400 event-source.invalid`; unavailable trusted app identity returns `409 event-source.identity-unavailable`.
+`CreateEventSource` has common fields `{ version: 1, kind, name, connectionId, teamId: string | null, eventTypes: string[] }` and the following kind-specific fields:
 
-`EventSource` is `{ version: 1, sourceId, revision, name, provider, appId, connectionId, teamId, enabled, eventTypes, manageSubscriptions, verificationTokenConfigured, encryptKeyConfigured, endpointUrl, verifiedAt, lastReceivedAt, updatedAt, consumers }`. `provider` is `feishu` or `feishu_app_bot`; `endpointUrl`, `verifiedAt`, and `lastReceivedAt` may be `null`. `consumers` is `{ flowId, flowName, triggerNodeId }[]`. Only the two `*Configured` booleans expose secret status, never plaintext.
+| Kind                            | Additional fields                                                 | Connection provider |
+| ------------------------------- | ----------------------------------------------------------------- | ------------------- |
+| `feishu` (default when omitted) | `verificationToken`, `encryptKey`, `manageSubscriptions: boolean` | `feishu_app_bot`    |
+| `slack`                         | `appId`, `workspaceId`, `signingSecret`                           | `slackbot`          |
+| `intercom`                      | `appId`, `signingSecret`                                          | `intercom`          |
+| `sentry`                        | `appId`, `installationId`, `organizationId`, `signingSecret`      | `sentry`            |
+| `zoom`                          | `appId`, `signingSecret`                                          | `zoom`              |
+| `fireflies`                     | `signingSecret`                                                   | `fireflies`         |
+| `jira`                          | `project`                                                         | `jira`              |
+
+Connector validates the selected active Connection, account identity, and Provider-specific configuration. App identity and Connection account identity are distinct. `UpdateEventSource` is `{ version: 1, expectedRevision, name, enabled: boolean, eventTypes: string[], verificationToken?, encryptKey?, signingSecret? }`; omitted secrets retain existing values. Updates cannot change Connection, Team, or app identity.
+
+Requests reject extra fields. Trimmed `name` permits 1–128 characters; Connection/Team IDs and secrets permit 1–256 characters. `eventTypes` contains 1–200 distinct values matching `^[a-z][a-z0-9_.:]{0,127}$`. `expectedRevision` is a positive integer. Invalid requests return `400 event-source.invalid`; unavailable trusted identity returns `409 event-source.identity-unavailable`.
+
+`EventSource` is `{ version: 1, sourceId, revision, name, provider, appId, connectionId, teamId, enabled, eventTypes, manageSubscriptions, verificationTokenConfigured, encryptKeyConfigured, endpointUrl, verifiedAt, lastReceivedAt, updatedAt, consumers }`. `provider` is `feishu`, `feishu_app_bot`, `slackbot`, `intercom`, `sentry`, `zoom`, `fireflies`, or `jira`. `appId`, `endpointUrl`, `verifiedAt`, and `lastReceivedAt` are `string | null`. `manageSubscriptions`, `verificationTokenConfigured`, and `encryptKeyConfigured` are `boolean | null`. `consumers` is `{ flowId, flowName, triggerNodeId }[]`. Provider projections can additionally include `workspaceId`, `installationId`, `organizationId`, `projectId`, `projectKey`, `signingSecretConfigured`, `subscriptionStatus` (`idle | pending | ready | error`), and `lastError`. The `*Configured` fields expose only secret status.
+
+Legacy sources without a Connector projection are inspected on list reads with at most four concurrent requests and a three-second inspection budget shared by the whole list. HTTP and MCP cancellation stop queued inspections and cancel in-flight requests. Late results after cancellation or timeout are not persisted. Failure for one source does not hide other sources: that source remains visible with `appId`, `manageSubscriptions`, `verificationTokenConfigured`, and `encryptKeyConfigured` set to `null`, and an explanatory `lastError`. These nulls mean unknown. A later list retries inspection; an unprojected source is not ready for publication. Hydration never overwrites a concurrent configuration revision. Unknown source kinds, malformed projections, and missing application records are isolated per source: the list retains the source identity and a `lastError`, with unknown details and a null callback URL. These invalid stored records require repair or recreation; database query failures remain request errors.
 
 Lists with `flowId` first verify the Flow, then return only sources in its Team and always include `teamId`, possibly `null`. Missing Flows return `404 flow.not-found`. Without `flowId`, lists return sources visible to the management identity. Connection lists use explicit Team scope. If Team selection is required, do not silently choose another Team.
 
@@ -886,6 +924,8 @@ When adding Connector Actions, Workbench excludes candidates whose summaries exp
 Monotonic `expectedAccessRevision` prevents concurrent overwrites; conflicts use `connector.access-conflict` and HTTP `412`. Missing access uses `connector.access-required`; unassignable or invalid access uses `connector.access-invalid`; unsupported writes use `connector.access-unsupported`. Changes invalidate clients through `{ kind: 'access.changed', flowId, accessRevision, version: 1 }`.
 
 Open-source Server selects mode by Connector endpoint. OpenConnector uses `implicit`, revision `0`, empty bindings, digest `implicit`, and empty candidates. PUT/DELETE return `connector.access-unsupported`. `connector.oomol.com` and `connector.oomol.dev` use `selectable`. Hosted mode obtains the current UID from `api.oomol.{com|dev}/v1/users/profile` with the configured OOMOL user token, reads Flow Team app-access from relation-control, verifies assignable candidates, and stores only opaque bindings. App-access projections cache for five minutes. Action, Connection, catalog, execute, and proxy all fail closed under the same binding.
+
+Action account selection distinguishes an omitted `connectionId` (unconfigured) from `connectionId: ""` (explicitly deferred). Connector Tasks, independent Code Actions, Agent tools, and Agent notifications preserve this value through authoring, reads, exports and history. Explicitly deferred references do not block account eligibility checks and are excluded from real account resource references and access snapshots. Calling a deferred Action fails with `connector.connection-required` before external execution, without selecting a default account. Agent tools with this value are omitted from the callable tool set. Other validation remains in force. Provider Triggers require a nonempty account ID and do not support deferral. Clearing `config.connectionId` restores the unconfigured state; omitted update fields preserve the current value.
 
 Connection catalogs retain visible non-active accounts and health for display and reauthorization; assignable candidates and execution still require active accounts. Without `role::connector-app:<connectionId>`, Team defaults permit all Actions with `source: { kind: 'policy', ruleId: null }`. Configured accounts strictly follow their rules. Empty Action lists disable access; malformed rules must not fall back to full access. Later execution resolves current rules again; deleted named groups cannot fall back to Team defaults.
 
@@ -1012,7 +1052,7 @@ Leina notifications use the existing `connector` authoring type with `config: { 
 
 Authorization pages are an exception: `POST /v1/connector/connections/:serviceId/page` accepts optional, mutually exclusive `flowId` or `teamId`. Independent event-source forms use `teamId`, which must be accessible to the current Connector identity and does not modify an existing Flow’s Team. For OOMOL-hosted Connector, Server resolves Team names and builds `https://console.oomol.com/team/:teamName/connections/:serviceId` (using `.dev` in development). Omitting both selects the identity’s default Team. Hosted entry points derive from supported runtime domains, ignoring self-hosted Console settings. Self-hosted Connector uses its explicit Console origin and `/providers/:serviceId`. Missing Console origins return `503 connector.console-unconfigured`, separate from request failure `connector.unavailable`. Clients should prompt for a Console URL.
 
-`POST /v1/event-sources` obtains Feishu app identity from the selected active Connection. Missing trusted App IDs return `409 event-source.identity-unavailable`. Sources are app-scoped, not tenant-bound. Creation neither queries tenant information nor requires `tenant:tenant:readonly`. Responses omit `tenantKey`. Event receipt validates encrypted content, Verification Token, signature, and App ID. Event `tenant_key` remains Trigger output, not a tenant-matching input.
+For `kind: "feishu"`, `POST /v1/event-sources` obtains app identity from the selected active Connection. Missing trusted App IDs return `409 event-source.identity-unavailable`. Sources are app-scoped, not tenant-bound. Creation neither queries tenant information nor requires `tenant:tenant:readonly`. Responses omit `tenantKey`. Event receipt validates encrypted content, Verification Token, signature, and App ID. Event `tenant_key` remains Trigger output, not a tenant-matching input.
 
 `GET /v1/connector/connections` returns `{ version: 1, connections: ConnectorConnection[] }` with the same Flow scope checks as service-specific reads. Provider lists accept optional `locale`, otherwise resolve `Accept-Language`, and return `Content-Language` and `Vary: Accept-Language`. Workbench includes UI language in Provider URLs and persists responses/ETags per language. Deployments forward that language upstream, including app names in Actions. Providers describe only the app catalog. Panels load Connections separately and derive app ordering from active Connections in the display layer.
 
@@ -1116,7 +1156,7 @@ The exact Scheduler checkpoint object is:
       }
     }
   },
-  "version": 5,
+  "version": 6,
   "agents": {},
   "waits": [{ "jobId": "job-2", "nodeId": "approval", "value": { "value": 42 }, "waitId": "opaque-id" }]
 }
@@ -1124,7 +1164,7 @@ The exact Scheduler checkpoint object is:
 
 `inputs` stores launch inputs by node ID/input handle. `bindingValues` stores this Run’s Variable binding snapshot. `results` stores each node’s last completed outputs. `counts` stores cumulative executions by node ID with outer scope fixed to `""`. `dependencies` owns the invocation snapshots and progress: `nextId`, per-loop `iterations`, and per-node states (`id`, `status`, `input`, optional `output`, `previous`, `released`, optional `jobId`, and `seeded`). Each `input` entry records one ancestor’s `{ execution, outputs }`; the execution identity selects newer iterations of that ancestor independently of completion order. Input snapshots remain unchanged when a node releases pending or final output. Partial joins reuse the completed predecessors’ saved input and output instead of a separate snapshot table. `waits` stores all waits whose decisions remain to be applied. Entries also store complete `pending` outputs once released.
 
-`agents` maps job IDs to `{ invocationId, input, remainingMs?, checkpoint }`, where checkpoint follows the Agent continuation contract. With node timeoutMs, remainingMs must be positive and no greater than the original limit. Total JSON is limited to 16 MiB. Recovery verifies exact fields, unique job/wait identities, node execution limits, declared results, wait-input/path consistency, and Agent continuation inputs/budgets. Older checkpoints cannot recover as v5.
+`agents` maps job IDs to `{ invocationId, input, remainingMs?, checkpoint }`, where checkpoint follows the Agent continuation contract. With node timeoutMs, remainingMs must be positive and no greater than the original limit. Total JSON is limited to 16 MiB. Recovery verifies exact fields, unique job/wait identities, node execution limits, declared results, wait-input/path consistency, and Agent continuation inputs/budgets. Older checkpoints cannot recover as v6.
 
 Nodes outside the execution path create no jobs, execution identities, or events. Each invocation gets a separate identity, retained through suspension/recovery. Ordinary Task outputs declared but missing or `undefined` become `null`. An entirely `undefined` return becomes an empty object; explicit non-object returns remain invalid. Port contents are not recursively normalized. Unselected Condition/Wait branch ports remain absent. Runtime validates and copies return data before JSON transport.
 
@@ -1132,15 +1172,15 @@ It permits `undefined` only for the entire return or top-level ports. Functions,
 
 There are no per-handle `node.output` events or ordinary Task intermediate outputs. Wait pending outputs become available after registration; the Wait still completes once, after resolution.
 
-Flow terminal results use `{ kind: 'node-results', nodes }`. `nodes` contains only the last completed result for executed terminal graph nodes, sorted by node ID. Run events retain complete per-invocation outputs. Entries are `{ nodeId, status: 'completed', jobId, outputs }`, without unexecuted nodes or repeated-job arrays. If no terminal node completed, the list is `[]`.
+Flow terminal results use `{ kind: 'node-results', nodes }`. `nodes` contains only the last completed or handled result for executed terminal graph nodes, sorted by node ID. Run events retain complete per-invocation outputs. Entries are `{ nodeId, status: 'completed' | 'error-handled', jobId, outputs, systemOutputs? }`, without unexecuted nodes or repeated-job arrays. Handled failures have empty business `outputs`; optional `systemOutputs` holds the independent system data. If no terminal node completed or handled its failure, the list is `[]`.
 
 ## 10. Code Action contract
 
-The script contract is `open-flow-engine/v5`, with dependency joins, repeated loop iterations, and cumulative per-node execution limits. This unreleased change retains the contract and checkpoint version numbers; old development checkpoint shapes are rejected without conversion. v4 and earlier Publications/Runs require republication or a new Run. `context.actions` replaces v1 `context.connector` without aliases. v1-pinned Publications/Runs require their matching Engine; current Server explicitly rejects v1. New Code node Revisions store account mode. Only independent mode stores a node Action allowlist. Deployment Provider Access Bindings or implicit Connector authority remain the final authorization source.
+The script contract is `open-flow-engine/v7`, with bounded Task retries, dependency joins, repeated loop iterations, and cumulative per-node execution limits. Scheduler checkpoints use version 6; old development checkpoint shapes are rejected without conversion. Earlier Engine-pinned Publications/Runs require republication or a matching execution environment. `context.actions` replaces v1 `context.connector` without aliases. v1-pinned Publications/Runs require their matching Engine; current Server explicitly rejects v1. New Code node Revisions store account mode. Only independent mode stores a node Action allowlist. Deployment Provider Access Bindings or implicit Connector authority remain the final authorization source.
 
 ### Revision and edit operations
 
-New Inline Code Tasks save this declaration by default. Shared mode directly uses all Actions authorized by Flow shared accounts without a node list. Independent mode stores `actions`; each may specify `connectionId`, which may remain absent in Draft:
+New Inline Code Tasks save this declaration by default. Shared mode directly uses all Actions authorized by Flow shared accounts without a node list. Independent mode stores `actions`; each may specify `connectionId`, which may remain absent in Draft or be `""` to explicitly defer account configuration:
 
 ```json
 { "kind": "connector", "mode": "shared" }
@@ -1393,3 +1433,111 @@ Connector calls continue to receive the raw response. Callers configure Actions 
 this internal mapping. Public node configuration omits `outputMode` and rejects attempts to set it.
 Renaming a node or changing or clearing its connection preserves the saved mapping and ports without
 querying the catalog. Existing nodes retain their snapshots until the Action is explicitly refreshed.
+
+## Call Workflow
+
+Public authoring type `workflow` accepts `config: { flowId }` and ordinary input mappings. The target must differ from the current Flow. Draft writes reject direct self-references with `flow.invalid` and reason `workflow.recursive`, including disconnected calls; a rejected batch saves nothing. Its managed Task executor stores `kind: "workflow"`, `flowId` and the source `revisionId`; Task input/output ports hold the saved contract. The saved Revision identifies the interface originally selected; it never selects a historical execution version. A changed Live Revision is accepted when its interface equals the saved Publication interface. `node.refresh` is an explicit authoring edit for a workflow call, updating its contract while matching inputs by exact name. Ordinary metadata and input edits do not refresh it.
+
+`GET /v1/flows/:flowId/call-contract` returns `{ version: 1, flowId, name, publicationId, revisionId, inputs, outputs }` from the current Publication without reading its Revision. It requires the caller's own active, enabled Live with Start. Inputs are an array; outputs are null when Outputs is absent and an array otherwise. Task ports normalize absent outputs to `[]`.
+
+Publication `interface_json` stores `{ inputs: Port[] | null, outputs: Port[] | null }`. Null means the corresponding node is absent; an empty array means it exists without fields. The snapshot is fixed during publication preparation and committed atomically with the Publication and Live pointer, including rollback. Flow list metadata includes `live.hasStart`, derived from this snapshot; lists do not return interface schemas.
+
+An unavailable selection remains saveable and reports its reason, including `workflow.missing-start`. Empty source Revision IDs require refresh. Changed Revision IDs cause comparison against the saved Revision's Publication snapshot. Interface equality compares port names, JSON schemas and nullability, ignores descriptions and port ordering, and distinguishes null from empty arrays. Missing historical snapshots report `workflow.snapshot-missing`; changed interfaces report `workflow.revision-stale`. Both require refresh. Unchanged interfaces do not rewrite the caller. Existing input and output compatibility checks still apply. Nested interface changes report `workflow.dependency-stale`.
+
+Each invocation checks current Live and interface compatibility before admitting a child Run. Accepted calls retain their fixed child Run across publication changes. Recursive dependency inspection and execution load complete Revisions independently of interface reads. A successful child without business outputs behaves like Code returning `{}`. Parent and child permissions and recursion checks remain enforced. Workbench excludes the current Flow and groups targets using list metadata: callable (always shown, with an empty-state message), published without Start, then unpublished or unavailable (the latter two appear only when populated); target links and interface refresh remain in the selected node's status section.
+
+Run details expose optional `triggerNodeId` for all entry types, optional `caller: { flowId, runId, nodeId, executionId }`, and `calls: [{ flowId, runId, nodeId, executionId, status }]`. Call status is null if the retained target Run is unavailable. Each loop invocation has its own execution identity and child association. Parent and child logs are independent. The parent Run records the call node's normal input/output and lifecycle; the child records its internal execution. Call associations remain available independently of event logs. `source` remains `draft | live`.
+
+Waiting calls are saved in the optional `calls` member of the version 6 checkpoint; old checkpoints without it remain valid. A pending call freezes as soon as no ordinary task is active, without the manual-Wait in-memory retention delay. Its child may use ordinary Wait and Agent approval recovery. An explicit call `timeoutMs` covers queueing, execution and waiting; otherwise child execution and wait limits apply. Parent cancellation/failure cancels unfinished children; an indeterminate child makes the caller indeterminate. No interrupted unconfirmed side effect is replayed.
+
+`GET /v1/flows/:flowId/references?direction=incoming|outgoing&offset=0&limit=50` returns `{ version: 1, direction, total, references, nextOffset? }`; limit is 1–100. Each reference contains `flowId`, nullable `name`, `available`, `draft`, and `live: { publicationId, enabled } | null`. Draft/Live identify the source declaration scopes, with disabled Live included. Results are sorted by Flow ID, deduplicated across scopes and filtered by owner. Outgoing references retain missing/retiring target IDs. Pagination and total share a single database snapshot and never read Revision bodies.
+
+The existing resource summary adds optional `calledFlowIds`; absence in an older summary means no calls. Definition relationships use relation kind `flow` and target Flow ID in `flow_resource_references`. The index does not contain node IDs, runtime calls or unknown states. The original summary `null` semantics and independent scope counting remain unchanged. Index updates consume the already extracted resource object in Draft/Live transactions, without additional Revision reads, decoding or materialization.
+
+## Node retry policy
+
+Node authoring `node.add.retry` and `node.update.set.retry` accept
+`{ maxRetries: 0..5, intervalMs: 1000..60000 }`; milliseconds must be a multiple of 1000.
+The same optional policy is stored on the node and returned in detail reads. Omission preserves an
+existing policy during updates; `clear: [["retry"]]` removes it. Omitted policy and `maxRetries: 0`
+mean no retry. A positive policy is supported only on Code, Connector, OpenAPI, LLM and AI Decision
+Tasks. Schema, compilation, diagnostics and search share this contract. Low-level changes use
+`graph.node.field.set` with `field: "retry"`, whole-policy before/value and ordinary CAS/undo.
+
+Retries are additional attempts after the first. They reuse the invocation input snapshot, keep one
+logical job/execution identity, and use a new invocation identity for each actual attempt. Loop
+execution counts count logical invocations, not attempts. Node timeout covers all attempts and
+intervals; the Run budget continues to apply. Intervals remain interruptible active execution.
+
+Only a trusted task failure classified `retryable: true` by `FlowRunOptions.projectFailure` may
+retry. Default classification forbids retry. Ordinary Code execution failures may retry. LLM and
+AI Decision failures use these classes:
+
+- `llm.unavailable`: request transport and response-protocol failures, HTTP 429 and HTTP 5xx may
+  retry. Missing deployment model/host configuration, invalid request configuration or inputs, and
+  other HTTP rejections do not retry.
+- `llm.output-invalid`: invalid model JSON and model output-schema errors detected within the
+  LLM/AI Decision Host, including invalid Decision answers, may retry unless the Host explicitly
+  sets `retryable: false`. This class does not include Scheduler output-port validation failures,
+  which occur outside the invocation retry boundary and never retry.
+
+The Server bridge treats a failed `LlmTaskResult` with omitted `retryable` as retryable; an explicit
+`retryable: false` forbids retry for either LLM class. Connector pre-dispatch `connector.unavailable`
+may retry; Action outcomes retain their indeterminate rules.
+
+OpenAPI GET, HEAD and OPTIONS transport failures may retry; other transport failures remain
+indeterminate. Received HTTP 429 and 5xx statuses may retry even if reading the response body fails.
+Body-read failures for successful responses are non-retryable `openapi.response-invalid` errors.
+Configuration, input, permission, account, output-port validation, resource, cancellation, timeout
+and indeterminate failures do not retry. Received oversized responses fail as resource errors.
+
+Input resolution, output validation, event persistence and result commit are outside retry. A Task
+commits once and only then releases downstream dependencies. `node.started` fires once; intermediate
+failures produce warning `node.log` entries with attempt numbers, code/message and delay. Only final
+failure emits `node.failed` and fails the Run. Intermediate failures do not dispatch Flow Error.
+Enabling retry permits repeated external operations; it does not guarantee exactly-once side effects.
+
+### Handled node errors and system outputs
+
+Code, Connector, OpenAPI, LLM and AI Decision nodes accept optional `onError: "stop" | "error"`.
+Omission means stop. Creation, reads, updates, search and diagnostics expose the setting beside retry.
+Updates preserve omitted settings; `clear: [["onError"]]` restores the default.
+
+With `onError: "error"`, the Scheduler handles trusted `catchable: true` task failures after retries
+are exhausted, plus runtime input and output validation failures (`node.input-invalid` and
+`node.output-invalid`). Retryability and catchability are independent. Cancellation, node/Run
+budgets, resource limits, isolation/protocol failures, indeterminate outcomes, event persistence and
+result commit failures still terminate execution. Static configuration and compilation errors remain
+admission errors. Host/Executor classification is structural, never inferred from error messages.
+
+Both successful and handled executions release the existing execution connections. There is no
+error execution branch or extra canvas connection point. Business outputs are committed only on
+success; handled failures provide no business outputs, so downstream inputs resolve missing values
+using the normal null/schema rules. Source compatibility reflects their conditional availability.
+
+An enabled node has an independently named system output `error`: null on success, otherwise an
+object with six required string fields `code`, `message`, `nodeId`, `nodeName`, `runId`, `executionId`.
+The execution ID matches the public node events. The message uses the existing runtime error
+redaction. Raw exceptions, stacks, input snapshots and request bodies are not included. A business
+output named `error` is independent and remains valid.
+
+Public authoring binds system data as `{ kind: "system", node, port: "error", field? }`, including
+inside a `sources` list or Condition operand. Low-level node sources use
+`{ kind: "node", nodeId, output: "error", system: true, field? }`; omitted `system` means a business
+output. All six first-level fields and the complete nullable object are selectable. Detail reads
+expose the fixed definitions in `systemOutputs`, separately from `outputPorts`.
+
+The property panel displays read-only System outputs as a quiet group below business outputs,
+without repeating the section title or column headings. Error and its fields have localized help. The source selector
+separates the upstream node's system output from its business outputs. Disabled nodes advertise no
+system output; saved references are retained and diagnosed as missing rather than silently removed.
+
+A handled failure emits `node.failed` with `handled: true` and `systemOutputs`, without a successful
+`node.completed`. Success events include `systemOutputs: { error: null }`. Durable node results use
+`status: "error-handled"` for handled terminal nodes. The Run can complete successfully and therefore
+does not dispatch Flow Error. A downstream failure follows that node's own error handling policy.
+
+Checkpoint v6 and per-execution dependency snapshots store system outputs separately from business
+outputs, including across loops and Wait recovery. Older execution snapshots are never replaced by a
+Run-wide latest value. Code `getPrevious()` returns optional `systemOutputs` beside ordinary outputs.
+Recovery never replays an already handled task, and storage failures do not release downstream work.

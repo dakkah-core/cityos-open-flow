@@ -74,7 +74,7 @@ async function session() {
   vi.spyOn(client, 'checkFlow').mockResolvedValue({
     closureDigest: 'digest',
     diagnostics: [],
-    engineContract: 'open-flow-engine/v5',
+    engineContract: 'open-flow-engine/v6',
     flowId: 'flow',
     modelVersion: currentFlowModelVersion,
     revisionDigest: 'digest',
@@ -90,14 +90,66 @@ async function session() {
 }
 
 describe('Workspace canvas history', () => {
+  it('fills pending service accounts in one history entry and preserves earlier edits', async () => {
+    const { store, saved, change } = await session()
+    try {
+      await store.nodes.setCodeActions('code', [
+        {
+          kind: 'connector',
+          mode: 'independent',
+          actions: [{ action: 'mail.send' }, { action: 'mail.read' }, { action: 'mail.archive', connectionId: 'personal' }, { action: 'github.create_issue' }],
+        },
+      ])
+      const unconfigured = saved().draft.content
+      await store.nodes.setServiceConnections('mail', '')
+      const deferred = saved().draft.content
+      expect(deferred).not.toEqual(unconfigured)
+      await store.undo()
+      expect(saved().draft.content).toEqual(unconfigured)
+      await store.redo()
+      expect(saved().draft.content).toEqual(deferred)
+      await store.nodes.setServiceConnections('mail', undefined, '')
+      expect(saved().draft.content).toEqual(unconfigured)
+      const before = saved().draft.content
+      change.mockClear()
+      expect(await store.nodes.setServiceConnections('mail', 'work')).toBe(true)
+      expect(change).toHaveBeenCalledTimes(1)
+      const after = saved().draft.content
+      expect(after.document.graph.nodes.code).toMatchObject({
+        task: {
+          capabilities: [
+            {
+              actions: [
+                { action: 'mail.send', connectionId: 'work' },
+                { action: 'mail.read', connectionId: 'work' },
+                { action: 'mail.archive', connectionId: 'personal' },
+                { action: 'github.create_issue' },
+              ],
+            },
+          ],
+        },
+      })
+      await store.undo()
+      expect(saved().draft.content).toEqual(before)
+      expect(store.history$.value.canUndo).toBe(true)
+      await store.redo()
+      expect(saved().draft.content).toEqual(after)
+      await store.undo()
+      await store.nodes.setServiceConnections('mail', 'other')
+      expect(store.history$.value.canRedo).toBe(false)
+    } finally {
+      store.dispose()
+    }
+  })
+
   it('saves a type change and its assigned value as one undoable edit', async () => {
     const { store, saved } = await session()
     try {
-      await store.setInputValue('code', 'input', 'old value')
+      await store.nodes.setInputValue('code', 'input', 'old value')
       const before = saved().draft.content
       const node = before.document.graph.nodes.code
       if (node?.kind !== 'task' || !('moduleId' in node.task)) throw new Error('Expected code task')
-      await store.saveTaskPorts('code', {
+      await store.nodes.saveTaskPorts('code', {
         inputs: [{ handle: 'input', jsonSchema: { type: 'null' }, nullable: true }],
         outputs: node.task.outputs,
       })
@@ -110,7 +162,7 @@ describe('Workspace canvas history', () => {
       expect(saved().draft.content).toEqual(before)
       await store.redo()
       expect(saved().draft.content).toEqual(after)
-      await store.setInputValue('code', 'input', undefined)
+      await store.nodes.setInputValue('code', 'input', undefined)
       expect(saved().draft.content.document.graph.nodes.code).toMatchObject({ inputs: {} })
       await store.undo()
       expect(saved().draft.content).toEqual(after)
@@ -123,9 +175,9 @@ describe('Workspace canvas history', () => {
     const { store, saved, notices } = await session()
     try {
       const field = { handle: 'answer', jsonSchema: { type: 'number' }, nullable: false, value: 42 } as const
-      await store.saveValue('value', [field])
+      await store.nodes.saveValue('value', [field])
       notices.mockClear()
-      await store.saveValue('value', [], { target: 'field', name: 'answer' })
+      await store.nodes.saveValue('value', [], { target: 'field', name: 'answer' })
 
       const notice = notices.mock.lastCall?.[0]
       expect(notice).toMatchObject({ kind: 'success', message: 'Deleted field “answer”.', undo: { label: 'Undo' } })
@@ -135,7 +187,7 @@ describe('Workspace canvas history', () => {
       expect(saved().draft.content.document.graph.nodes.value).toMatchObject({ values: [field] })
 
       await store.redo()
-      await store.saveNodeTitle('value', 'Renamed')
+      await store.nodes.saveNodeTitle('value', 'Renamed')
       await notice?.undo?.run()
       expect(saved().draft.content.document.graph.nodes.value).toMatchObject({ name: 'Renamed', values: [] })
     } finally {
@@ -242,10 +294,10 @@ describe('Workspace canvas history', () => {
     try {
       await store.moveNodes({ code: { x: 400, y: 0 } })
       store.selectNodes(['code'])
-      await store.saveNodeTitle('code', 'Code')
+      await store.nodes.saveNodeTitle('code', 'Code')
       await store.moveViewport({ x: 20, y: 20, zoom: 1 })
       expect(store.history$.value.canUndo).toBe(true)
-      await store.saveNodeTitle('code', 'Renamed')
+      await store.nodes.saveNodeTitle('code', 'Renamed')
       expect(store.history$.value.undo?.action).toBe('edit')
       await store.undo()
       expect(store.$.draft.value?.content.document.graph.nodes.code?.name).toBe('Code')
@@ -309,7 +361,7 @@ describe('Workspace canvas history', () => {
       const moved = saved()
       await store.saveNodeContentHidden('value', true)
       const hidden = saved()
-      await store.saveValue('value', [{ handle: 'result', value: 42, jsonSchema: { type: 'number' } }])
+      await store.nodes.saveValue('value', [{ handle: 'result', value: 42, jsonSchema: { type: 'number' } }])
       const configured = saved()
       await store.saveComment('note', { title: 'Updated', content: 'New body' })
       const edited = saved()
@@ -345,9 +397,9 @@ describe('Workspace canvas history', () => {
       await store.moveNodes({ value: { x: 100, y: 50 } })
       await store.saveNodeContentHidden('value', false)
       expect(store.history$.value.undo?.action).toBe('move')
-      await store.saveNodeTitle('value', 'Renamed')
+      await store.nodes.saveNodeTitle('value', 'Renamed')
       await store.undo()
-      await store.saveNodeDescription('value', 'Description')
+      await store.nodes.saveNodeDescription('value', 'Description')
       expect(store.history$.value.canRedo).toBe(false)
       await store.undo()
       expect(store.history$.value.undo?.action).toBe('move')
@@ -366,8 +418,8 @@ describe('Workspace canvas history', () => {
     })
     try {
       await store.moveNodes({ code: { x: 400, y: 0 } })
-      const first = store.saveNodeTitle('code', 'First')
-      const second = store.saveNodeTitle('code', 'Second')
+      const first = store.nodes.saveNodeTitle('code', 'First')
+      const second = store.nodes.saveNodeTitle('code', 'Second')
       expect(store.history$.value.canUndo).toBe(false)
       gate.resolve()
       expect(await Promise.all([first, second])).toEqual([true, true])
@@ -487,7 +539,7 @@ describe('Workspace canvas history', () => {
       })
       const undo = store.undo()
       expect(store.history$.value.applying).toBe(true)
-      expect(await store.saveNodeTitle('value', 'Blocked')).toBe(false)
+      expect(await store.nodes.saveNodeTitle('value', 'Blocked')).toBe(false)
       gate.resolve()
       await undo
       await store.retryHistorySync()
@@ -634,10 +686,10 @@ it('saves, clears, undoes and redoes Flow Error sources as ordinary Revision his
       const node = saved().draft.content.document.graph.nodes[nodeId]!
       return node.kind == 'error' ? node.sourceFlowIds : undefined
     }
-    expect(await store.saveErrorSources(nodeId, ['upstream', 'other'])).toBe(true)
+    expect(await store.nodes.saveErrorSources(nodeId, ['upstream', 'other'])).toBe(true)
     expect(sources()).toEqual(['upstream', 'other'])
-    expect(await store.saveErrorSources(nodeId, ['upstream', 'other'])).toBe(false)
-    await store.saveErrorSources(nodeId, [])
+    expect(await store.nodes.saveErrorSources(nodeId, ['upstream', 'other'])).toBe(false)
+    await store.nodes.saveErrorSources(nodeId, [])
     expect(sources()).toBeUndefined()
     await store.undo()
     expect(sources()).toEqual(['upstream', 'other'])
@@ -653,7 +705,7 @@ it('saves, clears, undoes and redoes Flow Error sources as ordinary Revision his
 it('creates Start and saves parameter edits through the existing undo and redo history', async () => {
   const { store, saved } = await session()
   try {
-    await store.saveNodeTitle('value', 'Previous edit')
+    await store.nodes.saveNodeTitle('value', 'Previous edit')
     await store.addNode(
       {
         id: 'trigger:start',
@@ -669,16 +721,45 @@ it('creates Start and saves parameter edits through the existing undo and redo h
     const startId = Object.entries(saved().draft.content.document.graph.nodes).find(([, node]) => node.kind === 'start')?.[0]
     expect(startId).toBeDefined()
     const parameters = [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: true, description: 'Message to process' }] as const
-    expect(await store.saveFlowInputDefs(parameters)).toBe(true)
-    expect(saved().draft.content.document.inputDefs).toEqual(parameters)
+    expect(await store.nodes.saveStartInputDefs('missing-start', parameters)).toBe(false)
+    expect(await store.nodes.saveStartInputDefs('value', parameters)).toBe(false)
+    expect(await store.nodes.saveStartInputDefs(startId!, parameters)).toBe(true)
+    expect(
+      (saved().draft.content.document.graph.nodes[startId!] as Extract<import('../../../../flow/common/change.ts').GraphNode, { kind: 'start' }>).inputDefs,
+    ).toEqual(parameters)
     const projected = designerGraph(saved().draft).nodes.find((node) => node.id === startId)
     if (projected?.kind !== 'trigger') throw new Error('Expected Start canvas node')
     expect(projected.outputs).toMatchObject(parameters)
     await store.undo()
-    expect(saved().draft.content.document.inputDefs).toEqual([])
+    expect(
+      (saved().draft.content.document.graph.nodes[startId!] as Extract<import('../../../../flow/common/change.ts').GraphNode, { kind: 'start' }>).inputDefs,
+    ).toEqual([])
     await store.redo()
-    expect(saved().draft.content.document.inputDefs).toEqual(parameters)
+    expect(
+      (saved().draft.content.document.graph.nodes[startId!] as Extract<import('../../../../flow/common/change.ts').GraphNode, { kind: 'start' }>).inputDefs,
+    ).toEqual(parameters)
     expect(saved().draft.content.document.graph.nodes.value?.name).toBe('Previous edit')
+  } finally {
+    store.dispose()
+  }
+})
+
+it('adds and selects a response node without an execution edge in one undoable change', async () => {
+  const { store, saved } = await session()
+  try {
+    const option = store.$.addNodeOptions.value.find((item) => item.id === 'trigger:webhook')!
+    const hook = await store.addNode(option, { x: 900, y: 0 })
+    if (hook == null) throw new Error('Expected Webhook')
+    const before = saved().draft.content
+    const reply = await store.addWebhookResponseNode(hook)
+    expect(reply).toBeDefined()
+    const after = saved().draft.content
+    expect(after.document.graph.nodes[hook]).toMatchObject({ options: { responseBody: { kind: 'webhook-response', nodeId: reply } } })
+    expect(after.document.graph.edges).toEqual(before.document.graph.edges)
+    await store.undo()
+    expect(saved().draft.content).toEqual(before)
+    await store.redo()
+    expect(saved().draft.content).toEqual(after)
   } finally {
     store.dispose()
   }

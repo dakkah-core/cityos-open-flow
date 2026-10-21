@@ -12,6 +12,9 @@
 ![Node.js 26](https://img.shields.io/badge/Node.js-26-339933)
 ![Bun 1.4](https://img.shields.io/badge/Bun-1.4-000000)
 
+[![Providers](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fconnector.oomol.com%2Fv1%2Fcatalog&query=data.providerCount&label=Providers&color=%237d7fe9)](https://openflow.run#connector-title)
+[![Actions](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fconnector.oomol.com%2Fv1%2Fcatalog&query=data.actionCount&label=Actions&color=%237d7fe9)](https://openflow.run#connector-title)
+
 </div>
 
 **Создавайте автоматизацию вместе с ИИ-агентом. Проверяйте, что именно будет выполняться.**
@@ -20,7 +23,7 @@ Open Flow — открытая платформа для рабочих проц
 
 Объединяйте JavaScript, подключённые приложения, ИИ, ветвления и согласование с человеком на одном холсте. Проверяйте входные данные, следите за выполнением и выбирайте версию для публикации. Запускайте процессы в OOMOL Hosted или на собственной инфраструктуре.
 
-[Открыть интерактивную демонстрацию](https://openflow.run) · [Использовать OOMOL Hosted](https://oomol.com) · [Развернуть через Docker](#выберите-среду-запуска)
+[Открыть интерактивную демонстрацию](https://openflow.run) · [Использовать OOMOL Hosted](https://console.openflow.run) · [Развернуть через Docker](#выберите-среду-запуска)
 
 ![Процесс адаптации клиента в текущем Workbench: явные данные клиента, JavaScript, согласование и подпроцесс](assets/readme-workbench.png)
 
@@ -80,7 +83,7 @@ OOMOL Hosted предоставляет управляемые OAuth-прило�
 
 | Вариант          | Чем управляете вы                                                                                  | Начало работы                                              |
 | ---------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| **OOMOL Hosted** | Рабочими процессами и подключёнными аккаунтами; развёртывание обслуживает OOMOL.                   | [Открыть OOMOL](https://oomol.com)                         |
+| **OOMOL Hosted** | Рабочими процессами и подключёнными аккаунтами; развёртывание обслуживает OOMOL.                   | [Открыть OOMOL](https://console.openflow.run)              |
 | **Docker**       | Развёртыванием, хранилищем, резервными копиями, обновлениями и интеграциями.                       | Команды ниже                                               |
 | **Fly.io**       | Приложением, постоянным томом, секретами, резервными копиями и обновлениями на инфраструктуре Fly. | [Руководство по развёртыванию](server/fly-io/README.ru.md) |
 

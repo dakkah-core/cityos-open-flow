@@ -23,11 +23,13 @@ const themeLabels = { auto: 'System', light: 'Light', dark: 'Dark' } as const
 const storyGroupIcons: Readonly<Record<string, `i-${string}`>> = {
   'Undo & Redo': 'i-lucide:undo-2',
   'Node Fixed Values': 'i-oomol:value',
+  'Node Webhook Response': 'i-lucide-light:reply',
   'Node Outputs': 'i-lucide-light:log-out',
   'Node Task': 'i-carbon:code',
   'Node Wait': 'i-carbon:hourglass',
   'Node Approval': 'i-carbon:stamp',
   'Node AI Decision': 'i-carbon:ml-model-reference',
+  'Node Workflow': 'i-lucide-light:workflow',
   'Node OpenAPI': 'i-logos:openapi-icon',
   'Node LLM': 'i-carbon:machine-learning-model',
   'Node Agent': 'i-carbon:machine-learning-model',
@@ -225,7 +227,6 @@ export function FrontendLab() {
           </ol>
         </nav>
         <HostNavigationActions
-          className="lab-preferences"
           theme={theme}
           onThemeChange={setTheme}
           language={language}

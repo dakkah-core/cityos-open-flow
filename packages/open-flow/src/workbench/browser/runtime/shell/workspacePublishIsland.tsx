@@ -4,8 +4,10 @@ import { useRef, useState } from 'react'
 import { useTranslate } from 'val-i18n-react'
 import { CanvasTooltip } from '../../../../canvas/browser/components/tooltip.tsx'
 import { Button } from '../../../../ui/browser/button.tsx'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../../../../ui/browser/dialog.tsx'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../../../../ui/browser/dropdown-menu.tsx'
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from '../../../../ui/browser/popover.tsx'
+import { Spinner } from '../../../../ui/browser/spinner.tsx'
 import { WorkflowExportMenuItem } from './workflowExportMenuItem.tsx'
 
 export type PublishState = 'ready' | 'current' | 'issues' | 'busy' | 'publishing'
@@ -20,12 +22,14 @@ export function WorkspacePublishIsland({
   hasPublications,
   onOpenPublications,
   onExport,
+  onExportSvg,
   onOpenRuns,
   onPublish,
   state,
 }: {
   readonly hasPublications: boolean | undefined
   readonly onExport?: (() => void) | undefined
+  readonly onExportSvg?: (() => Promise<void>) | undefined
   readonly onOpenPublications: () => void
   readonly onOpenRuns: () => void
   readonly onPublish: () => void
@@ -34,10 +38,10 @@ export function WorkspacePublishIsland({
   const t = useTranslate()
   const [popupContainer, setPopupContainer] = useState<HTMLDivElement | null>(null)
   const [confirming, setConfirming] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const cancelButton = useRef<HTMLButtonElement>(null)
   const publishLabel = t(state == 'publishing' ? 'workspace.publishing' : 'publication.publishDraft')
-  const historyLabel = t('workspace.publications')
-  const historyHint = hasPublications === true ? undefined : t(hasPublications === false ? 'publication.historyEmpty' : 'publication.loading')
+  const historyLabel = t(hasPublications === true ? 'workspace.publications' : hasPublications === false ? 'publication.historyEmpty' : 'publication.loading')
   const runsLabel = t('workspace.runs')
   const menuLabel = t('sidebar.moreActions')
   const statusTooltip =
@@ -116,12 +120,26 @@ export function WorkspacePublishIsland({
           {onExport != null && (
             <WorkflowExportMenuItem className="gap-2 px-2 py-[5px]" disabled={state == 'busy' || state == 'publishing'} onClick={onExport} />
           )}
+          {onExportSvg != null && (
+            <DropdownMenuItem
+              className="gap-2 px-2 py-[5px]"
+              disabled={exporting}
+              onClick={async () => {
+                setExporting(true)
+                try {
+                  await onExportSvg()
+                } finally {
+                  setExporting(false)
+                }
+              }}
+            >
+              <i aria-hidden="true" className="i-lucide-light:download size-4 shrink-0" />
+              {t('resource.exportSvg')}
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem className="gap-2 px-2 py-[5px]" disabled={hasPublications !== true} onClick={onOpenPublications}>
             <i aria-hidden="true" className="i-lucide-light:cloud-upload size-4 shrink-0 text-foreground/70" />
-            <span className="grid gap-0.5">
-              <span>{historyLabel}</span>
-              {historyHint != null && <span className="text-[11px] text-muted-foreground">{historyHint}</span>}
-            </span>
+            <span className="whitespace-nowrap">{historyLabel}</span>
           </DropdownMenuItem>
           <DropdownMenuItem className="gap-2 px-2 py-[5px]" onClick={onOpenRuns}>
             <i aria-hidden="true" className="i-lucide-light:history size-4 shrink-0 text-foreground/70" />
@@ -129,6 +147,15 @@ export function WorkspacePublishIsland({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      <Dialog open={exporting} onOpenChange={(_open, details) => details.cancel()}>
+        <DialogContent container={popupContainer?.closest<HTMLElement>('.open-flow-workbench') ?? popupContainer} showCloseButton={false} aria-busy="true">
+          <div className="flex items-center gap-3">
+            <Spinner aria-hidden="true" className="shrink-0" />
+            <DialogTitle>{t('resource.exportSvgPending')}</DialogTitle>
+          </div>
+          <DialogDescription>{t('resource.exportSvgPendingDescription')}</DialogDescription>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

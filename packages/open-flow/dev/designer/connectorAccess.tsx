@@ -74,6 +74,36 @@ const overviewContent: RevisionContent = {
       ...content.document.graph,
       nodes: {
         ...content.document.graph.nodes,
+        pendingCode: {
+          kind: 'task',
+          name: 'Preserve Existing Site and Package Blog Files',
+          inputs: {},
+          task: {
+            name: 'Prepare files',
+            moduleId: 'code',
+            inputs: [],
+            outputs: [],
+            capabilities: [{ kind: 'connector', mode: 'independent', actions: [{ action: 'mail.send' }, { action: 'github.create_issue' }] }],
+          },
+        },
+        pendingAgent: {
+          kind: 'task',
+          name: 'Verify Official Sources and Write a Chinese Blog Post',
+          inputs: {},
+          task: {
+            name: 'Research',
+            inputs: [],
+            outputs: [],
+            executor: {
+              kind: 'agent',
+              model: 'test-model',
+              prompt: 'Research official sources',
+              maxRounds: 5,
+              tools: [{ id: 'issue', action: 'github.create_issue', name: 'create_issue', description: 'Create issue', approval: false, inputs: [] }],
+              notification: { action: 'mail.send', inputs: {}, inputDefinitions: [], messageHandle: 'message' },
+            },
+          },
+        },
         issue: {
           inputs: {},
           kind: 'task',
@@ -83,10 +113,55 @@ const overviewContent: RevisionContent = {
     },
   },
 }
+const mixedTriggerContent: RevisionContent = {
+  ...content,
+  document: {
+    ...content.document,
+    graph: {
+      ...content.document.graph,
+      nodes: {
+        ...content.document.graph.nodes,
+        trigger: {
+          kind: 'poll',
+          name: 'Watch incoming mail',
+          config: {},
+          pollTimes: [],
+          definition: {
+            type: 'poll',
+            key: 'mail.received',
+            provider: 'mail',
+            name: 'received',
+            displayName: 'Incoming mail',
+            description: '',
+            definitionVersion: 2,
+            configInputs: [],
+            outputs: [],
+          },
+        },
+      },
+    },
+  },
+}
 const emptyContent: RevisionContent = {
   document: { bindings: {}, graph: { edges: [], nodes: {} } },
   modelVersion: currentFlowModelVersion,
   modules: {},
+}
+const deferredContent: RevisionContent = {
+  ...emptyContent,
+  document: {
+    ...emptyContent.document,
+    graph: {
+      edges: [],
+      nodes: {
+        pending: {
+          kind: 'task',
+          inputs: {},
+          task: { executor: { action: 'mail.send', kind: 'connector', connectionId: '' }, inputs: [], outputs: [], name: 'Send notification' },
+        },
+      },
+    },
+  },
 }
 const provider = { authTypes: ['oauth2'], displayName: 'Gmail', iconUrl: 'https://static.oomol.com/logo/third-party/Gmail.svg', service: 'mail' } as const
 const candidates = [
@@ -139,6 +214,8 @@ function Sample({
   emptyFlow = false,
   label,
   loadFailed = false,
+  initialContent,
+  connectionLoadFailed = false,
   log,
   noCandidates = false,
   noAuth = false,
@@ -153,6 +230,8 @@ function Sample({
   readonly emptyFlow?: boolean
   readonly label: string
   readonly loadFailed?: boolean
+  readonly initialContent?: RevisionContent
+  readonly connectionLoadFailed?: boolean
   readonly log: LogAction
   readonly connectionStatus?: ConnectorConnection['status']
   readonly noAuth?: boolean
@@ -165,38 +244,55 @@ function Sample({
   const i18n = useMemo(() => createI18n(language), [language])
   const [store, setStore] = useState<WorkbenchStore>()
   useEffect(() => {
-    const { client, flowId } = createInspectorTransport(log, emptyFlow ? emptyContent : label == 'Node and Code usage overview' ? overviewContent : content, {
-      access,
-      published: label == 'Node and Code usage overview',
-      accessError: loadFailed,
-      accessSaveDelay: 800,
-      candidates: noCandidates ? [] : candidates,
-      connections:
-        connectionStatus == null
-          ? noCandidates
-            ? []
-            : [
-                ...(label == 'Node and Code usage overview'
-                  ? [{ id: 'github-work', service: 'github', displayName: 'Engineering', isDefault: true, status: 'active' as const }]
-                  : []),
-                ...candidates.map((candidate, index) => ({
-                  id: candidate.connectionId,
-                  service: candidate.providerId,
-                  displayName: candidate.connectionDisplayName,
-                  isDefault: index == 0,
-                  status: 'active' as const,
-                })),
-              ]
-          : [{ id: 'mail-account', service: 'mail', displayName: 'Work account', isDefault: true, status: connectionStatus }],
-      providers: [noAuth ? { ...provider, authTypes: ['no_auth'] } : provider, { service: 'github', displayName: 'GitHub', authTypes: ['oauth2'] }],
-    })
+    let failConnections = connectionLoadFailed
+    const { client, flowId } = createInspectorTransport(
+      log,
+      initialContent ??
+        (emptyFlow
+          ? emptyContent
+          : label == 'Node and Code usage overview'
+            ? overviewContent
+            : label == 'Trigger and pending actions'
+              ? mixedTriggerContent
+              : content),
+      {
+        access,
+        published: label == 'Node and Code usage overview',
+        accessError: loadFailed,
+        connectionError: () => {
+          const failed = failConnections
+          failConnections = false
+          return failed
+        },
+        accessSaveDelay: 800,
+        candidates: noCandidates ? [] : candidates,
+        connections:
+          connectionStatus == null
+            ? noCandidates
+              ? []
+              : [
+                  ...(label == 'Node and Code usage overview'
+                    ? [{ id: 'github-work', service: 'github', displayName: 'Engineering', isDefault: true, status: 'active' as const }]
+                    : []),
+                  ...candidates.map((candidate, index) => ({
+                    id: candidate.connectionId,
+                    service: candidate.providerId,
+                    displayName: candidate.connectionDisplayName,
+                    isDefault: index == 0,
+                    status: 'active' as const,
+                  })),
+                ]
+            : [{ id: 'mail-account', service: 'mail', displayName: 'Work account', isDefault: true, status: connectionStatus }],
+        providers: [noAuth ? { ...provider, authTypes: ['no_auth'] } : provider, { service: 'github', displayName: 'GitHub', authTypes: ['oauth2'] }],
+      },
+    )
     const next = new WorkbenchStore(client, { getItem: () => null, setItem: () => {} }, undefined, i18n)
     setStore(next)
     void next.start(flowId).then(() => {
       if (configure) next.connectorAccess.configure('mail')
     })
     return () => next.dispose()
-  }, [access, configure, connectionStatus, emptyFlow, i18n, label, loadFailed, log, noAuth, noCandidates])
+  }, [access, configure, connectionStatus, emptyFlow, i18n, initialContent, label, loadFailed, connectionLoadFailed, log, noAuth, noCandidates])
   return (
     <section className={canvasControl ? 'col-span-full' : undefined}>
       <h3 className="mb-2 text-sm font-medium">{label}</h3>
@@ -297,188 +393,201 @@ function Sample({
   )
 }
 
+const samples: readonly {
+  readonly access: ConnectorAccess
+  readonly emptyFlow?: boolean
+  readonly label: string
+  readonly loadFailed?: boolean
+  readonly initialContent?: RevisionContent
+  readonly connectionLoadFailed?: boolean
+  readonly connectionStatus?: ConnectorConnection['status']
+  readonly noAuth?: boolean
+  readonly noCandidates?: boolean
+  readonly configure?: boolean
+  readonly accountPending?: 'metadata' | 'connections' | 'setup'
+  readonly canvasControl?: boolean
+}[] = [
+  {
+    access: {
+      accessRevision: 2,
+      bindings: [
+        ...candidates.map((candidate) => ({
+          accessBindingId: candidate.accessBindingId,
+          connectionId: candidate.connectionId,
+          connectionDisplayName: candidate.connectionDisplayName,
+          permissionGroupName: candidate.permissionGroupName,
+          providerId: candidate.providerId,
+          source: candidate.source,
+          status: 'active' as const,
+        })),
+        {
+          accessBindingId: 'github-work-binding',
+          connectionId: 'github-work',
+          connectionDisplayName: 'Engineering',
+          permissionGroupName: null,
+          providerId: 'github',
+          source: { kind: 'policy', ruleId: null },
+          status: 'active',
+        },
+      ],
+      mode: 'selectable',
+      sharedAccessDigest: 'selectable:2',
+      version: 1,
+    },
+    canvasControl: true,
+    label: 'Node and Code usage overview',
+  },
+  {
+    access: { accessRevision: 0, bindings: [], mode: 'selectable', sharedAccessDigest: 'selectable:0', version: 1 },
+    canvasControl: true,
+    emptyFlow: true,
+    label: 'Connections control without issues',
+  },
+  {
+    access: { accessRevision: 0, bindings: [], mode: 'implicit', sharedAccessDigest: 'implicit:lab', version: 1 },
+    label: 'Trigger and pending actions',
+  },
+  {
+    access: { accessRevision: 0, bindings: [], mode: 'implicit', sharedAccessDigest: 'implicit:lab', version: 1 },
+    label: 'Deferred account: retry loading accounts',
+    initialContent: deferredContent,
+    connectionLoadFailed: true,
+  },
+  {
+    access: { accessRevision: 0, bindings: [], mode: 'selectable', sharedAccessDigest: 'selectable:0', version: 1 },
+    accountPending: 'setup',
+    noCandidates: true,
+    label: 'New node: configuring account',
+  },
+  ...(['metadata', 'connections'] as const).map((accountPending) => ({
+    access: { accessRevision: 0, bindings: [], mode: 'implicit' as const, sharedAccessDigest: 'implicit:lab', version: 1 as const },
+    accountPending,
+    label: `Loading account ${accountPending}`,
+  })),
+  {
+    access: { accessRevision: 0, bindings: [], mode: 'selectable', sharedAccessDigest: 'selectable:0', version: 1 },
+    emptyFlow: true,
+    configure: true,
+    label: 'Configure access on request',
+  },
+  {
+    access: { accessRevision: 0, bindings: [], mode: 'implicit', sharedAccessDigest: 'implicit:lab', version: 1 },
+    label: 'Deployment managed',
+  },
+  {
+    access: {
+      accessRevision: 1,
+      bindings: [
+        {
+          connectionId: 'mail-default',
+          source: { kind: 'policy' as const, ruleId: null },
+          accessBindingId: candidates[0].accessBindingId,
+          connectionDisplayName: candidates[0].connectionDisplayName,
+          permissionGroupName: candidates[0].permissionGroupName,
+          providerId: candidates[0].providerId,
+          status: 'active',
+        },
+        {
+          connectionId: 'fixture-account',
+          source: { kind: 'policy' as const, ruleId: 'International finance operations reviewers' },
+          accessBindingId: 'long-name',
+          connectionDisplayName: 'finance-operations-international-team@example.com',
+          permissionGroupName: 'International finance operations reviewers',
+          providerId: 'sheets',
+          status: 'active',
+        },
+      ],
+      mode: 'selectable',
+      sharedAccessDigest: 'selectable:long-names',
+      providerIds: ['github'],
+      version: 1,
+    },
+    label: 'Service cards: accounts, long names and unconnected service',
+    configure: true,
+  },
+  {
+    access: { accessRevision: 0, bindings: [], mode: 'selectable', sharedAccessDigest: 'selectable:0', version: 1 },
+    emptyFlow: true,
+    label: 'No Providers in Flow',
+  },
+  {
+    access: {
+      accessRevision: 2,
+      bindings: [
+        {
+          connectionId: null,
+          source: null,
+          accessBindingId: 'retired',
+          connectionDisplayName: 'Former work account',
+          permissionGroupName: 'Former editors',
+          providerId: 'mail',
+          status: 'invalid',
+        },
+      ],
+      mode: 'selectable',
+      sharedAccessDigest: 'selectable:2',
+      version: 1,
+    },
+    label: 'Invalid selection retained',
+  },
+  {
+    access: { accessRevision: 1, providerIds: ['mail'], bindings: [], mode: 'selectable', sharedAccessDigest: 'selectable:manual', version: 1 },
+    emptyFlow: true,
+    configure: true,
+    label: 'Manually added service can be removed',
+  },
+  {
+    access: { accessRevision: 2, providerIds: [], bindings: [], mode: 'selectable', sharedAccessDigest: 'selectable:removed', version: 1 },
+    configure: true,
+    label: 'Flow dependency with accounts available but none selected',
+  },
+  {
+    access: { accessRevision: 0, bindings: [], mode: 'selectable', sharedAccessDigest: 'selectable:0', version: 1 },
+    label: 'No connected accounts',
+    noCandidates: true,
+    configure: true,
+  },
+  {
+    access: { accessRevision: 0, bindings: [], mode: 'selectable', sharedAccessDigest: 'selectable:0', version: 1 },
+    label: 'Connected account without selectable permissions',
+    noCandidates: true,
+    connectionStatus: 'active',
+    configure: true,
+  },
+  {
+    access: { accessRevision: 0, bindings: [], mode: 'selectable', sharedAccessDigest: 'selectable:0', version: 1 },
+    label: 'Account needs reconnection',
+    noCandidates: true,
+    connectionStatus: 'reauth_required',
+    configure: true,
+  },
+  {
+    access: { accessRevision: 0, bindings: [], mode: 'selectable', sharedAccessDigest: 'selectable:0', version: 1 },
+    label: 'Account connection error',
+    noCandidates: true,
+    connectionStatus: 'error',
+    configure: true,
+  },
+  {
+    access: { accessRevision: 0, bindings: [], mode: 'selectable', sharedAccessDigest: 'selectable:0', version: 1 },
+    label: 'Disconnected account',
+    noCandidates: true,
+    connectionStatus: 'disconnected',
+    configure: true,
+  },
+  {
+    access: { accessRevision: 0, bindings: [], mode: 'selectable', sharedAccessDigest: 'selectable:0', version: 1 },
+    label: 'No-auth service — authorization not required',
+    noAuth: true,
+  },
+  {
+    access: { accessRevision: 0, bindings: [], mode: 'implicit', sharedAccessDigest: 'implicit:lab', version: 1 },
+    label: 'Initial load failed',
+    loadFailed: true,
+  },
+]
+
 function Gallery({ dark, language, log }: { readonly dark: boolean; readonly language: UiLanguage; readonly log: LogAction }) {
-  const samples: readonly {
-    readonly access: ConnectorAccess
-    readonly emptyFlow?: boolean
-    readonly label: string
-    readonly loadFailed?: boolean
-    readonly connectionStatus?: ConnectorConnection['status']
-    readonly noAuth?: boolean
-    readonly noCandidates?: boolean
-    readonly configure?: boolean
-    readonly accountPending?: 'metadata' | 'connections' | 'setup'
-    readonly canvasControl?: boolean
-  }[] = [
-    {
-      access: {
-        accessRevision: 2,
-        bindings: [
-          ...candidates.map((candidate) => ({
-            accessBindingId: candidate.accessBindingId,
-            connectionId: candidate.connectionId,
-            connectionDisplayName: candidate.connectionDisplayName,
-            permissionGroupName: candidate.permissionGroupName,
-            providerId: candidate.providerId,
-            source: candidate.source,
-            status: 'active' as const,
-          })),
-          {
-            accessBindingId: 'github-work-binding',
-            connectionId: 'github-work',
-            connectionDisplayName: 'Engineering',
-            permissionGroupName: null,
-            providerId: 'github',
-            source: { kind: 'policy', ruleId: null },
-            status: 'active',
-          },
-        ],
-        mode: 'selectable',
-        sharedAccessDigest: 'selectable:2',
-        version: 1,
-      },
-      canvasControl: true,
-      label: 'Node and Code usage overview',
-    },
-    {
-      access: { accessRevision: 0, bindings: [], mode: 'selectable', sharedAccessDigest: 'selectable:0', version: 1 },
-      canvasControl: true,
-      emptyFlow: true,
-      label: 'Connections control without issues',
-    },
-    {
-      access: { accessRevision: 0, bindings: [], mode: 'selectable', sharedAccessDigest: 'selectable:0', version: 1 },
-      accountPending: 'setup',
-      noCandidates: true,
-      label: 'New node: configuring account',
-    },
-    ...(['metadata', 'connections'] as const).map((accountPending) => ({
-      access: { accessRevision: 0, bindings: [], mode: 'implicit' as const, sharedAccessDigest: 'implicit:lab', version: 1 as const },
-      accountPending,
-      label: `Loading account ${accountPending}`,
-    })),
-    {
-      access: { accessRevision: 0, bindings: [], mode: 'selectable', sharedAccessDigest: 'selectable:0', version: 1 },
-      emptyFlow: true,
-      configure: true,
-      label: 'Configure access on request',
-    },
-    {
-      access: { accessRevision: 0, bindings: [], mode: 'implicit', sharedAccessDigest: 'implicit:lab', version: 1 },
-      label: 'Deployment managed',
-    },
-    {
-      access: {
-        accessRevision: 1,
-        bindings: [
-          {
-            connectionId: 'mail-default',
-            source: { kind: 'policy' as const, ruleId: null },
-            accessBindingId: candidates[0].accessBindingId,
-            connectionDisplayName: candidates[0].connectionDisplayName,
-            permissionGroupName: candidates[0].permissionGroupName,
-            providerId: candidates[0].providerId,
-            status: 'active',
-          },
-          {
-            connectionId: 'fixture-account',
-            source: { kind: 'policy' as const, ruleId: 'International finance operations reviewers' },
-            accessBindingId: 'long-name',
-            connectionDisplayName: 'finance-operations-international-team@example.com',
-            permissionGroupName: 'International finance operations reviewers',
-            providerId: 'sheets',
-            status: 'active',
-          },
-        ],
-        mode: 'selectable',
-        sharedAccessDigest: 'selectable:long-names',
-        providerIds: ['github'],
-        version: 1,
-      },
-      label: 'Service cards: accounts, long names and unconnected service',
-      configure: true,
-    },
-    {
-      access: { accessRevision: 0, bindings: [], mode: 'selectable', sharedAccessDigest: 'selectable:0', version: 1 },
-      emptyFlow: true,
-      label: 'No Providers in Flow',
-    },
-    {
-      access: {
-        accessRevision: 2,
-        bindings: [
-          {
-            connectionId: null,
-            source: null,
-            accessBindingId: 'retired',
-            connectionDisplayName: 'Former work account',
-            permissionGroupName: 'Former editors',
-            providerId: 'mail',
-            status: 'invalid',
-          },
-        ],
-        mode: 'selectable',
-        sharedAccessDigest: 'selectable:2',
-        version: 1,
-      },
-      label: 'Invalid selection retained',
-    },
-    {
-      access: { accessRevision: 1, providerIds: ['mail'], bindings: [], mode: 'selectable', sharedAccessDigest: 'selectable:manual', version: 1 },
-      emptyFlow: true,
-      configure: true,
-      label: 'Manually added service can be removed',
-    },
-    {
-      access: { accessRevision: 2, providerIds: [], bindings: [], mode: 'selectable', sharedAccessDigest: 'selectable:removed', version: 1 },
-      configure: true,
-      label: 'Flow dependency with accounts available but none selected',
-    },
-    {
-      access: { accessRevision: 0, bindings: [], mode: 'selectable', sharedAccessDigest: 'selectable:0', version: 1 },
-      label: 'No connected accounts',
-      noCandidates: true,
-      configure: true,
-    },
-    {
-      access: { accessRevision: 0, bindings: [], mode: 'selectable', sharedAccessDigest: 'selectable:0', version: 1 },
-      label: 'Connected account without selectable permissions',
-      noCandidates: true,
-      connectionStatus: 'active',
-      configure: true,
-    },
-    {
-      access: { accessRevision: 0, bindings: [], mode: 'selectable', sharedAccessDigest: 'selectable:0', version: 1 },
-      label: 'Account needs reconnection',
-      noCandidates: true,
-      connectionStatus: 'reauth_required',
-      configure: true,
-    },
-    {
-      access: { accessRevision: 0, bindings: [], mode: 'selectable', sharedAccessDigest: 'selectable:0', version: 1 },
-      label: 'Account connection error',
-      noCandidates: true,
-      connectionStatus: 'error',
-      configure: true,
-    },
-    {
-      access: { accessRevision: 0, bindings: [], mode: 'selectable', sharedAccessDigest: 'selectable:0', version: 1 },
-      label: 'Disconnected account',
-      noCandidates: true,
-      connectionStatus: 'disconnected',
-      configure: true,
-    },
-    {
-      access: { accessRevision: 0, bindings: [], mode: 'selectable', sharedAccessDigest: 'selectable:0', version: 1 },
-      label: 'No-auth service — authorization not required',
-      noAuth: true,
-    },
-    {
-      access: { accessRevision: 0, bindings: [], mode: 'implicit', sharedAccessDigest: 'implicit:lab', version: 1 },
-      label: 'Initial load failed',
-      loadFailed: true,
-    },
-  ]
   return (
     <I18nProvider i18n={createI18n(language)}>
       <div
@@ -495,7 +604,7 @@ function Gallery({ dark, language, log }: { readonly dark: boolean; readonly lan
 
 export const connectorAccessStory: FrontendStory = {
   description:
-    'Compare the Connections control with an issue and without one. The plug icon uses a subtle warning color when the draft needs connection attention. Open Connections from the canvas control island. Compare service spacing, separate account cards, account icons and node icons, including a custom receipt icon. Provider and account links use 13px names and aligned leading icons; node names use 13px and supporting text uses 12px. Subtle curved branches connect accounts to their nodes. Missing account selections use a warning surface and label. The panel scrollbar appears while scrolling and hides when idle. Locate each usage, switch to the read-only publication snapshot, and stop using an account with a compact confirmation showing the same account and node hierarchy. The gallery also covers missing accounts, empty drafts, loading failures, long names and independent Code connection settings. Code selection saves take 800 ms.',
+    'Open Connections from the canvas control island. Pending items are grouped by service with an account selector. Node rows stay on one line and long names truncate. Choose an account to fill that service’s pending Connector, Code and Agent references; existing selections stay unchanged. Defer a service, inspect its neutral deferred group, restore an account, and clear the deferred selection. A group containing a Trigger cannot defer its account. Check warning colors on hover and empty account menus with an Add account option. Compare the read-only publication snapshot, locate a node, and stop using an account. The gallery also covers empty drafts, loading failures and independent Code settings. Code selection saves take 800 ms.',
   group: 'Workbench',
   id: 'connector-access',
   render: (log, dark, language) => <Gallery dark={dark} language={language} log={log} />,

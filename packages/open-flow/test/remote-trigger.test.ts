@@ -4,6 +4,7 @@ import type { IntegrationDefinition, IntegrationStateContext } from '../src/trig
 import { expect, it, vi } from 'vitest'
 import { IntegrationConnectionError } from '../src/trigger/common/integration.ts'
 import { remoteTriggerDefinitions } from '../src/trigger/providers/remote.ts'
+import { sourceEvents } from '../src/trigger/providers/source-events.ts'
 
 const listener = remoteTriggerDefinitions.find((definition) => definition.snapshot.key === 'googledrive.watch_changes') as IntegrationDefinition
 
@@ -109,4 +110,86 @@ it('rejects legacy remote identifiers before creating another subscription', asy
     }),
   ).rejects.toThrow('predates connector-owned Triggers')
   expect(trigger).not.toHaveBeenCalled()
+})
+
+it('acknowledges Asana creation handshakes before a subscription exists without accepting or persisting the supplied key', async () => {
+  const definition = remoteTriggerDefinitions.find((item) => item.snapshot.key === 'asana.on_task_event') as IntegrationDefinition
+  const trigger = vi.fn()
+  const saveSubscription = vi.fn()
+  const secret = 'a'.repeat(64)
+  const result = await definition.receive({
+    bindingId: 'candidate',
+    admit: false,
+    current: true,
+    method: 'POST',
+    callbackSecret: 'local',
+    config: { projectId: 'project' },
+    now: new Date(),
+    payload: null,
+    rawBody: new Uint8Array(),
+    header: (name) => (name === 'x-hook-secret' ? secret : undefined),
+    query: () => undefined,
+    connector: { execute: vi.fn(), trigger },
+    state: { checkpoint: null, subscription: {}, saveCheckpoint: vi.fn(), saveSubscription },
+  })
+  expect(result).toEqual({ outcome: 'respond', status: 200, body: '', contentType: 'text/plain', headers: { 'x-hook-secret': secret } })
+  expect(trigger).not.toHaveBeenCalled()
+  expect(saveSubscription).not.toHaveBeenCalled()
+})
+
+it.each([
+  ['typeform.on_form_response', { 'typeform-signature': 'signed' }, {}],
+  ['clickup.on_task_event', { 'x-signature': 'signed' }, {}],
+  ['resend.on_email_event', { 'svix-id': 'delivery', 'svix-timestamp': '123', 'svix-signature': 'signed' }, {}],
+  ['calendly.on_booking_event', { 'calendly-webhook-signature': 'signed' }, {}],
+  ['pipedrive.on_crm_event', { authorization: 'Basic signed' }, {}],
+  ['pandadoc.on_document_event', {}, { signature: 'signed' }],
+  ['asana.on_task_event', { 'x-hook-signature': 'signed' }, {}],
+  ['vercel.on_deployment_event', { 'x-vercel-signature': 'signed' }, {}],
+] as const)('forwards %s verification material and original bytes to its owner', async (key, suppliedHeaders, suppliedQuery) => {
+  const definition = remoteTriggerDefinitions.find((item) => item.snapshot.key === key) as IntegrationDefinition
+  const trigger = vi.fn(async () => ({ result: { outcome: 'respond', status: 401, body: '', contentType: 'text/plain' } }))
+  const raw = new TextEncoder().encode('{ "message": "你好" }')
+  const result = await definition.receive({
+    bindingId: 'binding',
+    admit: true,
+    current: true,
+    method: 'POST',
+    callbackSecret: 'local',
+    config: {},
+    now: new Date(),
+    payload: { message: '你好' },
+    rawBody: raw,
+    header: (name) => new Headers(suppliedHeaders).get(name) ?? undefined,
+    query: (name) => new URLSearchParams(suppliedQuery).get(name) ?? undefined,
+    connector: { execute: vi.fn(), trigger },
+    state: { checkpoint: null, subscription: { id: 'owned' }, saveCheckpoint: vi.fn(), saveSubscription: vi.fn() },
+  })
+  expect(result).toMatchObject({ outcome: 'respond', status: 401 })
+  expect(trigger).toHaveBeenCalledWith(
+    expect.objectContaining({ headers: suppliedHeaders, query: suppliedQuery, rawBody: Buffer.from(raw).toString('base64') }),
+    undefined,
+  )
+})
+
+it.each([undefined, null, '', 12])('rejects source events with invalid delivery identity %s', async (deliveryId) => {
+  const definition = sourceEvents[0]!
+  await expect(async () =>
+    definition.receive({
+      bindingId: 'binding',
+      admit: true,
+      current: true,
+      method: 'POST',
+      callbackSecret: '',
+      eventSourceId: 'source',
+      config: { sourceId: 'source' },
+      now: new Date(),
+      payload: deliveryId === undefined ? {} : { deliveryId },
+      rawBody: new Uint8Array(),
+      header: () => undefined,
+      query: () => undefined,
+      connector: { execute: vi.fn(), trigger: vi.fn() },
+      state: { checkpoint: null, subscription: {}, saveCheckpoint: vi.fn(), saveSubscription: vi.fn() },
+    }),
+  ).rejects.toThrow('The source event has no delivery identity.')
 })

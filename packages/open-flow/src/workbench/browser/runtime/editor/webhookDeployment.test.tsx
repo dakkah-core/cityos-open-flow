@@ -7,6 +7,7 @@ import { createI18n } from '../i18n.ts'
 import { WebhookDeployment } from './webhookDeployment.tsx'
 
 const props: WebhookDeploymentProps = {
+  notify: () => {},
   binding: {
     flowId: 'flow',
     triggerNodeId: 'webhook',

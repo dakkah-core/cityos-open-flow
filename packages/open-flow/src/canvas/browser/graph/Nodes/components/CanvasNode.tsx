@@ -56,6 +56,8 @@ export function CanvasNode({
         ? `${t('canvasCard.kind.trigger')} · ${triggerSource}`
         : t(`canvasCard.kind.${kind}`)
   const runContent = node?.run == null || node.run.status == 'idle' ? undefined : <RunChips run={node.run} />
+  const connectionRequired = (node.kind == 'task' || node.kind == 'trigger') && node.connectionRequired
+  const connectionDeferred = node.kind == 'task' && node.connectionDeferred && !connectionRequired && !problem
   return (
     <div className={NODE_HANDLE_CLASSNAME}>
       <CanvasCard
@@ -65,7 +67,7 @@ export function CanvasNode({
         contentHidden={hidden}
         footerHidden={hidden && !runContent}
         title={title}
-        icon={<CanvasNodeIcon icon={node.icon} kind={node.kind} nodeType={nodeStore.nodeType} />}
+        icon={<CanvasNodeIcon icon={node.icon} fallbackIcon={node.fallbackIcon} kind={node.kind} nodeType={nodeStore.nodeType} />}
         subtitle={subtitle}
         subtitleAccessory={
           actions != null && actions.count > 0 ? (
@@ -77,10 +79,10 @@ export function CanvasNode({
           ) : undefined
         }
         selected={selected}
-        problem={(node.kind == 'task' || node.kind == 'trigger') && node.connectionRequired ? t('nodeStatus.connectionRequired') : problem}
-        problemIcon={
-          (node.kind == 'task' || node.kind == 'trigger') && node.connectionRequired ? <i aria-hidden="true" className="i-lucide-light:unplug" /> : undefined
-        }
+        running={node.run?.status === 'running'}
+        problem={connectionRequired ? t('nodeStatus.connectionRequired') : (problem ?? (connectionDeferred ? t('nodeStatus.connectionDeferred') : undefined))}
+        problemTone={connectionDeferred ? 'warning' : 'danger'}
+        problemIcon={connectionRequired || connectionDeferred ? <i aria-hidden="true" className="i-lucide-light:unplug" /> : undefined}
         branches={branches}
         footer={runContent ? <div className={styles.footer}>{runContent}</div> : undefined}
         preview={

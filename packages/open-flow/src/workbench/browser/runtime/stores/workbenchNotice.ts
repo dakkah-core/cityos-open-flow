@@ -68,6 +68,12 @@ export function errorNotice(error: unknown, t: TFunction): Notice {
     return { kind: 'error', message: `${t('notice.error.responseInvalid')} (${error.detail})` }
   }
   if (error instanceof ApiError) {
+    if (
+      error.code == controlErrorCode.flowInvalid &&
+      typeof error.details?.reason == 'string' &&
+      ['workflow.unpublished', 'workflow.disabled', 'workflow.retiring', 'workflow.recursive'].includes(error.details.reason)
+    )
+      return { kind: 'error', message: t(`diagnostics.messages.${error.details.reason}`) }
     const key = (errorKeys as Readonly<Record<string, string>>)[error.code]
     if (key != null) return { kind: 'error', message: t(key) }
     return { kind: 'error', message: `${error.message} (${error.code})` }

@@ -23,6 +23,7 @@ const reportSchema = {
   type: 'object',
   properties: {
     status: { type: 'string' },
+    type: { const: 'choice', description: 'The fixed result discriminator.' },
     metrics: { type: 'object', properties: { count: { type: 'integer' }, score: { type: 'number' } } },
     tags: { type: 'array', items: { type: 'string' } },
   },
@@ -51,6 +52,7 @@ const outputs = [
   },
   port('issues', 'array'),
   port('count', 'integer'),
+  { ...port('resultType'), jsonSchema: { const: 'choice' } },
 ]
 const readOnlyCompositeOutputs: (Group | InputPort)[] = [
   port('openObject', 'object'),

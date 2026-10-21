@@ -135,13 +135,40 @@ it('rejects unavailable states before parsing and makes retained handles inert a
 })
 
 it('shows malformed-file feedback without submitting, and can accept a subsequent valid file', async () => {
-  const { ref, onImportFlow } = await browser()
+  const { ref, store, onImportFlow } = await browser()
   expect(await open(ref, { text: '{}', fileName: 'bad.json' })).toBe('invalid-file')
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain('Invalid')
+  expect(store.$.notice.value).toEqual({ kind: 'error', message: 'Invalid or unsupported workflow file.' })
+  expect(container.querySelector('[role="alert"]')).toBeNull()
   expect(onImportFlow).not.toHaveBeenCalled()
   expect(await open(ref)).toBe('opened')
   expect(container.querySelector('[role="alert"]')).toBeNull()
   await dialog()
+})
+
+it.each(['malformed', 'unreadable'])('notifies once when a selected file is %s and allows selecting it again', async (failure) => {
+  const { store, onImportFlow } = await browser()
+  const notice = vi.fn()
+  const stop = store.$.notice.reaction(notice)
+  const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+  const selected = {
+    name: 'broken.json',
+    text:
+      failure === 'malformed'
+        ? async () => '{}'
+        : async () => {
+            throw new Error('Read failed')
+          },
+  }
+  Object.defineProperty(fileInput, 'files', { configurable: true, value: [selected] })
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    await act(async () => fileInput.dispatchEvent(new Event('change', { bubbles: true })))
+    expect(notice).toHaveBeenCalledTimes(attempt)
+    expect(store.$.notice.value).toEqual({ kind: 'error', message: 'Invalid or unsupported workflow file.' })
+    expect(fileInput.value).toBe('')
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+  }
+  expect(onImportFlow).not.toHaveBeenCalled()
+  stop()
 })
 
 it.each([

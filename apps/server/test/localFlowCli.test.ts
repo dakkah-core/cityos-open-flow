@@ -71,6 +71,7 @@ it('executes the skill examples through the repository CLI against an isolated S
     async function run(flow: string, revision: string, trigger: string) {
       const response = await cli(['run', flow, '--trigger', trigger, '--expected-revision', revision, '--wait', '--timeout', '10000'])
       expect(response.run.status).toBe('completed')
+      expect(response.run.initiator).toEqual({ actorId: 'operator', channel: 'cli' })
       const result = await cli(['runs', 'result', response.run.runId])
       return result.result.result.nodes as { nodeId: string; outputs: Record<string, unknown> }[]
     }

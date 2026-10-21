@@ -31,9 +31,11 @@ import {
   RunLogClearHighlight,
   RunTooltipButton,
 } from './runDrawer.tsx'
+import { RunInitiator } from './runInitiator.tsx'
 import { RunResultView } from './runOutput.tsx'
 import { duration, runLabel, statusClass } from './runPresentation.ts'
 import { canCancelRun, hasRunFilter } from './runStore.ts'
+import { WorkflowCalls } from './workflowCalls.tsx'
 
 interface RunFilterDraft {
   readonly createdBefore: string
@@ -524,7 +526,9 @@ export function RunsView({
                   </IdTooltip>
                 </div>
               </header>
+              <RunInitiator run={run} />
               <ErrorHandling run={run} />
+              <WorkflowCalls run={run} />
               <ActiveWait
                 onLocate={onLocateWait}
                 onResolve={(waitId, action, comment) => void store.runs.resolve(waitId, action, comment)}

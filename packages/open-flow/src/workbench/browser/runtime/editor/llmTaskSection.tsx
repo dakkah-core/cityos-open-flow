@@ -33,7 +33,7 @@ export function LlmTaskSection({
               onChange={(event) => {
                 const mode = event.target.value
                 if ((mode == 'chat' || mode == 'json') && mode != llm.mode) {
-                  void store?.saveTaskSettings(selection.id, { kind: 'llm', mode, name: task.name })
+                  void store?.nodes.saveTaskSettings(selection.id, { kind: 'llm', mode, name: task.name })
                 }
               }}
               value={llm.mode}

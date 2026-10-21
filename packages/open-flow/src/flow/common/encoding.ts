@@ -23,7 +23,7 @@ import { decodeRevisionEnvelope, repairRevisionEnvelope } from './changeSchema.t
 export * from './workflowFile.ts'
 export { maxJsonDepth } from './json.ts'
 
-export { decodeFlowDocument, decodeRevisionContent } from './changeSchema.ts'
+export { decodeFlowDocument, decodeRevisionContent, upgradeWorkflowInterfaceDocument } from './changeSchema.ts'
 export { upgradeRevisionContent } from '@oomol-lab/open-flow/flow-change'
 
 const encoder = new TextEncoder()
@@ -106,10 +106,14 @@ function canonicalNode(value: GraphNode): JsonValue {
     ...(value.name == null ? {} : { name: value.name }),
     ...(value.maxExecutions == null ? {} : { maxExecutions: value.maxExecutions }),
     ...(value.timeoutMs == null ? {} : { timeoutMs: value.timeoutMs }),
+    ...(value.onError == null ? {} : { onError: value.onError }),
+    ...(value.retry == null ? {} : { retry: { maxRetries: value.retry.maxRetries, intervalMs: value.retry.intervalMs } }),
   }
   switch (value.kind) {
-    case 'outputs':
+    case 'webhook-response':
       return { ...common, kind: value.kind }
+    case 'outputs':
+      return { ...common, kind: value.kind, outputDefs: canonicalPorts(value.outputDefs), outputMappings: canonicalInputs(value.outputMappings) }
     case 'condition':
       return {
         ...common,
@@ -275,9 +279,34 @@ function canonicalTriggerDefinition(snapshot: TriggerKeySnapshot): JsonValue {
 function canonicalWebhookOptions(value: WebhookOptions): JsonValue {
   return {
     ...(value.allowedOrigins == null ? {} : { allowedOrigins: value.allowedOrigins }),
+    ...(value.responseBody == null
+      ? {}
+      : {
+          responseBody: {
+            kind: value.responseBody.kind,
+            ...(value.responseBody.kind === 'workflow-outputs'
+              ? value.responseBody.output == null
+                ? {}
+                : { output: value.responseBody.output }
+              : value.responseBody.nodeId == null
+                ? {}
+                : { nodeId: value.responseBody.nodeId }),
+            ...(value.responseBody.timeoutMs == null ? {} : { timeoutMs: value.responseBody.timeoutMs }),
+          },
+        }),
     ...(value.responseData == null ? {} : { responseData: value.responseData }),
     ...(value.responseHeaders == null ? {} : { responseHeaders: value.responseHeaders }),
+    ...(value.responseHeadersSource == null
+      ? {}
+      : {
+          responseHeadersSource: {
+            kind: value.responseHeadersSource.kind,
+            ...(value.responseHeadersSource.output == null ? {} : { output: value.responseHeadersSource.output }),
+          },
+        }),
+    ...(value.responseHeaderOutputs == null ? {} : { responseHeaderOutputs: value.responseHeaderOutputs }),
     ...(value.responseStatusCode == null ? {} : { responseStatusCode: value.responseStatusCode }),
+    ...(value.responseStatusCodeOutput == null ? {} : { responseStatusCodeOutput: value.responseStatusCodeOutput }),
   }
 }
 
@@ -301,8 +330,9 @@ function canonicalTriggerNode(trigger: TriggerNode): JsonValue {
     case 'error':
       return { ...common(trigger.kind), ...(trigger.sourceFlowIds == null ? {} : { sourceFlowIds: [...trigger.sourceFlowIds] }) }
     case 'manual':
-    case 'start':
       return common(trigger.kind)
+    case 'start':
+      return { ...common(trigger.kind), inputDefs: canonicalPorts(trigger.inputDefs) }
     case 'webhook':
       return {
         ...common(trigger.kind),
@@ -337,9 +367,6 @@ export function triggerRuntimeJson(trigger: TriggerNode): string {
 
 export function canonicalDocument(document: FlowDocument): JsonValue {
   return {
-    ...(document.outputDefs == null ? {} : { outputDefs: canonicalPorts(document.outputDefs) }),
-    ...(document.outputMappings == null ? {} : { outputMappings: canonicalInputs(document.outputMappings) }),
-    ...(document.inputDefs == null ? {} : { inputDefs: canonicalPorts(document.inputDefs) }),
     bindings: Object.fromEntries(entries(document.bindings)),
     graph: canonicalGraph(document.graph),
   }
@@ -350,9 +377,6 @@ function canonicalRevisionDocument(content: RevisionContent): JsonValue {
   if (content.modelVersion != 2) return { ...(canonicalDocument(content.document) as Record<string, JsonValue>), subflows: {}, tasks: {} }
   const { document } = content
   return {
-    ...(document.outputDefs == null ? {} : { outputDefs: canonicalPorts(document.outputDefs) }),
-    ...(document.outputMappings == null ? {} : { outputMappings: canonicalInputs(document.outputMappings) }),
-    ...(document.inputDefs == null ? {} : { inputDefs: canonicalPorts(document.inputDefs) }),
     bindings: Object.fromEntries(entries(document.bindings)),
     graph: canonicalLegacyGraph(document.graph),
     subflows: {},

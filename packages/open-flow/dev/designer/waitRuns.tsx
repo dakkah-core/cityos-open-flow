@@ -43,11 +43,12 @@ const base: RunDetails = {
   flowId: 'flow',
   revisionId: 'revision',
   source: 'draft',
+  initiator: { actorId: 'user_release_operator', channel: 'workbench' },
   status: 'running',
   createdAt: '2026-09-15T08:00:00Z',
   startedAt: '2026-09-15T08:00:00Z',
   closureDigest: 'lab',
-  engineContract: 'open-flow-engine/v5',
+  engineContract: 'open-flow-engine/v6',
   engineDigest: 'lab',
   modelVersion: currentFlowModelVersion,
   sharedAccessDigest: 'implicit:lab',
@@ -291,29 +292,36 @@ function RunHistory({ language, dark, log }: { readonly language: UiLanguage; re
     { label: empty ? 'Show sample runs' : 'Show empty history', onClick: () => setEmpty(!empty) },
   ])
   useEffect(() => {
-    const samples = [
-      { status: 'completed', duration: 2350 },
-      { status: 'failed', duration: 192_000 },
-      { status: 'running' },
-      { status: 'canceled', duration: 3_720_000 },
-      { status: 'completed', duration: 93_600_000 },
-      { status: 'completed', duration: 128 },
-    ] as const
-    const runs: RunDetails[] = Array.from(empty ? [] : samples, (sample, index) => {
+    const live = { ...base, source: 'live', publicationId: 'publication' } as const
+    const samples: readonly (RunDetails & { readonly duration?: number })[] = [
+      { ...live, status: 'completed', duration: 2350, occurrenceId: 'occurrence-0', triggerNodeId: 'schedule', initiator: { channel: 'trigger' } },
+      { ...live, status: 'failed', duration: 192_000, initiator: { actorId: 'user_release_operator', channel: 'cli' } },
+      { ...base, status: 'running' },
+      {
+        ...live,
+        status: 'canceled',
+        duration: 3_720_000,
+        initiator: { actorId: 'user_release_operator', channel: 'mcp' },
+      },
+      { ...live, status: 'completed', duration: 93_600_000, initiator: { actorId: 'user_release_operator', channel: 'api' } },
+      {
+        ...live,
+        status: 'completed',
+        duration: 128,
+        initiator: { actorId: 'user_release_operator', channel: 'workflow' },
+        caller: { flowId: 'flow', runId: '65fbbd9e-395a-4b4d-a002-635058e25892', nodeId: 'call', executionId: 'call-execution' },
+      },
+      { ...live, status: 'completed', duration: 1000, occurrenceId: 'occurrence-6', triggerNodeId: 'schedule', initiator: undefined },
+    ]
+    const runs: RunDetails[] = Array.from(empty ? [] : samples, ({ duration, ...sample }, index) => {
       const startedAt = `2026-09-${24 - Math.floor(index / 2)}T08:0${6 - index}:00Z`
       return {
-        ...base,
+        ...sample,
         runId: `65fbbd9e-395a-4b4d-a002-635058e2589${index}`,
-        ...(index % 3 == 0
-          ? { source: 'live' as const, publicationId: 'publication', occurrenceId: `occurrence-${index}`, triggerNodeId: 'schedule' }
-          : index % 3 == 1
-            ? { source: 'live' as const, publicationId: 'publication' }
-            : {}),
-        status: sample.status,
         waits: [],
         createdAt: startedAt,
         startedAt,
-        ...('duration' in sample ? { finishedAt: new Date(Date.parse(startedAt) + sample.duration).toISOString() } : {}),
+        ...(duration == null ? {} : { finishedAt: new Date(Date.parse(startedAt) + duration).toISOString() }),
       }
     })
     const client = new WorkbenchClient(async (path) => {
@@ -410,7 +418,7 @@ export const runHistoryStory: FrontendStory = {
   title: 'Run history',
   standalone: true,
   description:
-    'Inspect results, failures, timeline, full run IDs and filters. Close and reopen the page, or narrow the viewport to switch between list and detail.',
+    'Inspect results, failures, timeline, full run IDs, filters and initiators across client channels, automatic triggers, workflow calls and legacy records. Close and reopen the page, or narrow the viewport to switch between list and detail.',
   render: (log, dark, language) => <RunHistory language={language} dark={dark} log={log} />,
 }
 

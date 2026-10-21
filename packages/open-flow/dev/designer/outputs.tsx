@@ -18,21 +18,26 @@ const content: RevisionContent = {
   modules: {},
   document: {
     bindings: {},
-    inputDefs: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: false }],
-    outputDefs: [
-      { handle: 'message', jsonSchema: { type: 'string' }, nullable: false },
-      { handle: 'count', jsonSchema: { type: 'number' }, nullable: false },
-      { handle: 'note', jsonSchema: { type: 'string' }, nullable: true },
-      { handle: 'missing', jsonSchema: { type: 'string' }, nullable: false },
-    ],
-    outputMappings: {
-      message: { kind: 'sources', sources: [{ kind: 'node', nodeId: 'start', output: 'message' }] },
-      count: { kind: 'value', value: 42 },
-      note: { kind: 'value', value: null },
-      missing: { kind: 'sources', sources: [{ kind: 'node', nodeId: 'start', output: 'removed' }] },
-    },
+
     graph: {
-      nodes: { start: { kind: 'start', name: 'Start' }, outputs: { kind: 'outputs' } },
+      nodes: {
+        start: { kind: 'start', name: 'Start', inputDefs: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: false }] },
+        outputs: {
+          kind: 'outputs',
+          outputDefs: [
+            { handle: 'message', jsonSchema: { type: 'string' }, nullable: false },
+            { handle: 'count', jsonSchema: { type: 'number' }, nullable: false },
+            { handle: 'note', jsonSchema: { type: 'string' }, nullable: true },
+            { handle: 'missing', jsonSchema: { type: 'string' }, nullable: false },
+          ],
+          outputMappings: {
+            message: { kind: 'sources', sources: [{ kind: 'node', nodeId: 'start', output: 'message' }] },
+            count: { kind: 'value', value: 42 },
+            note: { kind: 'value', value: null },
+            missing: { kind: 'sources', sources: [{ kind: 'node', nodeId: 'start', output: 'removed' }] },
+          },
+        },
+      },
       edges: [{ source: 'start', target: 'outputs' }],
     },
   },
@@ -56,7 +61,7 @@ function OutputsStory({ log, dark, language }: { log: LogAction; dark: boolean; 
   useStoryActions([
     { label: 'Undo', disabled: !history?.canUndo, onClick: () => void session?.store.undo() },
     { label: 'Redo', disabled: !history?.canRedo, onClick: () => void session?.store.redo() },
-    { label: 'Empty outputs', onClick: () => void session?.store.saveFlowOutputDefs('outputs', []) },
+    { label: 'Empty outputs', onClick: () => void session?.store.nodes.saveOutputsDefs('outputs', []) },
     { label: 'Reload saved data', onClick: () => void session?.start().then(() => session.store.selectNodes(['outputs'])) },
     { label: 'Reset samples', onClick: () => reset((value) => value + 1) },
   ])
@@ -75,6 +80,10 @@ function OutputsStory({ log, dark, language }: { log: LogAction; dark: boolean; 
           ignoredNodeIds={[]}
           selectedNodeIds={selected}
           onSelectionChange={(ids) => session.store.selectNodes(ids)}
+          onDeleteNodes={(ids) => {
+            session.store.selectNodes(ids)
+            void session.store.deleteSelectedNodes()
+          }}
           onMoveNodes={(positions) => void session.store.moveNodes(positions)}
           onMoveViewport={(viewport) => void session.store.moveViewport(viewport)}
           onConnect={(edge) => void session.store.connect(edge)}

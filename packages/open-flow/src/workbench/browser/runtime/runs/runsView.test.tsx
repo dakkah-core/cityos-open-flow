@@ -14,7 +14,7 @@ describe('RunsView output', () => {
     const finishedAt = '2026-08-27T10:00:01.000Z'
     const run: RunDetails = {
       closureDigest: 'closure',
-      engineContract: 'open-flow-engine/v5',
+      engineContract: 'open-flow-engine/v6',
       engineDigest: 'engine',
       modelVersion: currentFlowModelVersion,
       sharedAccessDigest: 'implicit:test',
@@ -38,6 +38,7 @@ describe('RunsView output', () => {
       revisionId: 'revision',
       runId: 'run',
       source: 'draft',
+      initiator: { actorId: 'user-run-audit', channel: 'mcp' },
       status,
       version: 1,
     }
@@ -96,6 +97,9 @@ describe('RunsView output', () => {
       expect(markup).toContain('>Continue<')
       expect(markup).toContain('Locate Wait node')
     }
+    expect(markup).toContain('Initiated by')
+    expect(markup).toContain('user-run-audit')
+    expect(markup).toContain('MCP')
     expect(markup).toContain('Monthly report')
     expect(markup).toContain('aria-label="Close"')
     expect(markup).toContain('Timeline')

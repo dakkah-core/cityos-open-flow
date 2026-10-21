@@ -1,3 +1,4 @@
+import type { RunInitiator } from '@oomol-lab/open-flow/control-api'
 import type { RunEventKind } from '@oomol-lab/open-flow/control-api'
 import type { ConnectorAccessSnapshot } from '@oomol-lab/open-flow/control-api'
 import type { JsonValue, WaitAction } from '@oomol-lab/open-flow/flow-change'
@@ -25,6 +26,18 @@ import { isolatedVmEngineDigest } from '../runtime/isolated-vm.ts'
 import { errorWorkflowTarget } from './trigger-store.ts'
 
 type RunInputs = NonNullable<FlowRunOptions['inputs']>
+
+export interface WorkflowCallAdmission {
+  readonly executionId: string
+  readonly parentRunId: string
+  readonly parentFlowId: string
+  readonly nodeId: string
+  readonly jobId: string
+  readonly deadlineAt?: number
+}
+
+/** Direct calls supply their authenticated initiator; workflow calls derive it from the parent. */
+export type LiveRunOrigin = { readonly initiator: RunInitiator; readonly call?: never } | { readonly call: WorkflowCallAdmission; readonly initiator?: never }
 
 export interface StoredRun {
   readonly bindingValues?: Readonly<Record<string, string>>
@@ -82,6 +95,7 @@ export class RunStore {
   readonly #clock: () => number
   readonly #database: DatabaseSync
   readonly #deps: RunStoreDependencies
+  readonly #interrupts = new Set<string>()
   readonly #maxPendingRuns: number
   readonly #runEventRetentionMs: number
   readonly #transaction: <Value>(operation: () => Value) => Value
@@ -107,6 +121,7 @@ export class RunStore {
   }
 
   acceptControlRun(input: {
+    readonly initiator: RunInitiator
     readonly closureDigest: string
     readonly flowId: string
     readonly idempotencyKey: string
@@ -150,19 +165,21 @@ export class RunStore {
     })
   }
 
-  acceptLiveControlRun(input: {
-    readonly closureDigest: string
-    readonly expectedPublicationId: string
-    readonly flowId: string
-    readonly idempotencyKey: string
-    readonly inputs: RunInputs
-    readonly modelVersion: number
-    readonly requestDigest: string
-    readonly revisionDigest: string
-    readonly revisionId: string
-    readonly trigger: TriggerSeed
-    readonly variableNames: readonly string[]
-  }): RunAdmission | { readonly kind: 'binding-unresolved' | 'busy' | 'live-conflict' | 'not-found' } {
+  acceptLiveControlRun(
+    input: LiveRunOrigin & {
+      readonly closureDigest: string
+      readonly expectedPublicationId: string
+      readonly flowId: string
+      readonly idempotencyKey: string
+      readonly inputs: RunInputs
+      readonly modelVersion: number
+      readonly requestDigest: string
+      readonly revisionDigest: string
+      readonly revisionId: string
+      readonly trigger: TriggerSeed
+      readonly variableNames: readonly string[]
+    },
+  ): RunAdmission | { readonly kind: 'binding-unresolved' | 'busy' | 'live-conflict' | 'not-found' } {
     return this.#transaction(() => {
       const existing = this.#database
         .prepare('SELECT run_id AS runId, request_digest AS requestDigest, source, status FROM runs WHERE idempotency_key = ?')
@@ -173,6 +190,18 @@ export class RunStore {
         if (existing.requestDigest != input.requestDigest || existing.source != 'live') return { kind: 'conflict' }
         return { created: false, kind: 'accepted', runId: existing.runId, status: existing.status }
       }
+      let initiator: RunInitiator
+      if (input.call != null) {
+        const parent = this.#deps.views.controlRun(input.call.parentRunId)
+        if (
+          parent?.status != 'running' ||
+          parent.flowId != input.call.parentFlowId ||
+          this.#deps.flows.get(parent.flowId)?.ownerId != this.#deps.flows.get(input.flowId)?.ownerId
+        )
+          return { kind: 'conflict' }
+        if (this.callAncestors(parent.runId).includes(input.flowId)) return { kind: 'conflict' }
+        initiator = { channel: 'workflow', ...(parent.initiator?.actorId == null ? {} : { actorId: parent.initiator.actorId }) }
+      } else initiator = input.initiator
       const flow = this.#deps.flows.get(input.flowId)
       if (flow == null) return { kind: 'not-found' }
       if (flow.status != 'active') return { kind: 'busy' }
@@ -192,12 +221,80 @@ export class RunStore {
 
       const runId = this.#queueRun({
         ...input,
+        initiator,
+        engineContract: publication.engineContract,
         publicationId: publication.publicationId,
         providerAccess: this.#deps.publications.providerAccess(publication.publicationId)!,
         source: 'live',
       })
+      if (input.call != null)
+        this.#database
+          .prepare(`INSERT INTO workflow_calls
+        (parent_run_id, parent_flow_id, node_id, job_id, execution_id, child_run_id, child_flow_id, deadline_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+          .run(
+            input.call.parentRunId,
+            input.call.parentFlowId,
+            input.call.nodeId,
+            input.call.jobId,
+            input.call.executionId,
+            runId,
+            input.flowId,
+            input.call.deadlineAt ?? null,
+          )
       return { created: true, kind: 'accepted', runId, status: 'queued' }
     })
+  }
+
+  takeInterrupts(): readonly string[] {
+    const ids = [...this.#interrupts]
+    this.#interrupts.clear()
+    return ids
+  }
+
+  callAncestors(runId: string): readonly string[] {
+    return (
+      this.#database
+        .prepare(`WITH RECURSIVE ancestors(run_id, flow_id) AS (
+      SELECT run_id, flow_id FROM runs WHERE run_id = ? UNION
+      SELECT c.parent_run_id, c.parent_flow_id FROM workflow_calls c JOIN ancestors a ON c.child_run_id = a.run_id
+    ) SELECT flow_id AS flowId FROM ancestors`)
+        .all(runId) as { flowId: string }[]
+    ).map((row) => row.flowId)
+  }
+
+  workflowCalls(runId: string, jobId?: string) {
+    return this.#database
+      .prepare(`SELECT c.node_id AS nodeId, c.job_id AS jobId, c.execution_id AS executionId,
+      c.child_run_id AS runId, c.child_flow_id AS flowId, r.status, c.deadline_at AS deadlineAt
+      FROM workflow_calls c LEFT JOIN runs r ON r.run_id = c.child_run_id
+      WHERE c.parent_run_id = ? ${jobId == null ? '' : 'AND c.job_id = ?'} ORDER BY c.rowid`)
+      .all(...(jobId == null ? [runId] : [runId, jobId])) as unknown as {
+      nodeId: string
+      jobId: string
+      executionId: string
+      runId: string
+      flowId: string
+      status: RunStatus | null
+      deadlineAt: number | null
+    }[]
+  }
+
+  workflowOrigin(runId: string) {
+    return this.#database
+      .prepare(`SELECT parent_run_id AS runId, parent_flow_id AS flowId, node_id AS nodeId, execution_id AS executionId
+      FROM workflow_calls WHERE child_run_id = ?`)
+      .get(runId) as { runId: string; flowId: string; nodeId: string; executionId: string } | undefined
+  }
+
+  #readyCalls(runId: string): boolean {
+    return (
+      this.#database
+        .prepare(`SELECT 1 FROM workflow_calls c JOIN runs r ON r.run_id = c.child_run_id
+      WHERE c.parent_run_id = ? AND r.status IN ('completed', 'failed', 'canceled', 'indeterminate')
+      AND EXISTS (SELECT 1 FROM json_each((SELECT checkpoint_json FROM run_checkpoints WHERE run_id = ?), '$.calls') j
+        WHERE json_extract(j.value, '$.childRunId') = c.child_run_id) LIMIT 1`)
+        .get(runId, runId) != null
+    )
   }
 
   /**
@@ -224,6 +321,7 @@ export class RunStore {
     this.#deps.revisions.ensure(input)
     const runId = this.#queueRun({
       ...input,
+      initiator: { channel: 'trigger' },
       idempotencyKey: `trigger:${randomUUID()}`,
       source: 'live',
       inputs: {},
@@ -374,26 +472,34 @@ export class RunStore {
     return this.#transaction(() => this.#finishRun(runId, 'indeterminate', result, "status = 'starting'", this.#clock()))
   }
 
-  append(runId: string, event: ProjectedRunEvent): void {
-    this.#transaction(() => {
+  append(runId: string, event: ProjectedRunEvent): boolean {
+    return this.#transaction(() => {
       const run = this.#database.prepare('SELECT status, event_count AS eventCount, event_bytes AS eventBytes FROM runs WHERE run_id = ?').get(runId) as {
         readonly eventBytes: number
         readonly eventCount: number
         readonly status: RunStatus
       }
-      if (run.status != 'running') return
+      if (run.status != 'running') return false
+      const responseChanged =
+        event.kind === 'node.completed' &&
+        event.response != null &&
+        this.#database
+          .prepare('INSERT OR IGNORE INTO webhook_responses (run_id, node_id, response) VALUES (?, ?, ?)')
+          .run(runId, String(event.payload.nodeId), JSON.stringify(event.response)).changes > 0
       if (event.kind == 'node.failed' && event.payload.terminal === true) {
         const error = { ...(event.payload.error as object), nodeId: event.payload.nodeId, jobId: event.payload.executionId, path: event.payload.path ?? [] }
         this.#database.prepare('UPDATE runs SET failure_detail = ? WHERE run_id = ? AND failure_detail IS NULL').run(JSON.stringify(error), runId)
-        return
+        return false
       }
-      const bytes = encoder.encode(JSON.stringify(event)).byteLength
+      const historyEvent = event.kind === 'node.completed' ? { kind: event.kind, payload: event.payload, value: event.value } : event
+      const bytes = encoder.encode(JSON.stringify(historyEvent)).byteLength
       if (bytes > maxEventBytes || run.eventCount >= maxEventCount || run.eventBytes + bytes > maxEventTotalBytes) {
         this.#database.prepare('UPDATE runs SET events_truncated = 1 WHERE run_id = ?').run(runId)
-        return
+        return responseChanged
       }
       this.#insertEvent(runId, event.kind, event.payload, 'value' in event ? event.value : undefined)
       this.#database.prepare('UPDATE runs SET event_count = event_count + 1, event_bytes = event_bytes + ? WHERE run_id = ?').run(bytes, runId)
+      return responseChanged
     })
   }
 
@@ -558,6 +664,11 @@ export class RunStore {
       }[]
       const savedWaits = new Set(outcome.checkpoint.waits.map((wait) => wait.waitId))
       if (unresolved.some((wait) => !savedWaits.has(wait.waitId))) throw new Error('Checkpoint omits an unresolved Wait.')
+      const registered = this.workflowCalls(runId)
+      for (const call of outcome.checkpoint.calls ?? []) {
+        if (!registered.some((row) => row.runId == call.childRunId && row.jobId == call.jobId && row.nodeId == call.nodeId))
+          throw new Error('Checkpoint workflow call is not registered.')
+      }
       const source = JSON.stringify(decodeFlowRunCheckpoint(outcome.checkpoint))
       const bytes = encoder.encode(source).byteLength
       if (bytes > 16 * 1024 * 1024) throw new Error('Flow Run checkpoint exceeds 16 MiB.')
@@ -565,12 +676,13 @@ export class RunStore {
         runId,
         outcome.checkpoint.waits.map((wait) => wait.waitId),
       )
-      const status = Object.keys(resolved).length > 0 ? 'queued' : 'waiting'
+      let status = Object.keys(resolved).length > 0 ? 'queued' : 'waiting'
       this.#database
         .prepare(
           `INSERT INTO run_checkpoints (run_id, checkpoint_json, checkpoint_digest, checkpoint_bytes, remaining_ms) VALUES (?, ?, ?, ?, ?) ON CONFLICT(run_id) DO UPDATE SET checkpoint_json = excluded.checkpoint_json, checkpoint_digest = excluded.checkpoint_digest, checkpoint_bytes = excluded.checkpoint_bytes, remaining_ms = excluded.remaining_ms`,
         )
         .run(runId, source, `sha256:${createHash('sha256').update(source).digest('hex')}`, bytes, remainingMs)
+      if (this.#readyCalls(runId)) status = 'queued'
       this.#database.prepare("UPDATE runs SET status = ? WHERE run_id = ? AND status = 'running'").run(status, runId)
       const payload = { waitIds: outcome.checkpoint.waits.map((wait) => wait.waitId) }
       this.#insertEvent(runId, 'run.waiting', payload)
@@ -705,7 +817,11 @@ export class RunStore {
   /** Deletes one batch of a retired Flow's Run data, including its events and Waits. */
   deleteByFlow(flowId: string, limit: number): number {
     return this.#transaction(() => {
-      const runs = this.#database.prepare('SELECT run_id AS runId FROM runs WHERE flow_id = ? ORDER BY created_at, run_id LIMIT ?').all(flowId, limit) as {
+      const runs = this.#database
+        .prepare(
+          `SELECT run_id AS runId FROM runs WHERE flow_id = ? AND NOT EXISTS (SELECT 1 FROM workflow_calls c JOIN runs p ON p.run_id = c.parent_run_id WHERE c.child_run_id = runs.run_id AND p.status IN ('queued','starting','running','waiting')) ORDER BY created_at, run_id LIMIT ?`,
+        )
+        .all(flowId, limit) as {
         readonly runId: string
       }[]
       for (const { runId } of runs) {
@@ -717,6 +833,7 @@ export class RunStore {
         this.#database.prepare('DELETE FROM poll_event_dedupe WHERE run_id = ?').run(runId)
         this.#database.prepare('DELETE FROM trigger_occurrences WHERE run_id = ?').run(runId)
         this.#database.prepare('DELETE FROM events WHERE run_id = ?').run(runId)
+        this.#database.prepare('DELETE FROM webhook_responses WHERE run_id = ?').run(runId)
         this.#database.prepare('DELETE FROM wait_notifications WHERE run_id = ?').run(runId)
         this.#database.prepare('DELETE FROM run_checkpoints WHERE run_id = ?').run(runId)
         this.#database.prepare('DELETE FROM wait_receipts WHERE run_id = ?').run(runId)
@@ -725,6 +842,12 @@ export class RunStore {
         this.#database.prepare('DELETE FROM error_dispatches WHERE source_run_id = ?').run(runId)
         this.#database.prepare('DELETE FROM runs WHERE run_id = ?').run(runId)
       }
+      if (runs.length > 0)
+        this.#database
+          .prepare(
+            'DELETE FROM workflow_calls WHERE NOT EXISTS (SELECT 1 FROM runs WHERE run_id = parent_run_id) AND NOT EXISTS (SELECT 1 FROM runs WHERE run_id = child_run_id)',
+          )
+          .run()
       return runs.length
     })
   }
@@ -733,6 +856,9 @@ export class RunStore {
     const row = this.#database
       .prepare(
         `SELECT MIN(dueAt) AS dueAt FROM (
+           SELECT MIN(c.deadline_at) AS dueAt FROM workflow_calls c JOIN runs r ON r.run_id = c.child_run_id
+           WHERE r.status IN ('queued', 'starting', 'running', 'waiting')
+           UNION ALL
            SELECT MIN(retry_at) AS dueAt FROM error_dispatches WHERE status = 'pending'
            UNION ALL
            SELECT MIN(wait_receipts.expires_at) AS dueAt
@@ -752,7 +878,19 @@ export class RunStore {
 
   maintain(now: number, limit: number, notificationLeaseMs: number) {
     return this.#transaction(() => {
-      const expiredWaits = this.#expireWaits(now, limit)
+      const expiredCalls = this.#database
+        .prepare(`SELECT c.parent_run_id AS runId, c.parent_flow_id AS flowId FROM workflow_calls c
+        JOIN runs child ON child.run_id = c.child_run_id WHERE c.deadline_at <= ? AND child.status IN ('queued','starting','running','waiting') LIMIT ?`)
+        .all(now, limit) as { runId: string; flowId: string }[]
+      for (const call of expiredCalls)
+        this.#finishRun(
+          call.runId,
+          'failed',
+          { error: { code: 'run.timeout', message: 'Workflow call timed out.' } },
+          "status IN ('queued','starting','running','waiting')",
+          now,
+        )
+      const expiredWaits = [...expiredCalls, ...this.#expireWaits(now, limit)]
       const prunedEvents = this.#pruneExpiredEvents(now, limit)
       const notification = this.#claimWaitNotification(now, notificationLeaseMs)
       const errorDispatches = this.#dispatchErrors(now, limit)
@@ -967,6 +1105,8 @@ export class RunStore {
   }
 
   #queueRun(input: {
+    readonly engineContract?: string
+    readonly initiator: RunInitiator
     readonly closureDigest: string
     readonly flowId: string
     readonly idempotencyKey: string
@@ -988,8 +1128,8 @@ export class RunStore {
         `INSERT INTO runs (
            run_id, idempotency_key, request_digest, revision_id, revision_digest, flow_id,
            engine_contract, engine_digest, inputs, status, source, closure_digest,
-           model_version, created_at, publication_id, connector_team_id, trigger_node_id, trigger_outputs, llm_config, binding_values, provider_access_snapshot
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           model_version, created_at, publication_id, connector_team_id, trigger_node_id, trigger_outputs, llm_config, binding_values, provider_access_snapshot, initiator_actor_id, initiator_channel
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         runId,
@@ -998,7 +1138,7 @@ export class RunStore {
         input.revisionId,
         input.revisionDigest,
         input.flowId,
-        currentEngineContract,
+        input.engineContract ?? currentEngineContract,
         isolatedVmEngineDigest,
         JSON.stringify(input.inputs),
         input.source,
@@ -1012,6 +1152,8 @@ export class RunStore {
         JSON.stringify(snapshot?.model) ?? null,
         JSON.stringify(snapshot?.bindings) ?? null,
         JSON.stringify(input.providerAccess),
+        input.initiator.actorId ?? null,
+        input.initiator.channel,
       )
     this.#database.prepare('INSERT INTO work (run_id) VALUES (?)').run(runId)
     const payload = {}
@@ -1070,6 +1212,42 @@ export class RunStore {
       .prepare(`UPDATE runs SET status = ?, result = ?, finished_at = ?, events_expires_at = ? WHERE run_id = ? AND ${condition}`)
       .run(status, JSON.stringify(result), finishedAt, finishedAt + this.#runEventRetentionMs, runId, ...conditionParams)
     if (changed.changes != 1) return false
+    if (status != 'completed') {
+      this.#interrupts.add(runId)
+      for (const call of this.workflowCalls(runId))
+        this.#finishRun(
+          call.runId,
+          'canceled',
+          { error: { code: 'run.canceled', message: 'Calling Run ended.' } },
+          "status IN ('queued','starting','running','waiting')",
+          finishedAt,
+        )
+    }
+    const origin = this.workflowOrigin(runId)
+    if (origin != null) {
+      if (status == 'indeterminate')
+        this.#finishRun(
+          origin.runId,
+          'indeterminate',
+          { error: { code: 'execution.terminal-unknown', message: 'Called workflow outcome is unknown.' } },
+          "status IN ('queued','starting','running','waiting')",
+          finishedAt,
+        )
+      else {
+        const call = this.#database.prepare('SELECT deadline_at AS deadline FROM workflow_calls WHERE child_run_id = ?').get(runId) as {
+          deadline: number | null
+        }
+        if (call.deadline != null && finishedAt > call.deadline)
+          this.#finishRun(
+            origin.runId,
+            'failed',
+            { error: { code: 'run.timeout', message: 'Workflow call timed out.' } },
+            "status IN ('queued','starting','running','waiting')",
+            finishedAt,
+          )
+        else this.#database.prepare("UPDATE runs SET status = 'queued' WHERE run_id = ? AND status = 'waiting'").run(origin.runId)
+      }
+    }
     if (status == 'failed' || status == 'indeterminate') {
       const source = this.#database
         .prepare(`SELECT runs.flow_id AS flowId, flows.name, runs.revision_id AS revisionId,

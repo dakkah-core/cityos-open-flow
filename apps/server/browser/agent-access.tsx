@@ -27,12 +27,37 @@ import { HostPage, HostField, HostPageLayout, HostPageTabs } from './host-ui.tsx
 const tokenSchema = z.object({ tokenId: z.string().min(1), name: z.string().min(1), createdAt: z.number().int() })
 const listSchema = z.object({ version: z.literal(1), tokens: z.array(tokenSchema) })
 const createdSchema = z.object({ version: z.literal(1), credential: tokenSchema, token: z.string().min(1) })
+const accessSchema = z.object({ version: z.literal(1), mcpUrl: z.string().min(1) })
 
-function McpInformation(): ReactElement {
+function McpInformation({ onUnauthorized }: { readonly onUnauthorized: () => void }): ReactElement {
   const t = useTranslate()
-  const endpoint = new URL('/v1/mcp', window.location.origin).href
+  const [endpoint, setEndpoint] = useState<string>()
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setFailed(false)
+    void (async () => {
+      try {
+        const response = await fetch('/config/agent-access', { credentials: 'same-origin', signal: controller.signal })
+        if (controller.signal.aborted) return
+        if (response.status == 401) {
+          onUnauthorized()
+          return
+        }
+        if (!response.ok) throw new Error('Could not load MCP address.')
+        const value = accessSchema.parse(await response.json())
+        if (!controller.signal.aborted) setEndpoint(new URL(value.mcpUrl, window.location.origin).href)
+      } catch {
+        if (!controller.signal.aborted) setFailed(true)
+      }
+    })()
+    return () => controller.abort()
+  }, [attempt, onUnauthorized])
 
   async function copyAddress(): Promise<void> {
+    if (endpoint == null) return
     try {
       await navigator.clipboard.writeText(endpoint)
       toast.success(t('agentAccess.mcpCopied'))
@@ -50,11 +75,19 @@ function McpInformation(): ReactElement {
       <div className="host-card host-form">
         <Label htmlFor="settings-mcp-endpoint">{t('agentAccess.mcpAddress')}</Label>
         <div className="settings-mcp-address">
-          <Input id="settings-mcp-endpoint" readOnly value={endpoint} />
-          <Button variant="outline" size="sm" type="button" onClick={() => void copyAddress()}>
+          <Input id="settings-mcp-endpoint" readOnly value={endpoint ?? ''} placeholder={t('settings.loading')} />
+          <Button variant="outline" size="sm" type="button" disabled={endpoint == null} onClick={() => void copyAddress()}>
             {t('agentAccess.mcpCopy')}
           </Button>
         </div>
+        {failed && (
+          <div className="host-actions" role="alert">
+            <span>{t('settings.loadFailed')}</span>
+            <Button variant="outline" type="button" onClick={() => setAttempt((value) => value + 1)}>
+              {t('settings.retry')}
+            </Button>
+          </div>
+        )}
         <dl className="settings-mcp-details">
           <div>
             <dt>{t('agentAccess.mcpTransport')}</dt>
@@ -175,7 +208,7 @@ function PersonalTokens({ onUnauthorized }: { readonly onUnauthorized: () => voi
   const portal = useRef<HTMLElement>(null)
   const nameInput = useRef<HTMLInputElement>(null)
   const [pending, setPending] = useState(false)
-  const [error, setError] = useState<string>()
+  const [loadFailed, setLoadFailed] = useState(false)
   const [revoking, setRevoking] = useState<string>()
 
   const load = useCallback(
@@ -190,9 +223,9 @@ function PersonalTokens({ onUnauthorized }: { readonly onUnauthorized: () => voi
         const result = listSchema.parse(await response.json())
         if (signal?.aborted) return
         setTokens(result.tokens)
-        setError(undefined)
+        setLoadFailed(false)
       } catch {
-        if (!signal?.aborted) setError('account.loadFailed')
+        if (!signal?.aborted) setLoadFailed(true)
       }
     },
     [onUnauthorized],
@@ -208,7 +241,6 @@ function PersonalTokens({ onUnauthorized }: { readonly onUnauthorized: () => voi
     event.preventDefault()
     if (pending) return
     setPending(true)
-    setError(undefined)
     try {
       const response = await fetch('/auth/tokens', {
         method: 'POST',
@@ -225,7 +257,7 @@ function PersonalTokens({ onUnauthorized }: { readonly onUnauthorized: () => voi
       setTokens((current) => [...(current ?? []), result.credential])
       setSecret(result.token)
     } catch {
-      setError('account.saveFailed')
+      toast.error(t('account.saveFailed'))
     } finally {
       setPending(false)
     }
@@ -234,7 +266,6 @@ function PersonalTokens({ onUnauthorized }: { readonly onUnauthorized: () => voi
   async function revoke(tokenId: string): Promise<void> {
     if (pending) return
     setPending(true)
-    setError(undefined)
     try {
       const response = await fetch(`/auth/tokens/${encodeURIComponent(tokenId)}`, { method: 'DELETE', credentials: 'same-origin' })
       if (response.status == 401) {
@@ -245,7 +276,7 @@ function PersonalTokens({ onUnauthorized }: { readonly onUnauthorized: () => voi
       setTokens((current) => current?.filter((token) => token.tokenId != tokenId))
       setRevoking(undefined)
     } catch {
-      setError('account.saveFailed')
+      toast.error(t('account.saveFailed'))
     } finally {
       setPending(false)
     }
@@ -269,7 +300,6 @@ function PersonalTokens({ onUnauthorized }: { readonly onUnauthorized: () => voi
           if (pending || secret != null) return
           setCreating(open)
           setName('')
-          setError(undefined)
           setRevoking(undefined)
         }}
       >
@@ -304,11 +334,6 @@ function PersonalTokens({ onUnauthorized }: { readonly onUnauthorized: () => voi
                   onChange={(event) => setName(event.target.value)}
                 />
               </HostField>
-              {error != null && (
-                <p role="alert" className="text-sm text-destructive">
-                  {t(error)}
-                </p>
-              )}
               <DialogFooter>
                 <DialogClose render={<Button variant="outline" />} disabled={pending} type="button">
                   {t('settings.cancel')}
@@ -356,14 +381,14 @@ function PersonalTokens({ onUnauthorized }: { readonly onUnauthorized: () => voi
         </DialogContent>
       </Dialog>
       <div className="host-form">
-        {error != null && !creating && (
+        {loadFailed && (
           <p role="alert" className="text-sm text-destructive">
-            {t(error)}
+            {t('account.loadFailed')}
           </p>
         )}
         {tokens == null ? (
           <div className="host-actions">
-            {error == null ? (
+            {!loadFailed ? (
               <span role="status">{t('settings.loading')}</span>
             ) : (
               <Button variant="outline" onClick={() => void load()}>
@@ -425,7 +450,7 @@ export function AgentAccessPage({ onUnauthorized }: { readonly onUnauthorized: (
             <CliInformation />
           </TabsContent>
           <TabsContent value="mcp">
-            <McpInformation />
+            <McpInformation onUnauthorized={onUnauthorized} />
           </TabsContent>
           <PersonalTokens onUnauthorized={onUnauthorized} />
         </HostPage>

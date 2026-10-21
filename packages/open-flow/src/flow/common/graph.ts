@@ -8,7 +8,6 @@ import type {
   JsonValue,
   NodeSource,
   PortDefinition,
-  Port,
   RevisionContent,
   SchemaMismatch,
   TriggerNode,
@@ -19,8 +18,21 @@ import { missingTriggerConfig, resolveTriggerConfig } from '../../trigger/common
 import { triggerOutputDefinitions, triggerOutputPorts, webhookSupportsBody } from '../../trigger/common/contract.ts'
 import { isTriggerNode, portsByHandle, validVariableName } from './change.ts'
 import { conditionInputPorts, nodeInputMappings, otherwiseOutput, unaryOperator, comparisonIssue, valueType } from './condition.ts'
+import { nodeSystemOutputPorts, supportsNodeErrorHandling } from './errorHandling.ts'
+import { supportsNodeRetry, retryConfigurationSchema } from './retry.ts'
 import { schemaObject, matchesSchema, comparePorts, portsAssignable, variableInputCompatible, hasRetiredRef } from './schema.ts'
 import { sourceFields, sourcePort, sourceOutputLabel } from './sourceField.ts'
+import {
+  webhookResponseInputs,
+  validWebhookStatus,
+  webhookHeaderValues,
+  webhookHeaderNameIssue,
+  webhookHeaderValuePort,
+  webhookHeadersPort,
+  webhookResponseAllowsBody,
+  webhookStatusCodePort,
+  workflowOutputsPort,
+} from './webhookResponse.ts'
 
 export function isResolutionNode(node: GraphNode | undefined): node is Extract<GraphNode, { readonly kind: 'approval' | 'wait' }> {
   return node?.kind == 'approval' || node?.kind == 'wait'
@@ -35,9 +47,114 @@ function graphDiagnostic(
   return { code, column: 0, line: 1, message, mismatch, path, ...(values == null ? {} : { values }) }
 }
 
+/** Execution reachability is independent of data bindings and selected runtime branches. */
+export function executionReachableNodes(graph: Graph, source: string): ReadonlySet<string> {
+  const reachable = new Set([source])
+  for (const id of reachable) for (const edge of graph.edges) if (edge.source === id) reachable.add(edge.target)
+  return reachable
+}
+
+export function webhookResponseDiagnostics(graph: Graph, triggerId: string, path = `/document/graph/nodes/${triggerId}`): readonly Diagnostic[] {
+  const trigger = graph.nodes[triggerId]
+  if (trigger?.kind != 'webhook') return []
+  const options = trigger.options ?? {}
+  const response = options.responseBody
+  const statusOutput = options.responseStatusCodeOutput
+  const statusPath = `${path}/options/responseStatusCodeOutput`
+  const diagnostics: Diagnostic[] = []
+  const headersSource = options.responseHeadersSource
+  const headerOutputs = options.responseHeaderOutputs
+  const headersPath = `${path}/options/${headersSource == null ? 'responseHeaderOutputs' : 'responseHeadersSource'}`
+  if (response?.kind !== 'workflow-outputs') {
+    if (statusOutput != null)
+      diagnostics.push(
+        graphDiagnostic('trigger.webhook-response-status-source', 'Choose workflow outputs as the response source to use a status output.', statusPath),
+      )
+    if (headersSource != null || headerOutputs != null)
+      diagnostics.push(
+        graphDiagnostic('trigger.webhook-response-headers-source', 'Choose workflow outputs as the response source to use dynamic headers.', headersPath),
+      )
+    if (response?.kind === 'webhook-response') {
+      const location = `${path}/options/responseBody/nodeId`
+      const { nodeId } = response
+      if (nodeId == null || graph.nodes[nodeId]?.kind !== 'webhook-response')
+        diagnostics.push(graphDiagnostic('trigger.webhook-response-node-missing', 'Select a Webhook Response node.', location))
+      else if (!executionReachableNodes(graph, triggerId).has(nodeId))
+        diagnostics.push(graphDiagnostic('trigger.webhook-response-node-unreachable', 'Connect this Webhook to the selected Webhook Response node.', location))
+    }
+    return diagnostics
+  }
+  if (headersSource == null) {
+    for (const [headers, location] of [
+      [options.responseHeaders, `${path}/options/responseHeaders`],
+      [headerOutputs, headersPath],
+    ] as const) {
+      const names: string[] = []
+      for (const name of Object.keys(headers ?? {})) {
+        if (webhookHeaderNameIssue(name, names) != null)
+          diagnostics.push(graphDiagnostic('trigger.webhook-response-header-name', 'Use valid, unique HTTP header names.', location))
+        names.push(name)
+      }
+    }
+  }
+  const responsePath = `${path}/options/responseBody`
+  const outputs = Object.entries(graph.nodes).filter(([, node]) => node.kind == 'outputs')
+  if (outputs.length == 0) {
+    diagnostics.push(graphDiagnostic('trigger.webhook-response-outputs-missing', 'Add a workflow Outputs node for the HTTP response.', responsePath))
+  } else if (outputs.length == 1) {
+    const output = outputs[0]!
+    const reachable = executionReachableNodes(graph, triggerId)
+    if (!reachable.has(output[0]))
+      diagnostics.push(graphDiagnostic('trigger.webhook-response-unreachable', 'Connect this Webhook to the workflow Outputs node.', responsePath))
+    const field = response.output
+    if (field != null && output[1].kind == 'outputs' && !output[1].outputDefs.some((port) => port.handle == field))
+      diagnostics.push(
+        graphDiagnostic('trigger.webhook-response-output-missing', `Workflow output "${field}" does not exist.`, `${responsePath}/output`, { output: field }),
+      )
+    if (statusOutput != null && output[1].kind == 'outputs') {
+      const port = output[1].outputDefs.find((candidate) => candidate.handle == statusOutput)
+      if (port == null)
+        diagnostics.push(
+          graphDiagnostic('trigger.webhook-response-status-output-missing', `Workflow status output "${statusOutput}" does not exist.`, statusPath, {
+            output: statusOutput,
+          }),
+        )
+      else if (!portsAssignable(port, webhookStatusCodePort))
+        diagnostics.push(
+          graphDiagnostic('trigger.webhook-response-status-output-type', 'Choose a numeric workflow output for the response status code.', statusPath),
+        )
+    }
+    if (output[1].kind == 'outputs') {
+      const fields = output[1].outputDefs
+      const checkHeaderSource = (headerField: string | undefined, target: PortDefinition, location: string) => {
+        const port = headerField == null ? workflowOutputsPort(fields) : fields.find((candidate) => candidate.handle == headerField)
+        if (port == null)
+          diagnostics.push(
+            graphDiagnostic('trigger.webhook-response-header-output-missing', `Workflow output "${headerField}" does not exist.`, location, {
+              output: headerField!,
+            }),
+          )
+        else if (!portsAssignable(port, target))
+          diagnostics.push(
+            graphDiagnostic('trigger.webhook-response-header-output-type', 'Choose a compatible workflow output for the response headers.', location),
+          )
+      }
+      if (headersSource != null) checkHeaderSource(headersSource.output, webhookHeadersPort, headersPath)
+      else
+        for (const [name, headerField] of Object.entries(headerOutputs ?? {}))
+          checkHeaderSource(headerField, webhookHeaderValuePort, `${headersPath}/${name.replaceAll('~', '~0').replaceAll('/', '~1')}`)
+    }
+  }
+  if (statusOutput == null && !webhookResponseAllowsBody(options.responseStatusCode ?? 200))
+    diagnostics.push(
+      graphDiagnostic('trigger.webhook-response-status-invalid', 'Choose a response status code that permits a body.', `${path}/options/responseStatusCode`),
+    )
+  return diagnostics
+}
+
 function validateTrigger(triggerId: string, trigger: TriggerNode, path: string, diagnostics: Diagnostic[]): void {
   if (trigger.kind == 'start') return
-  const outputs = triggerOutputDefinitions(trigger, [])
+  const outputs = triggerOutputDefinitions(trigger)
   if (outputs.some((port) => hasRetiredRef(port.jsonSchema)))
     diagnostics.push(graphDiagnostic('graph.schema-unsupported', 'Runtime Ref schemas are not supported.', path))
   const outputHandles = outputs.map((port) => port.handle)
@@ -85,10 +202,12 @@ function validateTrigger(triggerId: string, trigger: TriggerNode, path: string, 
   }
 }
 
-export function nodeInputPorts(node: GraphNode, document?: Pick<FlowDocument, 'outputDefs'>): Readonly<Record<string, InputPortDefinition>> {
+export function nodeInputPorts(node: GraphNode): Readonly<Record<string, InputPortDefinition>> {
   switch (node.kind) {
+    case 'webhook-response':
+      return portsByHandle(webhookResponseInputs)
     case 'outputs':
-      return portsByHandle(document?.outputDefs ?? [])
+      return portsByHandle(node.outputDefs)
     case 'condition':
       return conditionInputPorts(node)
     case 'value':
@@ -150,8 +269,9 @@ export function resolutionOutputPorts(node: Extract<GraphNode, { readonly kind: 
   }
 }
 
-export function nodeOutputPorts(node: GraphNode, inputDefs: readonly Port[]): Readonly<Record<string, PortDefinition>> {
+export function nodeOutputPorts(node: GraphNode): Readonly<Record<string, PortDefinition>> {
   switch (node.kind) {
+    case 'webhook-response':
     case 'outputs':
     case 'condition':
       return {}
@@ -169,13 +289,19 @@ export function nodeOutputPorts(node: GraphNode, inputDefs: readonly Port[]): Re
     case 'manual':
     case 'start':
     case 'webhook':
-      return triggerOutputPorts(node, inputDefs)
+      return triggerOutputPorts(node)
   }
 }
 
-export function nodeOutputDescription(graph: Graph, nodeId: string, output: string, inputDefs: readonly Port[]): string | undefined {
+function nodeSourceOutputPorts(node: GraphNode, system?: true): Readonly<Record<string, PortDefinition>> {
+  if (system) return nodeSystemOutputPorts(node)
+  const ports = nodeOutputPorts(node)
+  return node.onError == 'error' ? Object.fromEntries(Object.entries(ports).map(([key, port]) => [key, { ...port, nullable: true }])) : ports
+}
+
+export function nodeOutputDescription(graph: Graph, nodeId: string, output: string): string | undefined {
   const node = graph.nodes[nodeId]
-  return node == null ? undefined : nodeOutputPorts(node, inputDefs)[output]?.description
+  return node == null ? undefined : nodeOutputPorts(node)[output]?.description
 }
 
 function checkSource(
@@ -211,7 +337,7 @@ function checkSource(
         )
         return
       }
-      const output = nodeOutputPorts(upstream, document.inputDefs ?? [])[source.output]
+      const output = nodeSourceOutputPorts(upstream, source.system)[source.output]
       if (output == null) {
         diagnostics.push(
           graphDiagnostic('graph.source-missing', `Upstream node "${source.nodeId}" does not expose output "${source.output}".`, path, {
@@ -422,6 +548,7 @@ export type InputSourceCheck =
 export type InputSourceCandidateCheck = Extract<InputSourceCheck, { readonly kind: 'available' | 'schema' | 'schema-error' }>
 
 interface InputSourceFieldCandidate {
+  readonly system?: true
   readonly description?: string
   readonly output: string
   readonly field: string
@@ -429,6 +556,7 @@ interface InputSourceFieldCandidate {
 }
 
 export interface InputSourceCandidate {
+  readonly system?: true
   readonly description?: string
   readonly field?: string
   readonly fields?: readonly InputSourceFieldCandidate[]
@@ -452,16 +580,14 @@ export function checkInputSource(
   graph: Graph,
   target: string,
   handle: string,
-  source: Pick<NodeSource, 'nodeId' | 'output' | 'field'>,
-  inputDefs: readonly Port[],
-  document?: Pick<FlowDocument, 'outputDefs'>,
+  source: Pick<NodeSource, 'nodeId' | 'output' | 'field' | 'system'>,
 ): InputSourceCheck {
   const node = graph.nodes[source.nodeId]
   const targetNode = graph.nodes[target]
   if (node == null) return { kind: 'source-missing' }
   if (targetNode == null) return { kind: 'not-ready' }
-  const output = nodeOutputPorts(node, inputDefs)[source.output]
-  const input = nodeInputPorts(targetNode, document)[handle]
+  const output = nodeSourceOutputPorts(node, source.system)[source.output]
+  const input = nodeInputPorts(targetNode)[handle]
   if (output == null) return { kind: 'output-missing' }
   if (input == null) return { kind: 'not-ready' }
   const analysis = graphPaths(graph)
@@ -476,11 +602,9 @@ export function checkInputSources(
   graph: Graph,
   target: string,
   handle: string,
-  sources: readonly Pick<NodeSource, 'nodeId' | 'output' | 'field'>[],
-  inputDefs: readonly Port[],
-  document?: Pick<FlowDocument, 'outputDefs'>,
+  sources: readonly Pick<NodeSource, 'nodeId' | 'output' | 'field' | 'system'>[],
 ): InputSourcesCheck {
-  const checks = sources.map((source) => checkInputSource(graph, target, handle, source, inputDefs, document))
+  const checks = sources.map((source) => checkInputSource(graph, target, handle, source))
   const conflict =
     checks.length > 1 &&
     checks.every((check) => check.kind == 'available') &&
@@ -489,50 +613,54 @@ export function checkInputSources(
 }
 
 /** Enumerate structurally available outputs while retaining their compatibility with one input. */
-export function inputSourceCandidates(
-  graph: Graph,
-  target: string,
-  handle: string,
-  inputDefs: readonly Port[],
-  document?: Pick<FlowDocument, 'outputDefs'>,
-): Readonly<Record<string, readonly InputSourceCandidate[]>> {
+export function inputSourceCandidates(graph: Graph, target: string, handle: string): Readonly<Record<string, readonly InputSourceCandidate[]>> {
   const targetNode = graph.nodes[target]
-  const input = targetNode == null ? undefined : nodeInputPorts(targetNode, document)[handle]
+  const input = targetNode == null ? undefined : nodeInputPorts(targetNode)[handle]
   if (input == null) return {}
   const analysis = graphPaths(graph)
   return Object.fromEntries(
     [...(analysis.ancestors.get(target) ?? [])].flatMap((nodeId) => {
       const node = graph.nodes[nodeId]
       if (node == null) return []
-      const outputs = Object.entries(nodeOutputPorts(node, inputDefs)).flatMap(([output, definition]) => {
-        if (!mappingAvailable(graph, target, { kind: 'sources', sources: [{ kind: 'node', nodeId, output }] }, analysis)) return []
+      const ports = [
+        ...Object.entries(nodeSourceOutputPorts(node)).map(([output, definition]) => ({ output, definition, system: undefined })),
+        ...Object.entries(nodeSystemOutputPorts(node)).map(([output, definition]) => ({ output, definition, system: true as const })),
+      ]
+      const outputs = ports.flatMap(({ output, definition, system }) => {
+        if (!mappingAvailable(graph, target, { kind: 'sources', sources: [{ kind: 'node', nodeId, output, ...(system ? { system } : {}) }] }, analysis))
+          return []
         const check = sourceCompatibility(definition, input)
         const fields = sourceFields(definition).map(({ field, port }) =>
-          Object.assign({ output, field, check: sourceCompatibility(port, input) }, port.description == null ? {} : { description: port.description }),
+          Object.assign(
+            { output, field, ...(system ? { system } : {}), check: sourceCompatibility(port, input) },
+            port.description == null ? {} : { description: port.description },
+          ),
         )
-        return [{ ...(definition.description == null ? {} : { description: definition.description }), output, check, ...(fields.length > 0 ? { fields } : {}) }]
+        return [
+          {
+            ...(system ? { system } : {}),
+            ...(definition.description == null ? {} : { description: definition.description }),
+            output,
+            check,
+            ...(fields.length > 0 ? { fields } : {}),
+          },
+        ]
       })
       return outputs.length == 0 ? [] : [[nodeId, outputs]]
     }),
   )
 }
 
-export function availableOutputs(
-  graph: Graph,
-  target: string,
-  handle: string | undefined,
-  inputDefs: readonly Port[],
-  document?: Pick<FlowDocument, 'outputDefs'>,
-): Readonly<Record<string, readonly string[]>> {
+export function availableOutputs(graph: Graph, target: string, handle: string | undefined): Readonly<Record<string, readonly string[]>> {
   const analysis = graphPaths(graph)
   return Object.fromEntries(
     [...(analysis.ancestors.get(target) ?? [])].flatMap((id) => {
       const node = graph.nodes[id]
       if (node == null) return []
-      const outputs = Object.keys(nodeOutputPorts(node, inputDefs)).filter(
+      const outputs = Object.keys(nodeOutputPorts(node)).filter(
         (output) =>
           mappingAvailable(graph, target, { kind: 'sources', sources: [{ kind: 'node', nodeId: id, output }] }, analysis) &&
-          (handle == null || portsAssignable(nodeOutputPorts(node, inputDefs)[output]!, nodeInputPorts(graph.nodes[target]!, document)[handle]!)),
+          (handle == null || portsAssignable(nodeOutputPorts(node)[output]!, nodeInputPorts(graph.nodes[target]!)[handle]!)),
       )
       return outputs.length == 0 ? [] : [[id, outputs]]
     }),
@@ -560,13 +688,38 @@ function validateResolution(nodeId: string, node: Extract<GraphNode, { readonly 
 }
 
 function validateGraph(graph: Graph, document: FlowDocument, path: string, diagnostics: Diagnostic[]): void {
-  const inputDefs = document.inputDefs ?? []
   const analysis = graphPaths(graph)
   const errorTriggers = Object.entries(graph.nodes).filter(([, node]) => node.kind == 'error')
   if (errorTriggers.length > 1)
     for (const [nodeId] of errorTriggers)
       diagnostics.push(graphDiagnostic('graph.error-trigger-duplicate', 'A graph can contain only one Flow Error node.', `${path}/nodes/${nodeId}`))
   const outputNodes = Object.entries(graph.nodes).filter(([, node]) => node.kind == 'outputs')
+  for (const [nodeId, node] of Object.entries(graph.nodes)) {
+    if (node.kind == 'webhook') diagnostics.push(...webhookResponseDiagnostics(graph, nodeId, `${path}/nodes/${nodeId}`))
+    if (node.kind === 'webhook-response') {
+      const status = node.inputs.statusCode
+      if (status?.kind === 'value' && !validWebhookStatus(status.value))
+        diagnostics.push(
+          graphDiagnostic(
+            'webhook.response-status-invalid',
+            'Use an integer status from 200 to 599, excluding 204, 205 and 304.',
+            `${path}/nodes/${nodeId}/inputs/statusCode`,
+          ),
+        )
+      const headers = node.inputs.headers
+      if (
+        headers?.kind === 'value' &&
+        (webhookHeaderValues(headers.value) == null || Object.values(headers.value as Record<string, unknown>).some((value) => typeof value !== 'string'))
+      )
+        diagnostics.push(
+          graphDiagnostic(
+            'webhook.response-headers-invalid',
+            'Use valid, unique HTTP header names and single-line text values.',
+            `${path}/nodes/${nodeId}/inputs/headers`,
+          ),
+        )
+    }
+  }
   if (outputNodes.length > 1)
     for (const [nodeId] of outputNodes)
       diagnostics.push(graphDiagnostic('graph.outputs-duplicate', 'A graph can contain only one Outputs node.', `${path}/nodes/${nodeId}`))
@@ -600,21 +753,28 @@ function validateGraph(graph: Graph, document: FlowDocument, path: string, diagn
     if (!isTriggerNode(node) && node.maxExecutions != null && (!Number.isSafeInteger(node.maxExecutions) || node.maxExecutions < 1)) {
       diagnostics.push(graphDiagnostic('node.max-executions-invalid', 'Maximum executions must be a positive safe integer.', `${nodePath}/maxExecutions`))
     }
+    if (node.onError != null && (!supportsNodeErrorHandling(node) || !['stop', 'error'].includes(node.onError)))
+      diagnostics.push(graphDiagnostic('node.error-handling-invalid', 'This node does not support this error handling setting.', `${nodePath}/onError`))
+    if ('retry' in node && node.retry != null) {
+      if (!supportsNodeRetry(node)) diagnostics.push(graphDiagnostic('node.retry-unsupported', 'This node does not support retries.', `${nodePath}/retry`))
+      if (!retryConfigurationSchema.safeParse(node.retry).success)
+        diagnostics.push(graphDiagnostic('node.retry-invalid', 'Retries must be 0–5 with an interval of 1–60 whole seconds.', `${nodePath}/retry`))
+    }
     if (isTriggerNode(node)) {
       validateTrigger(nodeId, node, nodePath, diagnostics)
       continue
     }
-    for (const [handle, mapping] of Object.entries(nodeInputMappings(node, document))) {
+    for (const [handle, mapping] of Object.entries(nodeInputMappings(node))) {
       if (!mappingAvailable(graph, nodeId, mapping, analysis))
         diagnostics.push(
           graphDiagnostic(
             'graph.source-unavailable',
             'Input sources must reference execution ancestors, respect pending Wait decisions, and never provide multiple values on the same path.',
-            node.kind == 'outputs' ? `/document/outputMappings/${handle.replaceAll('~', '~0').replaceAll('/', '~1')}` : `${nodePath}/inputs/${handle}`,
+            node.kind == 'outputs' ? `${nodePath}/outputMappings/${handle.replaceAll('~', '~0').replaceAll('/', '~1')}` : `${nodePath}/inputs/${handle}`,
           ),
         )
     }
-    const inputPorts = nodeInputPorts(node, document)
+    const inputPorts = nodeInputPorts(node)
     if (node.kind == 'task') {
       const ports = [...node.task.inputs, ...(node.additionalInputs ?? [])]
       const handles = new Set<string>()
@@ -631,14 +791,14 @@ function validateGraph(graph: Graph, document: FlowDocument, path: string, diagn
         handles.add(port.handle)
       }
     }
-    const ports = [...Object.values(inputPorts), ...Object.values(nodeOutputPorts(node, inputDefs))]
+    const ports = [...Object.values(inputPorts), ...Object.values(nodeOutputPorts(node))]
     if (ports.some((port) => hasRetiredRef(port.jsonSchema))) {
       diagnostics.push(graphDiagnostic('graph.schema-unsupported', 'Runtime Ref schemas are not supported.', nodePath))
     }
     const inputs = new Set(Object.keys(inputPorts))
-    for (const [handle, mapping] of Object.entries(nodeInputMappings(node, document))) {
+    for (const [handle, mapping] of Object.entries(nodeInputMappings(node))) {
       const mappingPath =
-        node.kind == 'outputs' ? `/document/outputMappings/${handle.replaceAll('~', '~0').replaceAll('/', '~1')}` : `${nodePath}/inputs/${handle}`
+        node.kind == 'outputs' ? `${nodePath}/outputMappings/${handle.replaceAll('~', '~0').replaceAll('/', '~1')}` : `${nodePath}/inputs/${handle}`
       if (!inputs.has(handle)) {
         diagnostics.push(graphDiagnostic('graph.input-missing', `Node "${nodeId}" does not expose input "${handle}".`, mappingPath, { handle, nodeId }))
       }
@@ -699,16 +859,16 @@ function validateGraph(graph: Graph, document: FlowDocument, path: string, diagn
 
 export function validateFlowGraph(revision: RevisionContent): readonly Diagnostic[] {
   const diagnostics: Diagnostic[] = []
-  const outputDefs = revision.document.outputDefs ?? []
-  if (new Set(outputDefs.map((port) => port.handle)).size != outputDefs.length)
-    diagnostics.push(graphDiagnostic('graph.port-duplicate', 'Workflow output names must be unique.', '/document/outputDefs'))
-  if (outputDefs.some((port) => hasRetiredRef(port.jsonSchema)))
-    diagnostics.push(graphDiagnostic('graph.schema-unsupported', 'Runtime Ref schemas are not supported.', '/document/outputDefs'))
-  const inputDefs = revision.document.inputDefs ?? []
-  if (new Set(inputDefs.map((port) => port.handle)).size != inputDefs.length)
-    diagnostics.push(graphDiagnostic('graph.port-duplicate', 'Workflow input names must be unique.', '/document/inputDefs'))
-  if (inputDefs.some((port) => hasRetiredRef(port.jsonSchema)))
-    diagnostics.push(graphDiagnostic('graph.schema-unsupported', 'Runtime Ref schemas are not supported.', '/document/inputDefs'))
+  for (const [id, node] of Object.entries(revision.document.graph.nodes)) {
+    if (node.kind != 'start' && node.kind != 'outputs') continue
+    const field = node.kind == 'start' ? 'inputDefs' : 'outputDefs'
+    const ports = node.kind == 'start' ? node.inputDefs : node.outputDefs
+    const path = `/document/graph/nodes/${id.replaceAll('~', '~0').replaceAll('/', '~1')}/${field}`
+    if (new Set(ports.map((port) => port.handle)).size != ports.length)
+      diagnostics.push(graphDiagnostic('graph.port-duplicate', 'Workflow interface names must be unique.', path))
+    if (ports.some((port) => hasRetiredRef(port.jsonSchema)))
+      diagnostics.push(graphDiagnostic('graph.schema-unsupported', 'Runtime Ref schemas are not supported.', path))
+  }
   for (const [bindingId, binding] of Object.entries(revision.document.bindings)) {
     if (binding.kind == 'variable' && !validVariableName(binding.target)) {
       diagnostics.push(

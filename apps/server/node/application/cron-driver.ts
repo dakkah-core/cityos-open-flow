@@ -103,7 +103,7 @@ export class CronDriver {
       }
       const scheduledAt = new Date(target.nextAt).toISOString()
       const outputs = { scheduledAt }
-      if (!matchesTriggerOutputs(trigger, outputs, [])) return yield* Effect.fail(new Error('Invalid Cron Trigger outputs.'))
+      if (!matchesTriggerOutputs(trigger, outputs)) return yield* Effect.fail(new Error('Invalid Cron Trigger outputs.'))
       const occurrenceId = yield* Effect.tryPromise({
         try: () => scheduledTriggerOccurrenceId(target.bindingId, target.runtimeVersion, scheduledAt),
         catch: (error) => error,

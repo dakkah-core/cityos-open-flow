@@ -10,6 +10,8 @@ The first version provides Flow authoring and execution tools. It does not dynam
 
 ## 2. Authentication and connection
 
+The MCP URL shown and copied in Agent access uses the public address configured in Settings (or `OPEN_FLOW_INTEGRATION_PUBLIC_ORIGIN` when environment-managed). Without a configured public address, it uses the browser's current origin.
+
 Operator and email users create a personal access Token in Agent access. Configure the client with the `/v1/mcp` URL and this header:
 
 ```http
@@ -131,7 +133,7 @@ Typical workflow:
 
 1. Find a Flow with `flow_list` and `flow_read`, or create one with `flow_create`. OOMOL Connector deployments can first select a Team through `connector_teams`.
 2. Locate a target with `flow_search`. Use `flow_read` for details or text at a pinned revision. `flow_schema {"type":"code"}` returns node configuration and examples; query Action ports with `{flowId,action}`. `flow_edit` executes semantic operations atomically in order. Creation uses batch-local aliases and requires no internal definition IDs.
-3. New Flows have no Trigger. Explicitly add Start or another Trigger. Use `flow.update set.inputDefs` to declare workflow call parameters; the `flow_read` outline returns them directly, and Start config is empty; callers supply them through trigger.outputs. Call `flow_check` with the Revision identity returned by editing.
+3. New Flows have no Trigger. Explicitly add Start or another Trigger. Use Start `config.inputDefs` to declare workflow call parameters; `flow_read` node details return them; callers supply them through trigger.outputs. Call `flow_check` with the Revision identity returned by editing.
 4. To publish, call `flow_publish` with pinned `flowId`, `revisionId`, and `expectedLivePublicationId` observed from `flow_list`. Use `null` for the first publication. Poll `flow_publish_status`: `pending` means work continues, `succeeded` confirms publication, and `failed` returns an `issue`. Use `flow_set_enabled` to enable or disable a published Flow. `expectedPublicationId` prevents changing a replacement Live publication.
 5. Draft Runs use `source: "draft"`, `flowId`, and `revisionId`. Live Runs use `source: "live"` and `publicationId`. Do not mix version fields from these sources. `trigger` requires `nodeId` and `outputs`. `inputs` maps node IDs to input values and defaults to `{}`.
 6. `flow_run` returns `runId`; `run_list` can find existing Runs. Query `run_get`, then call `run_result` after a terminal state. `waiting` returns Wait identity and allowed actions. Explicitly submit a permitted `approve`, `reject`, or `continue` through `run_resolve_wait`; do not approve automatically. The first resolution wins. Check `resolutionAccepted` and the authoritative returned `action`. After resumption, query the same Run instead of calling `flow_run` again.
@@ -179,7 +181,7 @@ Agent tool arguments also accept only name-indexed `model`, `value`, or `input` 
 
 `trigger_search({ query? })` replaces `trigger_list`. Without query, it lists all available definition summaries; with query, it performs case-insensitive matching. Read Trigger instances already in a Flow through `flow_read`. Connector and Trigger search queries permit 1–256 characters.
 
-Event sources are deployment resources independent of Flows. `event_source_list({})` lists sources visible to the current identity; each item’s `consumers` shows actual usage. When configuring a Feishu Trigger, use `connector_connections({ serviceId: "feishu_app_bot", flowId })` to match its Connection.
+Event sources are deployment resources independent of Flows. `event_source_list({})` lists sources visible to the current identity; each item’s `consumers` shows actual usage. When configuring a shared-source Trigger, match its source Connection using `connector_connections({ serviceId, flowId })`. Use the source provider: `feishu_app_bot`, `slackbot`, `intercom`, `sentry`, `zoom`, `fireflies`, or `jira`. Select a source in the Flow’s Team with the required event types and a verified callback (or a ready managed subscription for Jira); create and verify missing sources in Workbench.
 
 If the list is empty, the tool instructs the caller to create and verify an event source in Workbench before querying again. Tools neither accept nor return event source secrets. Returned `sourceId`, `teamId`, `connectionId`, `eventTypes`, `enabled`, and `verifiedAt` support selection and confirmation.
 

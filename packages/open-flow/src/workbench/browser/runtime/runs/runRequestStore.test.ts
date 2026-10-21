@@ -485,15 +485,12 @@ function startDraft(required = false): Draft {
       ...draft.content,
       document: {
         ...draft.content.document,
-        inputDefs: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: !required }],
+
         graph: {
           ...draft.content.document.graph,
           nodes: {
             ...draft.content.document.graph.nodes,
-            start: {
-              kind: 'start',
-              name: 'Start',
-            },
+            start: { kind: 'start', name: 'Start', inputDefs: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: !required }] },
           },
         },
       },
@@ -553,13 +550,14 @@ it('prefers Start over an earlier event trigger and normalizes Live run paramete
     content: {
       ...startDraft().content,
       document: {
-        inputDefs: startDraft().content.document.inputDefs,
         bindings: {},
         graph: {
           edges: [],
           nodes: {
             timer: { kind: 'cron', name: 'Schedule', cronTimes: [{ type: 'every', unit: 'hour', value: 1 }] },
-            start: startDraft().content.document.graph.nodes.start!,
+            start: {
+              ...(startDraft().content.document.graph.nodes.start! as Extract<import('../../../../flow/common/change.ts').GraphNode, { kind: 'start' }>),
+            },
           },
         },
       },
@@ -602,10 +600,10 @@ function parameterDraft(parameters: readonly Port[], revisionId = 'revision'): D
       ...base.content,
       document: {
         ...base.content.document,
-        inputDefs: parameters,
+
         graph: {
           ...base.content.document.graph,
-          nodes: { ...base.content.document.graph.nodes, start: { kind: 'start', name: 'Start' } },
+          nodes: { ...base.content.document.graph.nodes, start: { kind: 'start', name: 'Start', inputDefs: parameters } },
         },
       },
     },

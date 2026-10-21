@@ -1,11 +1,20 @@
 import type { RunEvent } from '@oomol-lab/open-flow/control-api'
+import type { RevisionContent } from '@oomol-lab/open-flow/flow-change'
 import type { createMocks } from './mocks.ts'
 import type { Sample } from './scenarios.ts'
 
 import { isDeepStrictEqual } from 'node:util'
 type Calls = ReturnType<typeof createMocks>['calls']
 /** Runtime expectations are independent of the reference program and editing strategy. */
-export function runtimeAssertions(id: string, sample: Sample, status: string, calls: Calls, modelCalls: unknown[], events: readonly RunEvent[]): string[] {
+export function runtimeAssertions(
+  id: string,
+  sample: Sample,
+  status: string,
+  calls: Calls,
+  modelCalls: unknown[],
+  events: readonly RunEvent[],
+  content: RevisionContent,
+): string[] {
   const errors: string[] = []
   if (sample.failure) {
     if (
@@ -16,6 +25,69 @@ export function runtimeAssertions(id: string, sample: Sample, status: string, ca
     return errors
   }
   if (status != 'completed') return [`Run ${sample.name} ended ${status}.`]
+  if (id == 'node-errors') {
+    const terminal = events.findLast((event) => event.kind == 'run.completed')
+    const result = terminal?.kind == 'run.completed' ? terminal.payload.result : undefined
+    const output = result != null && typeof result == 'object' && 'outputs' in result ? result.outputs : undefined
+    const failure = output != null && typeof output == 'object' && 'failure' in output ? output.failure : undefined
+    const failedId = Object.entries(content.document.graph.nodes).find(([, node]) => node.name == 'Failed task')?.[0]
+    if (
+      output == null ||
+      typeof output != 'object' ||
+      !('business' in output) ||
+      !('successError' in output) ||
+      output.business != 'business' ||
+      output.successError !== null ||
+      failure == null ||
+      typeof failure != 'object' ||
+      Array.isArray(failure) ||
+      !('code' in failure) ||
+      !('message' in failure) ||
+      !('nodeId' in failure) ||
+      !('nodeName' in failure) ||
+      !('runId' in failure) ||
+      !('executionId' in failure) ||
+      failure.code != 'node.failed' ||
+      failure.message != 'Expected failure' ||
+      failure.nodeId != failedId ||
+      typeof failure.nodeName != 'string' ||
+      typeof failure.runId != 'string' ||
+      typeof failure.executionId != 'string' ||
+      events.filter((event) => event.kind == 'node.failed' && event.payload.nodeId == failedId && event.payload.handled === true).length != 1 ||
+      calls.length ||
+      modelCalls.length
+    )
+      errors.push('Preserve the business error field, output null on success and handle the failed task once with a complete system error.')
+  }
+  if (id == 'node-retries') {
+    const tasks = ['Retried task updated', 'Cleared task'].map(
+      (name) => Object.entries(content.document.graph.nodes).find(([, node]) => node.kind == 'task' && 'moduleId' in node.task && node.name == name)?.[0],
+    )
+    const completions = events.filter((event) => event.kind == 'node.completed')
+    if (
+      tasks.some((nodeId) => {
+        const completed = completions.filter((event) => event.payload.nodeId == nodeId)
+        return nodeId == null || completed.length != 1 || !isDeepStrictEqual(completed[0]!.payload.outputs, { value: 42 })
+      }) ||
+      calls.length ||
+      modelCalls.length
+    )
+      errors.push('Execute both configured tasks once without external calls.')
+  }
+  if (id == 'workflow-call') {
+    const terminal = events.findLast((event) => event.kind == 'run.completed')
+    const result = terminal?.kind == 'run.completed' ? terminal.payload.result : undefined
+    if (
+      result == null ||
+      typeof result != 'object' ||
+      Array.isArray(result) ||
+      !('outputs' in result) ||
+      !isDeepStrictEqual(result.outputs, { total: Number(sample.outputs?.amount) * 2 })
+    )
+      errors.push('Return the called workflow business output.')
+    if (events.some((event) => event.kind == 'node.log')) errors.push('Child logs must remain in the child Run.')
+    if (!events.some((event) => event.kind == 'node.started' && event.payload.nodeKind == 'workflow')) errors.push('Execute the workflow call node.')
+  }
   if (id == 'workflow-outputs') {
     const terminal = events.findLast((event) => event.kind == 'run.completed')
     const result = terminal?.kind == 'run.completed' ? terminal.payload.result : undefined

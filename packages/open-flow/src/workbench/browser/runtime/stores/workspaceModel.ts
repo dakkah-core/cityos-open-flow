@@ -4,7 +4,7 @@ import type { Diagnostic, Draft, Flow, FlowCheck, Live, Presentation } from '../
 import type { AddNodeOption } from '../editor/addNodeOptions.ts'
 import type { DiagnosticFocus, DiagnosticItem } from '../editor/diagnostics.ts'
 import type { ResolvedSelection, RevisionView } from '../revisionView.ts'
-import type { FlowCatalog } from './flowCatalog.ts'
+import type { FlowCatalog, FlowCatalogItem } from './flowCatalog.ts'
 
 import { compute, derive, val } from 'value-enhancer'
 import { deriveAddNodeOptions } from '../editor/addNodeOptions.ts'
@@ -69,7 +69,7 @@ export interface Workspace$ {
   readonly flowNextCursor: ReadonlyVal<string | undefined>
   readonly flowRefreshing: ReadonlyVal<boolean>
   readonly flowTotal: ReadonlyVal<number | undefined>
-  readonly flows: ReadonlyVal<readonly Flow[]>
+  readonly flows: ReadonlyVal<readonly FlowCatalogItem[]>
   readonly inspectorDiagnostics: ReadonlyVal<readonly Diagnostic[]>
   readonly live: ReadonlyVal<Live | undefined>
   readonly moduleEditor: ReadonlyVal<ModuleEditor | undefined>

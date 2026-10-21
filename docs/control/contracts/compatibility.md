@@ -1,18 +1,70 @@
 # Public contracts and version evolution
 
-## Flow model v8: workflow Outputs
+## Dynamic Webhook responses: Flow model v10 and Engine v7
 
-Model v8 adds the singleton `outputs` execution sink and optional `FlowDocument.outputDefs` and `outputMappings`. The definitions and mappings remain workflow-owned when the node is deleted. Strict decoding rejects this capability in older model versions. New edits produce model v8; v2/v4/v5/v6/v7 revisions retain their historical encoding, digests and execution behavior. Existing Manual-to-Start upgrades remain lossless. Neither the Revision envelope nor the engine contract changes.
+Model v10 adds optional Webhook `options.responseBody` with
+`{ kind: "workflow-outputs", output?: string, timeoutMs?: number }`. A missing field preserves
+immediate `responseData`; the new mode waits for the accepted Run to succeed and returns only its
+business outputs. Timeout defaults to 30000 ms and accepts 1000–60000 ms. It includes queueing and
+durable waits, and does not cancel the Run. Field omission returns the complete object; strings
+return plain text and other JSON values return JSON. Missing executed outputs are an HTTP error. Optional `responseStatusCodeOutput` selects a numeric
+top-level output as the HTTP status only in workflow-output response mode. Fixed
+`responseStatusCode` is preserved; missing or invalid dynamic statuses return 500. This addition
+shares the unreleased v10 boundary. Optional `responseHeadersSource` selects the complete business
+output object or one top-level object, and `responseHeaderOutputs` maps HTTP header names to top-level
+output names. These policies require workflow-output response mode and share v10. Header values
+support text, numbers and booleans, with scalar conversion to text. Whole-object selection replaces
+fixed/per-header values while preserving their configuration; invalid dynamic headers return 500.
+Deployment-owned response header restrictions remain unchanged.
 
-Run completion retains `kind: 'node-results'` and its `nodes` array. The optional sibling `outputs` object contains the last successful Outputs invocation's business result. It is absent when Outputs never executed and `{}` when it executed with no declared fields. Node execution events and terminal node results remain independently available. Outputs uses ordinary dependency snapshots, loops, cancellation and checkpoint recovery.
+The published npm `0.1.0-beta.69` artifact (gitHead
+`026f74f27383188f3f771352e10e7a84bca89550`) uses model v9. A new model boundary prevents old
+servers from discarding the response policy and acknowledging requests immediately. Model v9 and
+older readable Revisions retain their original bytes and digests; editing uses the existing explicit
+Draft upgrade. Historical Publications and Runs are unchanged. Dynamic configuration is rejected
+in older model envelopes. The workflow-output response projection alone preserves Engine v6. This release also adds
+`webhook-response` nodes and `responseBody: { kind: "webhook-response", nodeId?, timeoutMs? }`,
+requiring Engine v7 and a new isolation digest. A node completes with response metadata separately
+from its empty business outputs. Its first committed root-Run response is persisted independently
+of event history; HTTP returns immediately while execution continues. Checkpoint shape remains v6.
+The published v6 and v6/nodejs-compat-v1 contracts remain available for existing Publications and
+Runs, preserving their platform identity and builtin allowlist. They cannot prepare Webhook response
+nodes or select them as response sources. Server also supports the beta.69 isolated runtime digest
+for these two contracts: its execution and v6 checkpoint protocol remain compatible for graphs
+without response nodes. Unknown digests and older incompatible contracts remain rejected. Pinned
+Runs, checkpoints, Publications and Revision bytes are not rewritten. New Draft Runs and Publications
+use v7. Upgrade Server and clients together before publishing v10 Revisions.
 
-## Flow model v7: Start parameters
+## Node retries and error handling: Flow model v9 and Engine v6
 
-Flow model v7 replaces new Manual Trigger nodes with `{ kind: 'start', name, description?, icon? }`. Workflow input definitions live in optional `document.inputDefs`, an ordered list of ports with handle, JSON schema, nullable and description fields. The public authoring type is `start` with empty config; `flow.update set.inputDefs` uses named business field maps. Start has no input mappings or parameter defaults. Callers supply values through the existing Run request's `trigger.outputs` object. Required fields must be present, undeclared fields are rejected, and omitted nullable Start parameters become `null` before execution. Other Trigger output contracts remain complete and unchanged.
+Flow model v9 adds optional node-owned `retry: { maxRetries, intervalMs }` and `onError` settings, plus a separate system source namespace. Only ordinary Code,
+Connector, OpenAPI, LLM and AI Decision Tasks support it. Missing policy or zero retries preserves
+single-attempt behavior. Older models cannot contain this policy. Existing model v8 Revisions remain
+readable without changing their bytes or digests; editing upgrades the Draft through the existing
+explicit upgrade path. Historical Publications and Runs are not rewritten. Older binaries cannot
+execute model v9.
 
-Legacy node-owned `Start.parameters` is accepted at the shared document decoding boundary and moved losslessly to `document.inputDefs`. The ordered definitions, schemas, nullability and descriptions are preserved, as are node identities, metadata, downstream references and Modules. If workflow definitions or multiple legacy Start definitions disagree, decoding and repair reject the conflict instead of overwriting either contract. Invalid legacy parameter definitions are also rejected. Reads retain the stored Revision bytes, digest and model version; a subsequent edit writes the current workflow-owned shape into a new Revision. This refactor changes no model, API, envelope, or engine version number.
+Engine `open-flow-engine/v6` (including `/nodejs-compat-v1`) adds bounded Task retries and handled failures that continue along existing execution edges. The isolated
+runtime digest changes too. Before upgrading, finish or cancel active Runs on the old Engine, or keep
+the matching recovery environment. Old Engine-pinned Publications require republication before new
+execution. Scheduler checkpoints use v6 to retain handled failures and system output snapshots; retry intervals remain active execution, not durable waits.
+No pending retry is recovered by replaying an unconfirmed side effect.
 
-Strict decoders retain v2/v4/v5/v6 Manual nodes and preserve their original bytes, model version and digests. Their execution still has empty outputs. Public authoring reads present them as Start with no parameters without modifying the stored Revision. New writes, authoring compilation and workflow-file import use the shared lossless upgrade: retain node IDs, edges, names, metadata, Modules and other configuration, replace each Manual node with Start, preserve `document.inputDefs` including its omission, and produce model v7. Any workflow may omit `inputDefs` to declare no inputs. Decoding, encoding and unrelated edits retain that omission; it does not require an upgrade. Historical bytes and digests remain unchanged.
+## Node-owned interfaces and Publication snapshots
+
+The current model stores required `inputDefs` on Start and required `outputDefs`/`outputMappings` on Outputs. New nodes initialize empty configuration. Configuration is deleted with its node and restored by undo. Normal reads, authoring and repair reject top-level document interface fields and legacy `Start.parameters`. The current model and envelope version numbers remain unchanged; legacy conversion is an explicit storage upgrade, not dual-format authoring.
+
+Server schema migration 49 upgrades existing development and deployed databases in one startup transaction. It moves legacy definitions and mappings into their existing nodes, backfills every Publication interface from its fixed Revision, and upgrades serialized asynchronous publication inputs. Revision, Flow, Publication and Run IDs, Live selections, history and checkpoint bytes are preserved. Delta chains are verified and materialized before their bases change. Changed Revision bytes and their dependent Revision/closure digests are rewritten together, including trigger-scoped Draft Run digests; resource indexes are refreshed. This is a one-time storage rewrite, so older server binaries must not open the upgraded database.
+
+Fresh databases and migrated databases enforce Publication `interface_json` as `TEXT NOT NULL` without a default. Snapshots distinguish absent nodes (`null`) from nodes with no fields (`[]`). Databases already created with the new interface column require no content rewrite. Missing Publication Revisions, corrupt digests or deltas, conflicting configurations, duplicate special nodes, and nonempty definitions whose owning node is absent abort the entire migration without committing changes. These cases require explicit data repair rather than silently dropping configuration or inventing callable nodes.
+
+For historical Revisions that need no interface rewrite, snapshot backfill validates only the Start and Outputs nodes after verifying the stored digest. Retired Task definitions elsewhere in those Revisions do not block server startup. Their original bytes and digests remain unchanged, and normal Revision decoding and execution still reject unsupported definitions.
+
+Stop the previous server and back up the SQLite database before deploying this upgrade, including its WAL if present. Start the new server against the existing persistent data directory; startup performs the migration before serving traffic or resuming background work. Keep the backup for deployment rollback. Do not remove the Docker data volume to upgrade.
+
+Outputs retains ordinary dependency snapshots, loops, cancellation and checkpoint recovery. Run business outputs are absent when Outputs never executes and `{}` when it executes with no declared fields. Start normalizes omitted nullable arguments to null and rejects unknown or missing required arguments.
+
+Unrelated Manual compatibility remains: readable Manual nodes retain their historical bytes and behavior; new edits preserve identity and metadata while converting them to Start with empty node-owned `inputDefs`. This does not rewrite historical Publications or Runs.
 
 Workbench automatically requests the deterministic Draft upgrade when opening an editable legacy Flow. The upgrade creates a child Revision with CAS and a stable request identity. It does not use tolerant repair, drop malformed resources, overwrite historical content, or change Live, Publications, existing Runs or Presentation. Production keeps the published contract until the upgraded Draft is published. Ordinary GET requests remain read-only. Unsupported or corrupt content requires its existing explicit recovery process.
 
@@ -36,9 +88,9 @@ Public entry points, serialization formats, Control API, and execution semantics
 | ----------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | npm package       | Exact version in the package manifest                             | Pins implementation, types, Workbench assets, and the conformance suite. Deployments pin the same version. |
 | Revision envelope | `kind: open-flow-flow-revision`, `version: 1`                     | UTF-8 JSON envelope fields and canonical byte rules.                                                       |
-| Flow model        | `modelVersion: 8`                                                 | Serialization of documents, modules, nodes, and ports.                                                     |
+| Flow model        | `modelVersion: 10`                                                | Serialization of documents, modules, nodes, and ports.                                                     |
 | Control API       | `/v1`; Run creation request `version: 2`, all others `version: 1` | Request fields, responses, error codes, CAS, and idempotency.                                              |
-| Engine Contract   | `open-flow-engine/v5`                                             | Execution, Trigger, Task return, Wait, and cancellation semantics.                                         |
+| Engine Contract   | `open-flow-engine/v7`                                             | Execution, Trigger, Task return, Wait, and cancellation semantics.                                         |
 | MCP               | `2026-07-28`                                                      | Streamable HTTP negotiation; tool product semantics reuse Control API.                                     |
 
 Equal or different version numbers do not establish compatibility. Older formats may also have used `modelVersion: 1`; do not accept content based only on this field. Decode the complete structure before semantic validation and execution. Reject execution of Revisions that do not match the current structure. Do not rewrite them or recompute their original digest on read. Create a new Revision through a separate, auditable migration or rebuild.
@@ -76,7 +128,41 @@ A deployment may claim a package profile only after all applicable cases pass. U
 
 Optional response fields may be added if existing read semantics remain unchanged. Removing or renaming fields, changing types, narrowing valid inputs, changing defaults, or changing execution results are compatibility changes.
 
-For a compatibility change, increment the affected contract version or declare the break in prerelease notes and provide migration and rejection paths. Do not only increment the npm version while retaining an old contract identifier and silently accepting data with different meanings.
+## Release baselines and contract versioning
+
+Evaluate the cumulative changes since the latest published artifact on the affected release line.
+The previous commit, feature, or development snapshot is not a new compatibility baseline. Check
+each affected contract independently: a package version change does not require every contract
+version to change, and an existing pending contract revision may already cover the new work.
+
+Confirm publication using the npm artifact or published deployment release, then identify its source
+commit and contract identifiers. A version in `package.json`, a release commit, a Git tag, or an
+"unreleased" heading alone does not establish whether an artifact was published. If publication
+cannot be established, report the uncertainty before deciding to reuse or increment an identifier.
+Published beta and other prerelease artifacts establish the same boundary as stable releases.
+
+For each affected contract:
+
+- Preserve its identifier when the cumulative changes are compatible with the published baseline.
+- Allocate the next contract revision when the cumulative changes require an incompatible contract
+  or an explicit capability rejection boundary. Include the migration, rejection, and deployment
+  requirements relative to the published baseline.
+- Reuse that pending revision for additional changes until it is published. Update its specification,
+  consumers, tests, and release notes to describe the combined result. Do not add another revision
+  merely because a second feature changes the same unpublished contract.
+- Once the artifact is published, its identifiers and meanings are fixed. Further incompatible
+  changes require another revision. Release notes alone do not make incompatible meanings safe to
+  accept under the same identifier.
+
+For example, if Engine v5 is published and Engine v6 is pending, several execution changes may ship
+together as v6. A later incompatible change requires v7 only after v6 has been published. Development
+snapshots do not require compatibility aliases or migrations unless support for those snapshots was
+explicitly agreed. Existing support obligations for older published releases still apply.
+
+Runtime digests continue to identify the actual isolation protocol and environment; update them when
+those inputs change. Database migrations retain their storage upgrade rules. Neither is a per-feature
+contract counter, and sharing a pending contract revision does not permit ignoring a runtime mismatch
+or changing a migration already applied to a supported deployment.
 
 ## Wait local execution upgrade
 
@@ -92,11 +178,11 @@ Engine v4 separated execution scheduling from input sources. A node is skipped o
 
 Removing historical graph semantics labels from the digest previously changed isolated runtime identity once. Runs pinned to the old digest use the existing mismatch rejection path. Historical Run identities are not rewritten, and old identity aliases are not added. Subsequent Scheduler-only changes do not change the isolated runtime digest.
 
-The Trigger output protocol uses ordered output definitions. Provider definitionVersion and Webhook revision are 2, and the definition digest protocol version is 2. That upgrade used Scheduler checkpoint version 4. The current version is 5 and rejects recovery from older versions. SQLite migration 19 only renames output storage columns; it does not convert old content to the new contract.
+The Trigger output protocol uses ordered output definitions. Provider definitionVersion and Webhook revision are 2, and the definition digest protocol version is 2. That upgrade used Scheduler checkpoint version 4. The current version is 6 and rejects recovery from older versions. SQLite migration 19 only renames output storage columns; it does not convert old content to the new contract.
 
 ## Unreleased Wait pending revision
 
-The current Engine Contract remains `open-flow-engine/v5`, and the Scheduler checkpoint remains version 5. The early Wait output port and output field in wait records change directly from `notification` to `pending`. They fire once when the wait is created and provide confirmation links and related data. This is an unreleased contract revision. Equal version numbers do not guarantee compatibility with earlier development snapshots. There are no old-name aliases, implicit conversions, or compatible recovery.
+That earlier change retained Engine Contract `open-flow-engine/v5` and Scheduler checkpoint version 5. The early Wait output port and output field in wait records change directly from `notification` to `pending`. They fire once when the wait is created and provide confirmation links and related data. This is an unreleased contract revision. Equal version numbers do not guarantee compatibility with earlier development snapshots. There are no old-name aliases, implicit conversions, or compatible recovery.
 
 Graph validation rejects old Wait ports and data references. Strict decoding rejects the old `notification` field in checkpoint wait records instead of silently discarding it or replaying notifications. Historical Revisions and Runs remain unchanged, as do Flow model, Control API envelopes, and the isolated runtime digest. Agent notification configuration still represents actual notifications and is unaffected.
 
@@ -142,4 +228,27 @@ with the npm import; arguments, host callbacks and CLI exit codes remain unchang
 
 ### Unreleased dependency joins
 
-Engine Contract remains `open-flow-engine/v5`, and Scheduler checkpoints remain version 5. Invocations now wait for their iteration's selected or skipped predecessors, merge selected ancestor data, and repeat through loop iterations. Checkpoints require dependency progress and loop state; earlier development shapes are rejected without conversion. `context.getPrevious()` now returns an array, including for a single predecessor, and an empty array for roots. No legacy API or scheduling mode is retained. Flow model and isolated runtime digest are unchanged.
+That earlier change retained Engine Contract `open-flow-engine/v5` and Scheduler checkpoint version 5. Invocations now wait for their iteration's selected or skipped predecessors, merge selected ancestor data, and repeat through loop iterations. Checkpoints require dependency progress and loop state; earlier development shapes are rejected without conversion. `context.getPrevious()` now returns an array, including for a single predecessor, and an empty array for roots. No legacy API or scheduling mode is retained. Flow model and isolated runtime digest are unchanged.
+
+## Workflow calls
+
+The managed `workflow` executor adds independent Live Run invocation without restoring embedded Subflows or historical publication admission. Existing Flow model and Engine identifiers are retained for this unpublished addition. Checkpoint v5 accepts optional pending `calls`; existing Wait/Agent checkpoints remain readable. Control API version 1 adds the call contract, indexed Flow references, durable caller/callee projections and entry `triggerNodeId` for Draft and ordinary Start runs. Missing `calledFlowIds` in old resource summaries means no workflow-call references; no historical graphs are rescanned to seed this new relation kind.
+
+Run details add optional `initiator` audit metadata without changing `source: draft | live`, Run
+request versions, or existing `caller/calls` associations. Older Runs and deployments may omit it.
+Server migration 50 adds nullable audit columns without backfilling inferred identities or channels.
+
+## Connector-owned shared event source protocols
+
+Shared source protocol code and its Provider regression tests move from Open Flow to Connector.
+The public event-source entry now exposes metadata, the source operation contract and generic state
+projection helpers. Provider-specific `feishuApplication`, `receiveFeishuEvent`, `matchesFeishuEvent`
+and `feishuSubscriptions` exports are removed. Consumers use the Connector source protocol instead.
+Deploy the supporting Connector before Open Flow; no local protocol fallback is retained. Source
+instances retain their IDs and acquire stored projections through Connector without rewriting bindings.
+
+The npm publication baseline checked for this change is `0.1.0-beta.68` at
+`ae0f847fde9b8b5feb96822c763ea563f456f069`, whose Engine contract is v5. The branch already carries
+pending Engine v6 changes. This refactor preserves node snapshots, output contracts and Run semantics;
+it does not allocate another Engine revision. Package consumers of the removed protocol helpers and
+Connector deployments must upgrade together at the new package boundary.

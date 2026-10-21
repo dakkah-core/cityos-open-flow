@@ -14,7 +14,7 @@ import type {
   ProviderAccessBindingCandidate,
 } from './api.ts'
 
-import { exact, integer, invalidResponse, jsonValue, record, string } from './decoding.ts'
+import { exact, requiredFields, integer, invalidResponse, jsonValue, record, string } from './decoding.ts'
 import { ApiError } from './errors.ts'
 import { parseProviderAccessSource } from './providerAccess.ts'
 import { providerIconAppearance } from './providerIconSprite.ts'
@@ -245,7 +245,7 @@ export function connectorAccessCandidatesBatch(value: unknown, providerIds: read
 
 export function connection(value: unknown): ConnectorConnection {
   const source = record(value)
-  exact(source, [
+  requiredFields(source, [
     ...(Object.hasOwn(source, 'providerAccountId') ? ['providerAccountId'] : []),
     ...(Object.hasOwn(source, 'alias') ? ['alias'] : []),
     ...(Object.hasOwn(source, 'builtInAccount') ? ['builtInAccount'] : []),
@@ -275,7 +275,7 @@ function port(value: unknown, input = false): InputPortDefinition {
   const source = record(value)
   const description = source.description
   const hasValue = input && Object.hasOwn(source, 'value')
-  exact(source, ['jsonSchema', 'nullable', ...(description == null ? [] : ['description']), ...(hasValue ? ['value'] : [])])
+  requiredFields(source, ['jsonSchema', 'nullable', ...(description == null ? [] : ['description']), ...(hasValue ? ['value'] : [])])
   if (description != null && typeof description != 'string') return invalidResponse()
   if (typeof source.nullable != 'boolean') return invalidResponse()
   return {
@@ -298,7 +298,7 @@ export function connectorActionMetadata(value: unknown): ConnectorActionMetadata
   const source = record(value)
   const homepageUrl = source.homepageUrl
   const icon = source.icon
-  exact(source, [
+  requiredFields(source, [
     'actionId',
     ...(Object.hasOwn(source, 'operationType') ? ['operationType'] : []),
     ...(Object.hasOwn(source, 'inputSchema') ? ['inputSchema'] : []),
@@ -349,7 +349,7 @@ export function connectorProvider(value: unknown): ConnectorProvider {
   const homepageUrl = source.homepageUrl
   const icon = source.icon
   if (source.noSetup !== undefined && typeof source.noSetup != 'boolean') return invalidResponse()
-  exact(source, [
+  requiredFields(source, [
     ...(Object.hasOwn(source, 'noSetup') ? ['noSetup'] : []),
     'serviceId',
     'serviceName',

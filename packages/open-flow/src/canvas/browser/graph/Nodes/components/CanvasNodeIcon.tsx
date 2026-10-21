@@ -8,6 +8,7 @@ import { iconForNodeType } from './constants.ts'
 export type CanvasNodeIconData = {
   readonly kind: FlowCanvasViewNode['kind']
   readonly icon?: string
+  readonly fallbackIcon?: string
 }
 
 function nodeTypeForKind(kind: CanvasNodeIconData['kind']): NodeType {
@@ -25,7 +26,25 @@ function nodeTypeForKind(kind: CanvasNodeIconData['kind']): NodeType {
   }
 }
 
-export function CanvasNodeIcon({ kind, icon, nodeType, className }: CanvasNodeIconData & { readonly nodeType?: NodeType; readonly className?: string }) {
-  const src = icon ?? (kind == 'wait' ? ':carbon:hourglass:' : kind == 'approval' ? ':carbon:stamp:' : undefined)
-  return <ContentIcon src={src} className={className} fallback={<i aria-hidden="true" className={iconForNodeType(nodeType ?? nodeTypeForKind(kind))} />} />
+export function CanvasNodeIcon({
+  kind,
+  icon,
+  fallbackIcon,
+  nodeType,
+  className,
+}: CanvasNodeIconData & { readonly nodeType?: NodeType; readonly className?: string }) {
+  const defaultIcon = fallbackIcon ?? (kind == 'wait' ? ':carbon:hourglass:' : kind == 'approval' ? ':carbon:stamp:' : undefined)
+  return (
+    <ContentIcon
+      src={icon ?? defaultIcon}
+      className={className}
+      fallback={
+        <ContentIcon
+          src={defaultIcon}
+          className={className}
+          fallback={<i aria-hidden="true" className={iconForNodeType(nodeType ?? nodeTypeForKind(kind))} />}
+        />
+      }
+    />
+  )
 }

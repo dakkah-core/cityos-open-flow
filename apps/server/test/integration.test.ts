@@ -10,6 +10,7 @@ import { currentFlowModelVersion } from '@oomol-lab/open-flow/flow-change'
 import { IntegrationConnectionError, PermanentIntegrationError, TransientIntegrationError } from '@oomol-lab/open-flow/integration-trigger'
 import { eventsPollOutputs } from '@oomol-lab/open-flow/poll-trigger'
 import { integrationDefinitions } from '@oomol-lab/open-flow/provider-triggers'
+import { currentEngineContract } from '@oomol-lab/open-flow/runtime-contract'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Scope from 'effect/Scope'
@@ -757,6 +758,71 @@ it('rejects an Integration target captured before its Flow was disabled', async 
   }
 })
 
+it('forwards Tally signatures and admits each form event once across callback retries', async () => {
+  const definition = integrationDefinitions.find((item) => item.snapshot.key == 'tally.on_form_response')!
+  const file = await databaseFile()
+  const response = {
+    eventId: 'tally-event-1',
+    createdAt: '2026-10-20T00:00:00Z',
+    formId: 'lead-form',
+    submissionId: 'submission-1',
+    responseId: 'response-1',
+    fields: [{ key: 'name', type: 'INPUT_TEXT', label: '姓名', value: '李明' }],
+  }
+  const host = createConnectorHost({
+    listConnections: async () => [{ connectionId: 'connection-main', displayName: 'Tally', isDefault: true, serviceId: 'tally', status: 'active' }],
+    trigger: async (_provider, _connection, _trigger, request) => {
+      if (request.operation == 'reconcile') return { outcome: 'ready', checkpoint: null, subscription: { id: 'owned' }, reconcileAt: 60_000 }
+      if (request.operation != 'receive') throw new Error('Unexpected Trigger operation')
+      expect(Buffer.from(request.rawBody, 'base64').toString('utf8')).toBe(JSON.stringify(response))
+      return {
+        result:
+          request.headers['tally-signature'] == 'verified-by-connector'
+            ? { outcome: 'event', dedupeKey: response.eventId, outputs: { response } }
+            : { outcome: 'respond', status: 401, body: '', contentType: 'text/plain' },
+        checkpoint: null,
+        subscription: { id: request.subscriptionId },
+        reconcileAt: 60_000,
+      }
+    },
+  })
+  const service = await openService(file, {
+    clock: () => 0,
+    capabilities: {
+      connector: () => host,
+      integration: () => ({ callbackKey: 'callback-key', publicOrigin: 'https://flow.example' }),
+    },
+    triggerDefinitions: [definition],
+  })
+  try {
+    const content = revision('ready', definition.snapshot)
+    Object.assign(content.document.graph.nodes.integration!, { config: inputValues({ formId: 'lead-form' }) })
+    await service.publisher.publish({
+      expectedLivePublicationId: null,
+      flowId: 'main',
+      idempotencyKey: next('publish'),
+      revision: content,
+      revisionId: next('revision'),
+    })
+    await service.tickIntegration(new Date(0).toISOString())
+    const endpoint = service.integrationEndpoint('main', 'integration')!
+    const app = createServerApp(service)
+    const receive = (signature: string) =>
+      app.request(`/v1/integrations/${endpoint}`, {
+        method: 'POST',
+        body: JSON.stringify(response),
+        headers: { 'content-type': 'application/json', 'tally-signature': signature },
+      })
+    expect((await receive('invalid')).status).toBe(401)
+    expect(admissionCount(file)).toBe(0)
+    expect((await receive('verified-by-connector')).status).toBe(200)
+    expect((await receive('verified-by-connector')).status).toBe(200)
+    expect(admissionCount(file)).toBe(1)
+  } finally {
+    await closeService(service)
+  }
+})
+
 it('retains a remote callback checkpoint rejected by Run capacity and admits its retry', async () => {
   const definition = integrationDefinitions.find((item) => item.snapshot.key == 'googledrive.changes_detected')!
   const file = await databaseFile()
@@ -1283,7 +1349,7 @@ it('prepares a Drive listener, preserves candidate wakes across restart, and sca
         },
       },
     ])
-    const operation = await service.control.publishFlow('operator', flowId, changed.revision.revisionId, 'open-flow-engine/v5', null, 'publish-drive')
+    const operation = await service.control.publishFlow('operator', flowId, changed.revision.revisionId, currentEngineContract, null, 'publish-drive')
     await service.tickIntegration()
     expect(changesRead).toBe(0)
     expect(service.control.getPublishOperation(flowId, operation.operationId).status).toBe('pending')
@@ -1329,7 +1395,7 @@ it('prepares a Drive listener, preserves candidate wakes across restart, and sca
       'operator',
       flowId,
       scoped.revision.revisionId,
-      'open-flow-engine/v5',
+      currentEngineContract,
       live.publication!.publicationId,
       'replace-drive',
     )
@@ -1474,7 +1540,7 @@ it('prepares a GitHub repository webhook before activating Live and rejects an u
     config: inputValues({ owner: 'octocat', repo: 'repository', events: ['issues'] }),
   }
   const draft = await service.control.changeDraft('operator', flowId, created.flow.draftRevisionId, [{ kind: 'graph.node.create', nodeId: 'github', node }])
-  const operation = await service.control.publishFlow('operator', flowId, draft.revision.revisionId, 'open-flow-engine/v5', null, 'publish-github')
+  const operation = await service.control.publishFlow('operator', flowId, draft.revision.revisionId, currentEngineContract, null, 'publish-github')
   expect(service.control.getPublishOperation(flowId, operation.operationId).status).toBe('pending')
   await service.tickIntegration()
   await service.tickMaintenance()
@@ -1486,7 +1552,7 @@ it('prepares a GitHub repository webhook before activating Live and rejects an u
   ])
   const live = service.control.getFlow(flowId).live!.publicationId
   await expect(
-    service.control.publishFlow('operator', flowId, changed.revision.revisionId, 'open-flow-engine/v5', live, 'replace-github'),
+    service.control.publishFlow('operator', flowId, changed.revision.revisionId, currentEngineContract, live, 'replace-github'),
   ).rejects.toMatchObject({
     code: 'publication.unsupported',
   })

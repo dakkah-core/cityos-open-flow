@@ -1,5 +1,6 @@
 import type { TriggerBinding } from '../api.ts'
 import type { TriggerBindingsState } from '../publications/publicationStore.ts'
+import type { SetNotice } from '../stores/workbenchNotice.ts'
 
 import { useTranslate } from 'val-i18n-react'
 import { Button } from '../../../../ui/browser/button.tsx'
@@ -8,6 +9,7 @@ import { WebhookCopyButton } from '../publications/webhookEndpoint.tsx'
 import { InspectorSection } from './inspectorSection.tsx'
 
 export interface WebhookDeploymentProps {
+  readonly notify: SetNotice
   readonly binding?: TriggerBinding
   readonly status: TriggerBindingsState['status']
   readonly enabled: boolean
@@ -15,7 +17,7 @@ export interface WebhookDeploymentProps {
   readonly onRetry: () => void
 }
 
-export function WebhookDeployment({ binding, status, enabled, hasUnpublishedChanges, onRetry }: WebhookDeploymentProps) {
+export function WebhookDeployment({ binding, status, enabled, hasUnpublishedChanges, onRetry, notify }: WebhookDeploymentProps) {
   const t = useTranslate()
   const current = binding?.currentPublicationId != null
   const ready = status === 'loaded' && current
@@ -27,7 +29,7 @@ export function WebhookDeployment({ binding, status, enabled, hasUnpublishedChan
             <span>{t('webhookDeployment.title')}</span>
             {ready && <TriggerStatus binding={binding} enabled={enabled} />}
           </span>
-          {ready && binding.endpointUrl != null && <WebhookCopyButton key={binding.endpointUrl} endpointUrl={binding.endpointUrl} iconOnly />}
+          {ready && binding.endpointUrl != null && <WebhookCopyButton notify={notify} key={binding.endpointUrl} endpointUrl={binding.endpointUrl} iconOnly />}
         </span>
       }
     >

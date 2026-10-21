@@ -1,9 +1,9 @@
-import type { GraphNode, Group, InputPort, RevisionContent } from '../../flow/common/change.ts'
+import type { GraphNode, Group, InputPort } from '../../flow/common/change.ts'
 
 import { conditionConfigurationFieldPath } from './authoringCondition.ts'
 
 type Ports = readonly (InputPort | Group)[]
-const metadata = new Set(['name', 'description', 'icon', 'timeoutMs', 'maxExecutions'])
+const metadata = new Set(['name', 'description', 'icon', 'timeoutMs', 'maxExecutions', 'retry', 'onError'])
 
 function portField(ports: Ports, path: readonly string[], parent: string): string {
   const port = ports[Number(path[0])]
@@ -23,11 +23,8 @@ function portField(ports: Ports, path: readonly string[], parent: string): strin
 }
 
 /** Accept a decoded JSON Pointer, including or omitting its initial empty component. */
-export function authoringDiagnosticField(content: RevisionContent, node: GraphNode | undefined, parts: readonly string[]): string {
+export function authoringDiagnosticField(node: GraphNode | undefined, parts: readonly string[]): string {
   const path = parts[0] == '' ? parts.slice(1) : parts
-  if (path[0] == 'document' && path[1] == 'inputDefs') return portField(content.document.inputDefs ?? [], path.slice(2), 'inputDefs')
-  if (path[0] == 'document' && path[1] == 'outputDefs') return portField(content.document.outputDefs ?? [], path.slice(2), 'outputDefs')
-  if (path[0] == 'document' && path[1] == 'outputMappings') return path.slice(1).join('.')
   if (node == null) return 'config'
   if (path[0] == 'modules') return 'code'
   let location = path[0] == 'document' && path[1] == 'graph' && path[2] == 'nodes' ? path.slice(4) : path
@@ -36,6 +33,9 @@ export function authoringDiagnosticField(content: RevisionContent, node: GraphNo
   if (location.length == 0) return 'config'
   const head = location[0]!
   if (!inlineDefinition && metadata.has(head)) return location.join('.')
+  if (node.kind == 'start' && head == 'inputDefs') return portField(node.inputDefs, location.slice(1), 'config.inputDefs')
+  if (node.kind == 'outputs' && head == 'outputDefs') return portField(node.outputDefs, location.slice(1), 'config.outputDefs')
+  if (node.kind == 'outputs' && head == 'outputMappings') return ['inputs', ...location.slice(1)].join('.')
   if (head == 'prompt') return 'prompt'
   if (head == 'inputs' && !inlineDefinition) {
     if (node.kind == 'condition' && location[1] != null) {
@@ -65,6 +65,7 @@ export function authoringDiagnosticField(content: RevisionContent, node: GraphNo
       const field = location[1]
       if (field == null || field == 'kind') return 'config'
       if (field == 'prompt') return 'prompt'
+      if (executor?.kind == 'workflow' && field == 'revisionId') return 'config.flowId'
       if (executor?.kind == 'openapi') {
         if (field == 'document') return 'config'
         if (field == 'auth') return 'config.authentication'

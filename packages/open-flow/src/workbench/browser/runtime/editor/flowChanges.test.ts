@@ -780,13 +780,13 @@ describe('Webhook product editing', () => {
     expect(get.content.document.graph.nodes.task).toMatchObject({
       inputs: { value: { sources: [{ nodeId: 'hook', output: 'body' }] } },
     })
-    expect(checkInputSource(get.content.document.graph, 'task', 'value', { nodeId: 'hook', output: 'body' }, [])).toEqual({
+    expect(checkInputSource(get.content.document.graph, 'task', 'value', { nodeId: 'hook', output: 'body' })).toEqual({
       kind: 'output-missing',
     })
 
     const restored = applyFlowChanges(get, inverseFlowChanges(current.content, changes))
     expect(restored.content.document.graph).toEqual(current.content.document.graph)
-    expect(checkInputSource(restored.content.document.graph, 'task', 'value', { nodeId: 'hook', output: 'body' }, [])).toEqual({
+    expect(checkInputSource(restored.content.document.graph, 'task', 'value', { nodeId: 'hook', output: 'body' })).toEqual({
       kind: 'available',
     })
   })
@@ -794,7 +794,7 @@ describe('Webhook product editing', () => {
 
 it('copies a trigger group while preserving the single Start contract', () => {
   const current = applyFlowChanges(draft(''), [
-    { kind: 'graph.node.create', nodeId: 'manual', node: { kind: 'start', name: 'Start' } },
+    { kind: 'graph.node.create', nodeId: 'manual', node: { inputDefs: [], kind: 'start', name: 'Start' } },
     { kind: 'graph.node.create', nodeId: 'timer', node: { kind: 'cron', name: 'Schedule', cronTimes: [] } },
     { kind: 'graph.edge.connect', edge: { source: 'timer', target: 'task' } },
   ])
@@ -970,6 +970,11 @@ it.each([undefined, { kind: 'unset' } as const])('creates a nullable collection 
   expect(applyFlowChanges(saved, inverseFlowChanges(current.content, changes)).content).toEqual(current.content)
 })
 
+function outputsOf(value: Draft) {
+  const node = value.content.document.graph.nodes.outputs
+  if (node?.kind != 'outputs') throw new Error('Expected Outputs fixture')
+  return node
+}
 describe('Workflow output editing', () => {
   it('updates only a value without rewriting definitions, and restores its variable binding on undo', () => {
     const base = draft('export default () => ({result: 1})')
@@ -980,17 +985,29 @@ describe('Workflow output editing', () => {
         document: {
           ...base.content.document,
           bindings: { token: { kind: 'variable', target: 'TOKEN' } },
-          outputDefs: [{ handle: 'answer', jsonSchema: { type: 'string' }, nullable: false }],
-          outputMappings: { answer: { kind: 'sources', sources: [{ kind: 'binding', bindingId: 'token' }] } },
+          graph: {
+            ...base.content.document.graph,
+            nodes: {
+              ...base.content.document.graph.nodes,
+              outputs: {
+                ...(base.content.document.graph.nodes['outputs'] as Extract<import('../../../../flow/common/change.ts').GraphNode, { kind: 'outputs' }>),
+                kind: 'outputs',
+                name: 'Outputs',
+                outputDefs: [{ handle: 'answer', jsonSchema: { type: 'string' }, nullable: false }],
+                outputMappings: { answer: { kind: 'sources', sources: [{ kind: 'binding', bindingId: 'token' }] } },
+              },
+            },
+          },
         },
       },
     }
     const view = revisionView(original)
-    expect(updateOutputPorts(view, view.outputDefs())).toEqual([])
-    const operations = updateOutputPorts(view, view.outputDefs(), { answer: 'literal' })
+    expect(updateOutputPorts(view, 'missing-node', [])).toEqual([])
+    expect(updateOutputPorts(view, 'outputs', outputsOf(original).outputDefs)).toEqual([])
+    const operations = updateOutputPorts(view, 'outputs', outputsOf(original).outputDefs, { answer: 'literal' })
     const changed = applyFlowChanges(original, operations)
-    expect(changed.content.document.outputDefs).toEqual(original.content.document.outputDefs)
-    expect(changed.content.document.outputMappings).toEqual({ answer: { kind: 'value', value: 'literal' } })
+    expect(outputsOf(changed).outputDefs).toEqual(outputsOf(original).outputDefs)
+    expect(outputsOf(changed).outputMappings).toEqual({ answer: { kind: 'value', value: 'literal' } })
     expect(changed.content.document.bindings).toEqual({})
     expect(applyFlowChanges(changed, inverseFlowChanges(original.content, operations)).content).toEqual(original.content)
   })
@@ -1003,22 +1020,36 @@ describe('Workflow output editing', () => {
         ...base.content,
         document: {
           ...base.content.document,
-          outputDefs: [{ handle: 'answer', jsonSchema: { type: 'number' }, nullable: false }],
-          outputMappings: { answer: { kind: 'value', value: 42 } },
-          graph: { ...base.content.document.graph, nodes: { ...base.content.document.graph.nodes, outputs: { kind: 'outputs', name: 'Outputs' } } },
+
+          graph: {
+            ...base.content.document.graph,
+            nodes: {
+              ...base.content.document.graph.nodes,
+              outputs: {
+                kind: 'outputs',
+                name: 'Outputs',
+                outputDefs: [{ handle: 'answer', jsonSchema: { type: 'number' }, nullable: false }],
+                outputMappings: { answer: { kind: 'value', value: 42 } },
+              },
+            },
+          },
         },
       },
     }
-    const operations = updateOutputPorts(revisionView(original), [{ handle: 'result', jsonSchema: { type: 'object' }, nullable: false }])
+    const operations = updateOutputPorts(revisionView(original), 'outputs', [{ handle: 'result', jsonSchema: { type: 'object' }, nullable: false }])
     const changed = applyFlowChanges(original, operations)
-    expect(changed.content.document.outputMappings).toEqual({ result: { kind: 'value', value: {} } })
-    expect(changed.content.document.graph.nodes.outputs).toEqual({ kind: 'outputs', name: 'Outputs' })
+    expect(outputsOf(changed).outputMappings).toEqual({ result: { kind: 'value', value: {} } })
+    expect(changed.content.document.graph.nodes.outputs).toMatchObject({
+      kind: 'outputs',
+      name: 'Outputs',
+      outputDefs: [{ handle: 'result', jsonSchema: { type: 'object' } }],
+    })
     const inverse = inverseFlowChanges(original.content, operations)
     expect(applyFlowChanges(changed, inverse).content).toEqual(original.content)
     expect(applyFlowChanges(applyFlowChanges(changed, inverse), operations).content).toEqual(changed.content)
   })
 
-  it('renames upstream output references even without an Outputs canvas node', () => {
+  it('renames upstream output references owned by Outputs', () => {
     const base = draft('export default () => ({result: 1})')
     const original: Draft = {
       ...base,
@@ -1026,8 +1057,19 @@ describe('Workflow output editing', () => {
         ...base.content,
         document: {
           ...base.content.document,
-          outputDefs: [{ handle: 'answer', jsonSchema: {}, nullable: true }],
-          outputMappings: { answer: { kind: 'sources', sources: [{ kind: 'node', nodeId: 'task', output: 'result' }] } },
+          graph: {
+            ...base.content.document.graph,
+            nodes: {
+              ...base.content.document.graph.nodes,
+              outputs: {
+                ...(base.content.document.graph.nodes['outputs'] as Extract<import('../../../../flow/common/change.ts').GraphNode, { kind: 'outputs' }>),
+                kind: 'outputs',
+                name: 'Outputs',
+                outputDefs: [{ handle: 'answer', jsonSchema: {}, nullable: true }],
+                outputMappings: { answer: { kind: 'sources', sources: [{ kind: 'node', nodeId: 'task', output: 'result' }] } },
+              },
+            },
+          },
         },
       },
     }
@@ -1035,8 +1077,81 @@ describe('Workflow output editing', () => {
       inputs: [{ handle: 'value', jsonSchema: {}, nullable: true }],
       outputs: [{ handle: 'renamed', jsonSchema: {}, nullable: true }],
     })!
-    expect(applyFlowChanges(original, operations).content.document.outputMappings).toEqual({
+    expect(outputsOf(applyFlowChanges(original, operations)).outputMappings).toEqual({
       answer: { kind: 'sources', sources: [{ kind: 'node', nodeId: 'task', output: 'renamed' }] },
     })
   })
+})
+
+it('copies Start and Outputs with their complete configuration and remaps source identities', () => {
+  const base = draft('export default () => ({result: 1})')
+  const source: Draft = {
+    ...base,
+    content: {
+      ...base.content,
+      document: {
+        bindings: { token: { kind: 'variable', target: 'TOKEN' } },
+        graph: {
+          nodes: {
+            start: { kind: 'start', name: 'Start', inputDefs: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: false }] },
+            outputs: {
+              kind: 'outputs',
+              name: 'Outputs',
+              outputDefs: [
+                { handle: 'message', jsonSchema: { type: 'string' }, nullable: false },
+                { handle: 'token', jsonSchema: {}, nullable: true },
+              ],
+              outputMappings: {
+                message: { kind: 'sources', sources: [{ kind: 'node', nodeId: 'start', output: 'message' }] },
+                token: { kind: 'sources', sources: [{ kind: 'binding', bindingId: 'token' }] },
+              },
+            },
+          },
+          edges: [{ source: 'start', target: 'outputs' }],
+        },
+      },
+    },
+  }
+  const destination: Draft = { ...base, content: { ...base.content, document: { bindings: {}, graph: { nodes: {}, edges: [] } } } }
+  const clipboard = copyNodes(revisionView(source), ['start', 'outputs'])
+  let sequence = 0
+  const pasted = pasteNodes(revisionView(destination), clipboard, () => `copy-${++sequence}`)
+  const saved = applyFlowChanges(destination, pasted.changes)
+  expect(saved.content.document.graph.nodes['copy-1']).toEqual(source.content.document.graph.nodes.start)
+  expect(saved.content.document.graph.nodes['copy-2']).toMatchObject({
+    outputDefs: outputsOf(source).outputDefs,
+    outputMappings: {
+      message: { kind: 'sources', sources: [{ kind: 'node', nodeId: 'copy-1', output: 'message' }] },
+      token: { kind: 'sources', sources: [{ kind: 'binding', bindingId: 'copy-3' }] },
+    },
+  })
+  expect(saved.content.document.bindings).toEqual({ 'copy-3': { kind: 'variable', target: 'TOKEN' } })
+  expect(saved.content.document.graph.edges).toEqual([{ source: 'copy-1', target: 'copy-2' }])
+  expect(applyFlowChanges(saved, inverseFlowChanges(destination.content, pasted.changes)).content).toEqual(destination.content)
+  expect(pasteNodes(revisionView(saved), clipboard, () => 'unused').changes).toEqual([])
+})
+
+it('copies multiple response nodes and remaps the selected response with ordinary input sources', () => {
+  let current = draft('export default () => ({})')
+  current = applyFlowChanges(current, [
+    {
+      kind: 'graph.node.create',
+      nodeId: 'hook',
+      node: { kind: 'webhook', name: 'Hook', method: 'POST', bodyFields: [], options: { responseBody: { kind: 'webhook-response', nodeId: 'reply' } } },
+    },
+    { kind: 'graph.node.create', nodeId: 'reply', node: { kind: 'webhook-response', name: 'Reply', inputs: { body: { kind: 'value', value: 'first' } } } },
+    { kind: 'graph.node.create', nodeId: 'other', node: { kind: 'webhook-response', name: 'Other', inputs: { body: { kind: 'value', value: 'other' } } } },
+    { kind: 'graph.edge.connect', edge: { source: 'hook', target: 'reply' } },
+  ])
+  const clipboard = copyNodes(revisionView(current), ['hook', 'reply', 'other'])
+  let sequence = 0
+  const pasted = pasteNodes(revisionView(current), clipboard, () => `copy-${++sequence}`)
+  const copied = applyFlowChanges(current, pasted.changes)
+  expect(copied.content.document.graph.nodes['copy-1']).toMatchObject({
+    kind: 'webhook',
+    options: { responseBody: { kind: 'webhook-response', nodeId: 'copy-2' } },
+  })
+  expect(copied.content.document.graph.nodes['copy-2']).toMatchObject({ kind: 'webhook-response', inputs: { body: { kind: 'value', value: 'first' } } })
+  expect(copied.content.document.graph.nodes['copy-3']).toMatchObject({ kind: 'webhook-response' })
+  expect(applyFlowChanges(copied, inverseFlowChanges(current.content, pasted.changes)).content).toEqual(current.content)
 })

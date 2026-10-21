@@ -1,5 +1,5 @@
 import type { ManagedTaskDefinition } from '../../flow/common/change.ts'
-import type { ConditionOperand, FlowDocument, Graph, GraphNode, Group, InputPort, RevisionContent } from '../../flow/common/change.ts'
+import type { ConditionOperand, Graph, GraphNode, Group, InputPort, RevisionContent } from '../../flow/common/change.ts'
 import type { ConnectorAction, Draft, Flow, Live } from './api.ts'
 
 import { nodeInputPorts, nodeOutputPorts } from '../../flow/common/graph.ts'
@@ -26,11 +26,8 @@ export function flowInspection(inspected: Awaited<ReturnType<typeof inspectFlowD
   return {
     flow: { flowId: flow.flowId, name: flow.name, status: flow.status },
     draft: {
-      inputDefs: document.inputDefs ?? [],
-      ...(document.outputDefs == null ? {} : { outputDefs: document.outputDefs }),
-      ...(document.outputMappings == null ? {} : { outputMappings: document.outputMappings }),
       revisionId: draft.revisionId,
-      graph: inspectGraph(document, document.graph),
+      graph: inspectGraph(document.graph),
       bindings: document.bindings,
       modules: Object.fromEntries(Object.entries(modules).map(([id, module]) => [id, { name: module.name, imports: module.imports }])),
     },
@@ -57,15 +54,15 @@ function inspectPorts(ports: readonly (InputPort | Group)[]) {
   return ports.flatMap((port) => ('handle' in port ? [{ handle: port.handle, ...(Object.hasOwn(port, 'value') ? { value: port.value } : {}) }] : []))
 }
 
-function inspectGraph(document: FlowDocument, graph: Graph) {
+function inspectGraph(graph: Graph) {
   return {
-    nodes: Object.fromEntries(Object.entries(graph.nodes).map(([id, node]) => [id, inspectNode(document, node)])),
+    nodes: Object.fromEntries(Object.entries(graph.nodes).map(([id, node]) => [id, inspectNode(node)])),
     edges: graph.edges,
   }
 }
 
-function inspectNode(_document: FlowDocument, node: GraphNode): Record<string, unknown> {
-  const inputs = nodeInputPorts(node, _document)
+function inspectNode(node: GraphNode): Record<string, unknown> {
+  const inputs = nodeInputPorts(node)
   const defaults = Object.fromEntries(
     Object.entries(inputs).flatMap(([handle, port]) =>
       Object.hasOwn(port, 'value') && !('inputs' in node && Object.hasOwn(node.inputs, handle)) ? [[handle, port.value]] : [],
@@ -73,12 +70,14 @@ function inspectNode(_document: FlowDocument, node: GraphNode): Record<string, u
   )
   const ports = {
     inputHandles: Object.keys(inputs),
-    outputHandles: Object.keys(nodeOutputPorts(node, _document.inputDefs ?? [])),
+    outputHandles: Object.keys(nodeOutputPorts(node)),
     ...(Object.keys(defaults).length == 0 ? {} : { inputDefaults: defaults }),
   }
   switch (node.kind) {
+    case 'webhook-response':
+      return { ...node, ...ports }
     case 'outputs':
-      return { ...node, ...ports, inputs: _document.outputMappings ?? {} }
+      return { ...node, ...ports, inputs: node.outputMappings }
     case 'task': {
       const { task, additionalInputs: _additional, ...instance } = node
       return {

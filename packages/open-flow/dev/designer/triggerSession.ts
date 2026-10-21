@@ -28,10 +28,9 @@ export function createTriggerSession(
   },
   eventSources?: readonly EventSource[],
   triggerAccess?: 'alternative' | 'none',
-  inputDefs: RevisionContent['document']['inputDefs'] = [],
 ) {
   const i18n = createI18n(language)
-  const { flow, draft } = triggerDraft(trigger, false, inputDefs)
+  const { flow, draft } = triggerDraft(trigger)
   const { content: initialContent, ...revisionMetadata } = draft
   let content: RevisionContent = {
     ...initialContent,
@@ -151,7 +150,7 @@ export function createTriggerSession(
                 Object.assign({}, flow, {
                   flowId,
                   name: flowId === 'orders' ? 'Orders · Payment events and fulfillment updates' : 'Billing',
-                  live: { publicationId: `${flowId}-publication`, revisionId: `${flowId}-revision`, enabled: true },
+                  live: { hasStart: true, publicationId: `${flowId}-publication`, revisionId: `${flowId}-revision`, enabled: true },
                 }),
               ),
             ]
@@ -168,6 +167,14 @@ export function createTriggerSession(
       })
     if (url.pathname.includes('/options/')) {
       if (nodeId.endsWith('-empty-options')) return Response.json({ options: [], version: 1 })
+      if (url.pathname.endsWith('/formId'))
+        return Response.json({
+          version: 1,
+          options: [
+            { value: 'lead-form', label: 'Customer enquiries' },
+            { value: 'feedback-form', label: 'Product feedback' },
+          ],
+        })
       const failed =
         trigger.kind == 'poll' &&
         trigger.definition.provider == 'linear' &&
@@ -205,7 +212,7 @@ export function createTriggerSession(
       return Response.json({
         closureDigest: 'lab',
         diagnostics: [],
-        engineContract: 'open-flow-engine/v5',
+        engineContract: 'open-flow-engine/v6',
         flowId: flow.flowId,
         modelVersion: currentFlowModelVersion,
         revisionDigest: revision().digest,

@@ -1,9 +1,9 @@
 import type { RunStatus } from '../../execution/common/runLifecycle.ts'
 import type { JsonValue, WaitAction } from '../../flow/common/change.ts'
-import type { Run, RunCancellation, RunDetails, RunPage, RunResult } from './api.ts'
+import type { Run, RunCancellation, RunChannel, RunDetails, RunInitiator, RunPage, RunResult } from './api.ts'
 
 import { runStatuses } from '../../execution/common/runLifecycle.ts'
-import { exact, integer, invalidResponse, record, string } from './decoding.ts'
+import { requiredFields, integer, invalidResponse, record, string } from './decoding.ts'
 
 const runStatusSet: ReadonlySet<RunStatus> = new Set(runStatuses)
 
@@ -34,7 +34,7 @@ function run(value: unknown): Run {
 
 function runWaiting(value: unknown) {
   const source = record(value)
-  exact(source, ['actions', 'expiresAt', 'nodeId', 'prompt', 'waitId', 'waitingSince'])
+  requiredFields(source, ['actions', 'expiresAt', 'nodeId', 'prompt', 'waitId', 'waitingSince'])
   const actions = source.actions
   if (
     !Array.isArray(actions) ||
@@ -52,6 +52,21 @@ function runWaiting(value: unknown) {
   }
 }
 
+function workflowIdentity(value: unknown) {
+  const ref = record(value)
+  return { flowId: string(ref.flowId), runId: string(ref.runId), nodeId: string(ref.nodeId), executionId: string(ref.executionId) }
+}
+
+function runInitiator(value: unknown): RunInitiator {
+  const source = record(value)
+  const channels: readonly RunChannel[] = ['workbench', 'cli', 'mcp', 'api', 'trigger', 'workflow']
+  if (!channels.includes(source.channel as RunChannel)) return invalidResponse()
+  return {
+    channel: source.channel as RunChannel,
+    ...(source.actorId === undefined ? {} : { actorId: string(source.actorId) }),
+  }
+}
+
 export function runDetails(value: unknown): RunDetails {
   const source = record(value)
   const summary = run(source)
@@ -61,15 +76,26 @@ export function runDetails(value: unknown): RunDetails {
   const waits = source.waits.map(runWaiting)
   if (
     new Set(waits.map((wait) => wait.waitId)).size != waits.length ||
-    (summary.status == 'waiting' && waits.length == 0) ||
+    (summary.status == 'waiting' && waits.length == 0 && (!Array.isArray(source.calls) || source.calls.length == 0)) ||
     (['completed', 'failed', 'canceled', 'indeterminate'].includes(summary.status) && waits.length > 0)
   )
     return invalidResponse()
-  if ((source.occurrenceId === undefined) != (source.triggerNodeId === undefined)) return invalidResponse()
+  if (source.occurrenceId !== undefined && source.triggerNodeId === undefined) return invalidResponse()
   const state = { status: summary.status, waits }
+  if (source.calls !== undefined && !Array.isArray(source.calls)) return invalidResponse()
   const details = {
     ...summary,
+    ...(source.initiator === undefined ? {} : { initiator: runInitiator(source.initiator) }),
     ...errorHandling(source),
+    ...(source.triggerNodeId === undefined ? {} : { triggerNodeId: string(source.triggerNodeId) }),
+    ...(source.caller === undefined ? {} : { caller: workflowIdentity(source.caller) }),
+    ...(source.calls === undefined
+      ? {}
+      : {
+          calls: (source.calls as unknown[]).map((item) =>
+            Object.assign(workflowIdentity(item), { status: record(item).status === null ? null : runStatus(record(item).status) }),
+          ),
+        }),
     closureDigest: string(source.closureDigest),
     engineContract: string(source.engineContract),
     engineDigest: string(source.engineDigest),
@@ -123,7 +149,7 @@ export function runCancellation(value: unknown): RunCancellation {
 
 export function waitResolution(value: unknown) {
   const source = record(value)
-  exact(source, ['action', 'comment', 'resolutionAccepted', 'resolvedAt', 'runId', 'status', 'version', 'waitId'])
+  requiredFields(source, ['action', 'comment', 'resolutionAccepted', 'resolvedAt', 'runId', 'status', 'version', 'waitId'])
   const action = source.action
   const resolvedAt = source.resolvedAt
   if (

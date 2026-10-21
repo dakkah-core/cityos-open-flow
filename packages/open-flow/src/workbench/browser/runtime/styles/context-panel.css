@@ -477,4 +477,73 @@
   .inspector-empty {
     padding: 24px 16px;
   }
+
+  .inspector-status-content:has(> .inspector-status-prompt) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 16px;
+
+    > p {
+      grid-column: 1;
+    }
+
+    &:has(> p) .inspector-status-prompt > [data-slot='button'] {
+      grid-row: 1 / span 3;
+    }
+  }
+
+  .inspector-status-prompt {
+    display: contents;
+
+    > p {
+      grid-column: 1;
+      text-wrap: pretty;
+    }
+
+    > [data-slot='button'] {
+      grid-column: 2;
+      grid-row: 1 / span 2;
+      align-self: center;
+    }
+  }
+
+  .inspector-status p {
+    margin: 0;
+    color: var(--ui-muted-foreground);
+    font-size: 11px;
+    line-height: 17px;
+  }
+
+  .inspector-status {
+    background: var(--ui-background);
+  }
+
+  .inspector-status-content {
+    display: flex;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+    padding: 2px var(--inspector-content-inset-end) 16px var(--inspector-content-inset-start);
+  }
+
+  .inspector-status[data-tone='warning'] {
+    background: var(--warning-surface);
+    color: var(--warning-foreground);
+  }
+
+  .inspector-status[data-tone='danger'] {
+    background: var(--danger-surface);
+    color: var(--danger-foreground);
+  }
+
+  .inspector-status:is([data-tone='warning'], [data-tone='danger']) {
+    h3,
+    p {
+      color: inherit;
+    }
+
+    .inspector-section-title {
+      background: inherit;
+    }
+  }
 }

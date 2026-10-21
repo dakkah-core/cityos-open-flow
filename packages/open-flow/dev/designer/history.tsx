@@ -123,7 +123,7 @@ function createSession(language: UiLanguage, log: LogAction, notify: SetNotice) 
                   column: 0,
                 },
               ],
-        engineContract: 'open-flow-engine/v5',
+        engineContract: 'open-flow-engine/v6',
         flowId: flow.flowId,
         modelVersion: currentFlowModelVersion,
         revisionDigest: revision().digest,
@@ -404,7 +404,7 @@ function HistoryCanvasActions({ session }: { session: ReturnType<typeof createSe
   const valueField = value?.kind == 'value' ? value.values[0] : undefined
   useStoryActions([
     { label: 'Select mixed group', onClick: () => store.selectNodes(['trigger', 'value', 'code', 'note']) },
-    { label: 'Edit title (undoable)', disabled: history.failed || history.applying, onClick: () => void store.saveNodeTitle('code', 'Edited transform') },
+    { label: 'Edit title (undoable)', disabled: history.failed || history.applying, onClick: () => void store.nodes.saveNodeTitle('code', 'Edited transform') },
     {
       label: 'Edit code (keep canvas undo)',
       disabled: history.failed || history.applying,
@@ -421,7 +421,7 @@ function HistoryCanvasActions({ session }: { session: ReturnType<typeof createSe
     {
       label: 'Delete value field',
       disabled: history.failed || history.applying || valueField == null,
-      onClick: () => void store.saveValue('value', [], { target: 'field', name: valueField?.handle ?? 'value' }),
+      onClick: () => void store.nodes.saveValue('value', [], { target: 'field', name: valueField?.handle ?? 'value' }),
     },
     { label: 'Hold saves', onClick: () => session.hold() },
     { label: 'Release saves', onClick: () => session.release() },

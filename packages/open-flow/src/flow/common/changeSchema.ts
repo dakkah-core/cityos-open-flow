@@ -5,18 +5,23 @@ import { z } from 'zod'
 import { limitDecisionTask } from '../../decision/common/decision.ts'
 import { assertOpenApiAuthBindings } from '../../openapi/common/authBindings.ts'
 import { checkJsonDepth } from './json.ts'
+import { retryConfigurationSchema } from './retry.ts'
 import { triggerScheduleSchema } from './triggerScheduleSchema.ts'
 import { webhookMethods } from './webhookMethod.ts'
+import { webhookResponseTimeout } from './webhookResponse.ts'
 
-export const currentFlowModelVersion = 8
+export const currentFlowModelVersion = 10
 const text = z.string()
+const actionConnection = text.describe(
+  'Account selection: omit while unconfigured; use an account ID to select it; use "" to explicitly defer configuration. Deferred Actions fail if called; deferred Agent tools are excluded from the callable tool set. Not supported by Triggers.',
+)
 const json = z.json()
 const strings = z.array(text)
 const port = z.object({ description: text.optional(), jsonSchema: json, nullable: z.boolean(), handle: text })
 const workflowInputDefs = z.array(port.strict())
 const input = port.extend({ value: json.optional() })
 const group = z.object({ collapsed: z.boolean().optional(), group: text })
-const nodeSource = z.object({ kind: z.literal('node'), nodeId: text, output: text, field: text.optional() })
+const nodeSource = z.object({ kind: z.literal('node'), nodeId: text, output: text, system: z.literal(true).optional(), field: text.optional() })
 const source = z.union([nodeSource, z.object({ kind: z.literal('binding'), bindingId: text })])
 const fixedInput = z.union([z.object({ kind: z.literal('unset') }), z.object({ kind: z.literal('value'), value: json })])
 const mapping = z.union([fixedInput, z.object({ kind: z.literal('sources'), sources: z.array(source) })])
@@ -34,7 +39,7 @@ const capability = z.union([
   z.strictObject({
     kind: z.literal('connector'),
     mode: z.literal('independent'),
-    actions: z.array(z.strictObject({ action: text, connectionId: text.optional() })),
+    actions: z.array(z.strictObject({ action: text, connectionId: actionConnection.optional() })),
   }),
   z.strictObject({
     kind: z.literal('connector'),
@@ -59,7 +64,7 @@ const managedFields = z.object({
   ...ports,
   name: text,
   executor: z.union([
-    z.object({ kind: z.literal('connector'), action: text, connectionId: text.optional(), outputMode: z.literal('value').optional() }),
+    z.object({ kind: z.literal('connector'), action: text, connectionId: actionConnection.optional(), outputMode: z.literal('value').optional() }),
     z.object({
       kind: z.literal('openapi'),
       sourceUrl: text,
@@ -83,15 +88,22 @@ const managedFields = z.object({
           name: text,
           description: text,
           action: text,
-          connectionId: text.optional(),
+          connectionId: actionConnection.optional(),
           approval: z.boolean(),
           inputs: z.array(input.extend({ source: agentInput })),
         }),
       ),
       notification: z
-        .object({ action: text, connectionId: text.optional(), inputDefinitions: z.array(input), messageHandle: text, inputs: z.record(text, agentValue) })
+        .object({
+          action: text,
+          connectionId: actionConnection.optional(),
+          inputDefinitions: z.array(input),
+          messageHandle: text,
+          inputs: z.record(text, agentValue),
+        })
         .optional(),
     }),
+    z.strictObject({ kind: z.literal('workflow'), flowId: text, revisionId: text }),
   ]),
 })
 
@@ -149,9 +161,26 @@ const webhookOptions = z.object({
   allowedMethods: z.never().optional(),
   allowedOrigins: strings.optional(),
   noResponseBody: z.never().optional(),
+  responseBody: z
+    .discriminatedUnion('kind', [
+      z.strictObject({
+        kind: z.literal('workflow-outputs'),
+        output: text.optional(),
+        timeoutMs: z.number().int().min(webhookResponseTimeout.minMs).max(webhookResponseTimeout.maxMs).optional(),
+      }),
+      z.strictObject({
+        kind: z.literal('webhook-response'),
+        nodeId: text.optional(),
+        timeoutMs: z.number().int().min(webhookResponseTimeout.minMs).max(webhookResponseTimeout.maxMs).optional(),
+      }),
+    ])
+    .optional(),
   responseData: text.optional(),
   responseHeaders: z.record(text, text).optional(),
+  responseHeadersSource: z.strictObject({ kind: z.literal('workflow-outputs'), output: text.optional() }).optional(),
+  responseHeaderOutputs: z.record(text, text).optional(),
   responseStatusCode: z.number().int().min(200).max(599).optional(),
+  responseStatusCodeOutput: text.optional(),
 })
 const webhook = {
   bodyFields: z.array(input),
@@ -184,9 +213,12 @@ const base = {
   description: text.optional(),
   icon: text.optional(),
   timeoutMs: z.number().optional(),
+  retry: retryConfigurationSchema.optional(),
+  onError: z.enum(['stop', 'error']).optional(),
 }
 const node = z.union([
-  z.strictObject({ ...base, kind: z.literal('outputs') }).omit({ inputs: true }),
+  z.strictObject({ ...base, kind: z.literal('webhook-response'), retry: z.never().optional(), onError: z.never().optional() }),
+  z.strictObject({ ...base, kind: z.literal('outputs'), outputDefs: z.array(port.strict()), outputMappings: inputs }).omit({ inputs: true }),
   z.object({ ...base, inputs: z.record(text, z.never()), kind: z.literal('condition'), ...condition }),
   z.object({
     ...base,
@@ -201,7 +233,7 @@ const node = z.union([
   z.strictObject({ ...base, kind: z.literal('approval'), ...wait }).omit({ timeoutMs: true }),
   z.strictObject({ ...base, kind: z.literal('wait'), ...wait }).omit({ timeoutMs: true }),
   z.object({ ...trigger, kind: z.literal('manual') }),
-  z.strictObject({ ...trigger, kind: z.literal('start') }),
+  z.strictObject({ ...trigger, kind: z.literal('start'), inputDefs: workflowInputDefs }),
   z.strictObject({ ...trigger, kind: z.literal('error'), sourceFlowIds: sourceFlowIds.optional() }),
   z.object({ ...trigger, kind: z.literal('webhook'), ...webhook }),
   z.object({ ...trigger, kind: z.literal('cron'), cronTimes: triggerScheduleSchema }),
@@ -245,15 +277,12 @@ const module = z.object({ name: text, imports: strings, source: text })
 const document = z.preprocess(
   normalizeDocument,
   z.object({
-    inputDefs: workflowInputDefs.optional(),
-    outputDefs: z.array(port.strict()).optional(),
-    outputMappings: inputs.optional(),
     bindings: z.record(text, binding),
     graph,
   }),
 )
 const revision = z.object({
-  modelVersion: z.union([z.literal(2), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(currentFlowModelVersion)]),
+  modelVersion: z.union([z.literal(2), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8), z.literal(9), z.literal(currentFlowModelVersion)]),
   document,
   modules: z.record(text, module),
 })
@@ -273,32 +302,80 @@ function normalizeDocument(value: unknown): unknown {
     throw new TypeError('Subflows are no longer supported.')
   if (Object.values(record(record(candidate.graph).nodes)).some((candidateNode) => record(candidateNode).kind === 'subflow'))
     throw new TypeError('Subflow nodes are no longer supported.')
-  return upgradeStartParameters(value)
+  if (['inputDefs', 'outputDefs', 'outputMappings'].some((field) => Object.hasOwn(candidate, field)))
+    throw new TypeError('Workflow interface configuration must belong to Start and Outputs nodes.')
+  if (
+    Object.values(record(record(candidate.graph).nodes)).some(
+      (candidateNode) => record(candidateNode).kind == 'start' && Object.hasOwn(record(candidateNode), 'parameters'),
+    )
+  )
+    throw new TypeError('Legacy Start.parameters is unsupported; configure node.inputDefs.')
+  return value
+}
+
+/** Explicit storage upgrade only. Normal reads and authoring still reject retired fields. */
+export function upgradeWorkflowInterfaceDocument(value: unknown): unknown {
+  const candidate = record(value)
+  const sourceGraph = record(candidate.graph)
+  const sourceNodes = record(sourceGraph.nodes)
+  const needsUpgrade =
+    ['inputDefs', 'outputDefs', 'outputMappings'].some((field) => Object.hasOwn(candidate, field)) ||
+    Object.values(sourceNodes).some((entry) => {
+      const candidateNode = record(entry)
+      return (
+        (candidateNode.kind == 'start' && (!Object.hasOwn(candidateNode, 'inputDefs') || Object.hasOwn(candidateNode, 'parameters'))) ||
+        (candidateNode.kind == 'outputs' && (!Object.hasOwn(candidateNode, 'outputDefs') || !Object.hasOwn(candidateNode, 'outputMappings')))
+      )
+    })
+  if (!needsUpgrade) return value
+  if (candidate.graph !== sourceGraph || sourceGraph.nodes !== sourceNodes) throw new TypeError('Cannot migrate an invalid workflow graph.')
+  const starts = Object.values(sourceNodes).filter((entry) => record(entry).kind == 'start')
+  const outputs = Object.values(sourceNodes).filter((entry) => record(entry).kind == 'outputs')
+  if (starts.length > 1 || outputs.length > 1) throw new TypeError('Cannot migrate duplicate Start or Outputs nodes.')
+  const { inputDefs, outputDefs, outputMappings, ...sourceDocument } = candidate
+  if (starts.length == 0 && inputDefs !== undefined && workflowInputDefs.parse(inputDefs).length > 0)
+    throw new TypeError('Cannot migrate inputDefs without a Start node.')
+  if (
+    outputs.length == 0 &&
+    ((outputDefs !== undefined && workflowInputDefs.parse(outputDefs).length > 0) ||
+      (outputMappings !== undefined && Object.keys(inputs.parse(outputMappings)).length > 0))
+  )
+    throw new TypeError('Cannot migrate output configuration without an Outputs node.')
+  return {
+    ...sourceDocument,
+    graph: {
+      ...sourceGraph,
+      nodes: Object.fromEntries(
+        Object.entries(sourceNodes).map(([id, nodeValue]) => {
+          const candidateNode = record(nodeValue)
+          if (candidateNode.kind == 'start') {
+            const { parameters, ...rest } = candidateNode
+            return [id, { ...rest, inputDefs: workflowInputDefs.parse(mergeInterfaceConfiguration([candidateNode.inputDefs, parameters, inputDefs], [])) }]
+          }
+          if (candidateNode.kind == 'outputs')
+            return [
+              id,
+              {
+                ...candidateNode,
+                outputDefs: workflowInputDefs.parse(mergeInterfaceConfiguration([candidateNode.outputDefs, outputDefs], [])),
+                outputMappings: inputs.parse(mergeInterfaceConfiguration([candidateNode.outputMappings, outputMappings], {})),
+              },
+            ]
+          return [id, nodeValue]
+        }),
+      ),
+    },
+  }
+}
+
+function mergeInterfaceConfiguration(values: unknown[], fallback: unknown): unknown {
+  const present = values.filter((value) => value !== undefined)
+  if (present.some((value) => !dequal(value, present[0]))) throw new TypeError('Conflicting workflow interface configuration.')
+  return present.length == 0 ? fallback : present[0]
 }
 
 function record(value: unknown): Record<string, unknown> {
   return value != null && typeof value == 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
-}
-
-/** Read the legacy Start contract without discarding or overwriting definitions. */
-function upgradeStartParameters(value: unknown): unknown {
-  const candidate = record(value)
-  const sourceGraph = record(candidate.graph)
-  const sourceNodes = record(sourceGraph.nodes)
-  let inputDefs = candidate.inputDefs
-  let nodes: Record<string, unknown> | undefined
-  for (const [id, nodeValue] of Object.entries(sourceNodes)) {
-    const candidateNode = record(nodeValue)
-    if (candidateNode.kind != 'start' || !Object.hasOwn(candidateNode, 'parameters')) continue
-    const parameters = workflowInputDefs.parse(candidateNode.parameters)
-    if (inputDefs !== undefined && !dequal(inputDefs, parameters))
-      throw new TypeError('Legacy Start.parameters conflicts with workflow inputDefs or another Start node.')
-    inputDefs = parameters
-    const { parameters: _, ...upgradedNode } = candidateNode
-    nodes ??= { ...sourceNodes }
-    nodes[id] = upgradedNode
-  }
-  return nodes == null ? value : { ...candidate, inputDefs, graph: { ...sourceGraph, nodes } }
 }
 
 function upgradeLegacySources(value: unknown, resolutionIds: ReadonlySet<string>): unknown {
@@ -473,9 +550,6 @@ export function repairRevisionEnvelope(value: unknown): RevisionContent {
   return decodeRevisionContent({
     modelVersion: currentFlowModelVersion,
     document: {
-      ...(Object.hasOwn(sourceDocument, 'outputDefs') ? { outputDefs: sourceDocument.outputDefs } : {}),
-      ...(Object.hasOwn(sourceDocument, 'outputMappings') ? { outputMappings: sourceDocument.outputMappings } : {}),
-      ...(Object.hasOwn(sourceDocument, 'inputDefs') ? { inputDefs: sourceDocument.inputDefs } : {}),
       bindings: repairedEntries(sourceDocument.bindings, binding),
       graph: sourceGraph,
     },
@@ -507,9 +581,6 @@ export function decodeRevisionEnvelope(value: unknown): RevisionContent {
 }
 
 const shapes = {
-  'flow.output-defs.set': { before: z.array(port.strict()).optional(), value: z.array(port.strict()).optional() },
-  'flow.output-mappings.set': { before: inputs.optional(), value: inputs.optional() },
-  'flow.input-defs.set': { before: workflowInputDefs, value: workflowInputDefs },
   'graph.trigger.sources.set': { nodeId: text, before: sourceFlowIds.optional(), value: sourceFlowIds.optional() },
   'binding.create': { bindingId: text, binding },
   'binding.delete': { bindingId: text },
@@ -523,6 +594,13 @@ const shapes = {
     z.object({
       ...at,
       kind: z.literal('graph.node.field.set'),
+      field: z.literal('retry'),
+      before: retryConfigurationSchema.optional(),
+      value: retryConfigurationSchema.optional(),
+    }),
+    z.object({
+      ...at,
+      kind: z.literal('graph.node.field.set'),
       field: z.literal('connectionId'),
       before: text.min(1).optional(),
       value: text.min(1).optional(),
@@ -530,7 +608,7 @@ const shapes = {
     z.object({
       ...at,
       kind: z.literal('graph.node.field.set'),
-      field: z.enum(['description', 'icon', 'name']),
+      field: z.enum(['description', 'icon', 'name', 'onError']),
       before: text.optional(),
       value: text.optional(),
     }),
@@ -605,11 +683,52 @@ export function changeOperationsSchema(kind?: string): JsonValue {
 
 function checkModelVersion(content: RevisionContent): void {
   if (
-    content.modelVersion < 8 &&
-    (content.document.outputDefs !== undefined ||
-      content.document.outputMappings !== undefined ||
-      Object.values(content.document.graph.nodes).some((candidateNode) => candidateNode.kind == 'outputs'))
+    content.modelVersion < 10 &&
+    Object.values(content.document.graph.nodes).some(
+      (candidateNode) =>
+        candidateNode.kind == 'webhook' &&
+        (candidateNode.options?.responseBody != null ||
+          candidateNode.options?.responseStatusCodeOutput != null ||
+          candidateNode.options?.responseHeadersSource != null ||
+          candidateNode.options?.responseHeaderOutputs != null),
+    )
   )
+    throw new TypeError('Dynamic Webhook responses require Flow model version 10.')
+  if (content.modelVersion < 9 && Object.values(content.document.graph.nodes).some((candidateNode) => 'retry' in candidateNode && candidateNode.retry != null))
+    throw new TypeError('Node retries require Flow model version 9.')
+  if (
+    content.modelVersion < 9 &&
+    Object.values(content.document.graph.nodes).some((candidateNode) => {
+      if (candidateNode.onError != null) return true
+      const mappings = [
+        ...Object.values('inputs' in candidateNode ? candidateNode.inputs : {}),
+        ...Object.values(candidateNode.kind == 'outputs' ? candidateNode.outputMappings : {}),
+      ]
+      if (
+        mappings.some(
+          (candidateMapping) =>
+            candidateMapping.kind == 'sources' && candidateMapping.sources.some((candidateSource) => candidateSource.kind == 'node' && candidateSource.system),
+        )
+      )
+        return true
+      return (
+        candidateNode.kind == 'condition' &&
+        candidateNode.cases.some((item) =>
+          item.groups.some((candidateGroup) =>
+            candidateGroup.expressions.some((expression) =>
+              [expression.left, expression.right].some(
+                (candidateOperand) => candidateOperand?.kind == 'source' && candidateOperand.source.kind == 'node' && candidateOperand.source.system,
+              ),
+            ),
+          ),
+        )
+      )
+    })
+  )
+    throw new TypeError('Node error handling requires Flow model version 9.')
+  if (content.modelVersion < 10 && Object.values(content.document.graph.nodes).some((candidate) => candidate.kind === 'webhook-response'))
+    throw new TypeError('Webhook response nodes require Flow model version 10.')
+  if (content.modelVersion < 8 && Object.values(content.document.graph.nodes).some((candidateNode) => candidateNode.kind == 'outputs'))
     throw new TypeError('Workflow outputs require Flow model version 8.')
   if (content.modelVersion < 7 && Object.values(content.document.graph.nodes).some((candidateNode) => candidateNode.kind == 'start'))
     throw new TypeError('Start Triggers require Flow model version 7.')

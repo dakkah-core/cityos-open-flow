@@ -1,5 +1,6 @@
 import type { ConnectorAccess, ConnectorAccessSnapshot } from '@oomol-lab/open-flow/control-api'
 
+import { currentEngineContract } from '@oomol-lab/open-flow/runtime-contract'
 import { expect, it, onTestFinished } from 'vitest'
 import { publication as publicationView } from '../node/application/control-views.ts'
 import { Database } from '../node/storage/database.ts'
@@ -26,11 +27,12 @@ function fixture(providerAccess?: ConnectorAccess) {
     revisionId: 'revision',
   })
   const input = {
+    interface: { inputs: null, outputs: null },
     closureDigest: 'closure',
     content: '{"modelVersion":2}',
     crons: [],
     expectedLivePublicationId: null,
-    engineContract: 'open-flow-engine/v5',
+    engineContract: currentEngineContract,
     flowId: 'flow',
     idempotencyKey: 'publish',
     integrations: [

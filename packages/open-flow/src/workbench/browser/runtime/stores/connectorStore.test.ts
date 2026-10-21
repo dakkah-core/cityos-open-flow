@@ -67,7 +67,7 @@ describe('ConnectorStore', () => {
       })
     })
     const client = new WorkbenchClient(request)
-    vi.spyOn(client, 'listFlows').mockResolvedValue({ version: 1, flows })
+    vi.spyOn(client, 'listFlows').mockResolvedValue({ version: 1, flows: flows.map((flow) => ({ ...flow, referenceCount: 0 })) })
     vi.spyOn(client, 'getEditor').mockResolvedValue({
       version: 1,
       flow: flows[0]!,
@@ -119,7 +119,7 @@ describe('ConnectorStore', () => {
           return Response.json({
             closureDigest: `closure-${index}`,
             diagnostics: [],
-            engineContract: 'open-flow-engine/v5',
+            engineContract: 'open-flow-engine/v6',
             flowId: flow!.flowId,
             modelVersion: currentFlowModelVersion,
             revisionDigest: `digest-${flow!.flowId}`,

@@ -9,7 +9,7 @@ import type {
   FlowCanvasViewOutput,
   FlowCanvasViewTriggerNode,
 } from '../../../canvas/browser/graph/FlowCanvas/model.ts'
-import type { ConditionOperand, Port } from '../../../flow/common/change.ts'
+import type { ConditionOperand } from '../../../flow/common/change.ts'
 import type { ConnectorProvider, Diagnostic, Draft, GraphNode, Group, JsonValue, Run, RunDetails, RunEvent, TaskDefinition, TriggerNode } from './api.ts'
 import type { Point, DesignerViewport } from './canvasPresentation.ts'
 import type { ConnectionCatalog, ConnectorActionView } from './connectionCatalog.ts'
@@ -17,6 +17,7 @@ import type { ResolvedNode, ResolvedSelection, RevisionView } from './revisionVi
 
 import { wrapLayout } from '../../../canvas/browser/base/wrapLayout.ts'
 import { isTriggerNode } from '../../../flow/common/change.ts'
+import { nodeInputPorts } from '../../../flow/common/graph.ts'
 import { resolutionOutputPorts } from '../../../flow/common/graph.ts'
 import { sourceOutputLabel } from '../../../flow/common/sourceField.ts'
 import { triggerOutputPorts } from '../../../trigger/common/contract.ts'
@@ -83,6 +84,8 @@ function sourceNodePresentation(node: ResolvedSelection, context: NodeProjection
 function nodeTitle(node: ResolvedNode, t?: TFunction): string {
   if (node.node.name != null) return node.node.name
   switch (node.kind) {
+    case 'webhook-response':
+      return t?.('addNode.webhookResponse') ?? 'Webhook Response'
     case 'outputs':
       return t?.('addNode.outputs') ?? 'Workflow Outputs'
     case 'condition':
@@ -100,6 +103,8 @@ function nodeTitle(node: ResolvedNode, t?: TFunction): string {
 
 function nodeIcon(node: ResolvedNode): string | undefined {
   switch (node.kind) {
+    case 'webhook-response':
+      return ':lucide-light:reply:'
     case 'outputs':
       return ':lucide-light:log-out:'
     case 'condition':
@@ -115,6 +120,7 @@ function nodeIcon(node: ResolvedNode): string | undefined {
       if (task == null) return
       if ('moduleId' in task) return ':carbon:code:'
       if (task.executor.kind == 'decision') return ':carbon:ml-model-reference:'
+      if (task.executor.kind == 'workflow') return ':lucide-light:workflow:'
       if (task.executor.kind == 'openapi') return ':logos:openapi-icon:'
       return task.executor.kind == 'connector' ? ':carbon:connection-signal:' : ':carbon:machine-learning-model:'
     }
@@ -125,17 +131,20 @@ function edgeId(source: string, sourceHandle: string, target: string, targetHand
   return JSON.stringify([source, sourceHandle, target, targetHandle])
 }
 
-function nodePorts(node: ResolvedSelection, inputDefs: readonly Port[], revision: RevisionView): NodePorts {
+function nodePorts(node: ResolvedSelection, revision: RevisionView): NodePorts {
   if (node.kind == 'trigger') {
-    return { inputs: new Map(), outputs: new Map(Object.entries(triggerOutputPorts(node.trigger, inputDefs))) }
+    return { inputs: new Map(), outputs: new Map(Object.entries(triggerOutputPorts(node.trigger))) }
   }
   const inputs = new Map<string, Omit<FlowCanvasViewInput, 'handle' | 'sources' | 'value'>>(
     Object.keys(revision.inputMappings(node.node)).map((handle) => [handle, {}]),
   )
   const outputs = new Map<string, Omit<FlowCanvasViewOutput, 'handle'>>()
   switch (node.kind) {
+    case 'webhook-response':
+      for (const [handle, port] of Object.entries(nodeInputPorts(node.node))) inputs.set(handle, { ...port, defaultValue: port.value })
+      break
     case 'outputs':
-      for (const port of revision.outputDefs()) inputs.set(port.handle, { description: port.description, jsonSchema: port.jsonSchema, nullable: port.nullable })
+      for (const port of node.node.outputDefs) inputs.set(port.handle, { description: port.description, jsonSchema: port.jsonSchema, nullable: port.nullable })
       break
     case 'condition': {
       for (const item of node.node.cases) outputs.set(item.output, { description: item.description })
@@ -238,7 +247,6 @@ function conditionOperand(operand: ConditionOperand, context: NodeProjectionCont
 function nodeDiagnosticCount(node: ResolvedNode, diagnostics: readonly Diagnostic[]): number {
   const graphPath = `/document/graph/nodes/${node.id}`
   const paths = [graphPath]
-  if (node.kind == 'outputs') paths.push('/document/outputDefs', '/document/outputMappings')
   if (node.kind == 'task') {
     if ('moduleId' in node.node.task) paths.push(`${graphPath}/task`)
     const moduleId = node.definition != null && 'moduleId' in node.definition ? node.definition.moduleId : undefined
@@ -288,7 +296,13 @@ function runProjection(
         break
       case 'node.failed':
         running.delete(event.payload.executionId)
-        nodes.set(nodeId, { ...current, runId: run.runId, finishedAt: event.createdAt, error: event.payload.error, status: 'error' })
+        nodes.set(nodeId, {
+          ...current,
+          runId: run.runId,
+          finishedAt: event.createdAt,
+          error: event.payload.error,
+          status: event.payload.handled ? 'handled' : 'error',
+        })
         break
       case 'node.log':
         nodes.set(nodeId, {
@@ -315,6 +329,11 @@ function runProjection(
       nodes.set(nodeId, { ...nodes.get(nodeId), runId: run.runId, status: 'running' })
     }
     const waitingCounts = new Map<string, number>()
+    if ('calls' in run)
+      for (const call of run.calls ?? []) {
+        if (call.status != null && ['queued', 'starting', 'running', 'waiting'].includes(call.status))
+          waitingCounts.set(call.nodeId, (waitingCounts.get(call.nodeId) ?? 0) + 1)
+      }
     if ('waits' in run) for (const wait of run.waits) waitingCounts.set(wait.nodeId, (waitingCounts.get(wait.nodeId) ?? 0) + 1)
     for (const [nodeId, count] of waitingCounts) {
       if ((runningCounts.get(nodeId) ?? 0) <= count) nodes.set(nodeId, { ...nodes.get(nodeId), runId: run.runId, status: 'waiting' })
@@ -332,6 +351,7 @@ function executorName(task: TaskDefinition | undefined, providerName: string | u
   if ('moduleId' in task) return t?.('designer.executorJavaScript') ?? 'JavaScript'
   if (task.executor.kind == 'agent') return t?.('addNode.agent') ?? 'AI Agent'
   if (task.executor.kind == 'decision') return t?.('addNode.decision') ?? 'AI Decision'
+  if (task.executor.kind == 'workflow') return t?.('addNode.workflow') ?? 'Call Workflow'
   if (task.executor.kind == 'openapi') return 'OpenAPI'
   if (task.executor.kind == 'llm') return t?.('designer.executorLlm') ?? 'LLM'
   return `${t?.('designer.executorConnector') ?? 'Connector'} · ${providerName ?? task.executor.action.split('.')[0]}`
@@ -492,7 +512,6 @@ function groupedOutputs(resolved: ResolvedNode, outputs: readonly FlowCanvasView
 function triggerDesignerNode(
   triggerId: string,
   trigger: TriggerNode,
-  inputDefs: readonly Port[],
   position: Point,
   diagnostics: readonly Diagnostic[],
   providers: Readonly<Record<string, ConnectorProvider>>,
@@ -535,7 +554,7 @@ function triggerDesignerNode(
     id: triggerId,
     inputs: [],
     kind: 'trigger',
-    outputs: Object.entries(triggerOutputPorts(trigger, inputDefs)).map(([handle, port]) => Object.assign({ handle }, port)),
+    outputs: Object.entries(triggerOutputPorts(trigger)).map(([handle, port]) => Object.assign({ handle }, port)),
     presentation,
     position,
     title: trigger.name,
@@ -553,7 +572,9 @@ function semanticDesignerNode(nodeId: string, resolved: ResolvedNode, ports: Nod
   const connectionId = connector?.connectionId
   const selectedConnection = connectionId == null ? undefined : connections?.byId.get(connectionId)
   const connectionRequired =
-    (connectorAction?.authenticated == true && (connector?.connectionId == null || (connections != null && selectedConnection?.status != 'active'))) ||
+    (connectionId !== '' &&
+      connectorAction?.authenticated == true &&
+      (connector?.connectionId == null || (connections != null && selectedConnection?.status != 'active'))) ||
     nodeDiagnosticCount(
       resolved,
       context.diagnostics.filter((diagnostic) => diagnostic.code === 'task.action-connection-required'),
@@ -562,6 +583,7 @@ function semanticDesignerNode(nodeId: string, resolved: ResolvedNode, ports: Nod
   const common = {
     description: node.description,
     diagnostics: nodeDiagnosticCount(resolved, context.diagnostics),
+    fallbackIcon: nodeIcon(resolved),
     icon: semanticNodeIcon(resolved, context.connectorActions),
     id: nodeId,
     inputs,
@@ -611,10 +633,12 @@ function semanticDesignerNode(nodeId: string, resolved: ResolvedNode, ports: Nod
           ? { actionSummary: actionSummary(task.executor.tools, context.connectorActions, Object.values(context.providers)) }
           : {}),
         connectionRequired,
+        connectionDeferred: connector?.connectionId === '',
         reference: 'moduleId' in node.task ? node.task.moduleId : nodeId,
       }
     case 'value':
       return { ...common, kind: node.kind, values: node.values.map((port) => Object.assign({}, port)) }
+    case 'webhook-response':
     case 'outputs':
     case 'approval':
     case 'wait':
@@ -641,7 +665,7 @@ export function designerGraph(
   const entries = Object.entries(graph.nodes)
   const definitions = new Map(entries.map(([nodeId, node]) => [nodeId, revision.resolveNode(nodeId, node)]))
   const nodeIds = new Set(entries.map(([nodeId]) => nodeId))
-  const ports = new Map([...definitions].map(([nodeId, node]) => [nodeId, nodePorts(node, revision.inputDefs(), revision)]))
+  const ports = new Map([...definitions].map(([nodeId, node]) => [nodeId, nodePorts(node, revision)]))
   const edgeProjection = projectEdges(graph, nodeIds)
   const layout = layoutNodes(nodeIds, edgeProjection.dependencies, edgeProjection.dependents)
   const positions = savedPositions(presentation)
@@ -662,7 +686,7 @@ export function designerGraph(
       const column = layout.depth.get(nodeId) ?? 0
       const row = rows.get(column) ?? 0
       rows.set(column, row + 1)
-      return { id: nodeId, column, x: 80 + column * 500, y: 80 + row * 240, height: 240 }
+      return { id: nodeId, column, x: 80 + column * 500, y: 80 + row * 240, width: 420, height: 240 }
     }),
   )
   const nodes: DesignerNode[] = []
@@ -671,7 +695,7 @@ export function designerGraph(
     const resolved = definitions.get(nodeId)!
     if (resolved.kind == 'trigger') {
       nodes.push({
-        ...triggerDesignerNode(nodeId, resolved.trigger, revision.inputDefs(), position, diagnostics, providers),
+        ...triggerDesignerNode(nodeId, resolved.trigger, position, diagnostics, providers),
         contentHidden: hiddenNodeContent?.[nodeId] === true,
       })
       continue

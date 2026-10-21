@@ -6,6 +6,9 @@ multi-selection behavior. Also read the [property panel entry](property-panel.md
 - Workbench owns inspector visibility and outline/properties navigation independently of canvas selection.
   Explicit open/close actions persist a browser preference across workflows; an unset preference means closed.
   Ordinary selection never opens a closed inspector. The block library is temporary and does not overwrite this preference.
+- A newly created node with diagnostics opens its properties after validation and account setup finish.
+  This automatic reveal does not overwrite the visibility preference. Valid nodes preserve visibility;
+  changing the selection or workflow cancels a pending reveal.
 - Back returns to the node outline without clearing selection. Explicit node selection, including selecting
   the same node again, enters properties when the inspector is open. Both canvas and outline use that selection action.
 - Marquee selection highlights nodes immediately, but commits workspace selection and updates the inspector

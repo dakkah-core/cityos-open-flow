@@ -51,6 +51,7 @@ function createManifest(version: string, peerDependencies: Readonly<Record<strin
       },
       './decision': { types: './dist/common/decision.d.ts', import: './dist/common/decision.js' },
       './openapi': { types: './dist/common/openapi.d.ts', import: './dist/common/openapi.js' },
+      './workflow': { types: './dist/common/workflow.d.ts', import: './dist/common/workflow.js' },
       './connector-action': {
         types: './dist/common/connector-action.d.ts',
         import: './dist/common/connector-action.js',

@@ -26,11 +26,12 @@ import { SettingsStore } from '../../node/storage/settings-store.ts'
 import { createServerApp } from '../../node/transport/http.ts'
 import { runtimeAssertions } from './acceptance.ts'
 import { fulfillmentRuntimeAssertions } from './fulfillmentAcceptance.ts'
-import { verifyLiveWebhook } from './liveAcceptance.ts'
+import { verifyEarlyResponse, verifyLiveWebhook } from './liveAcceptance.ts'
 import { createMocks } from './mocks.ts'
 import { labOrigins } from './network.ts'
 import { diff, summary } from './report.ts'
 import { assertions, initialOperations, scenario, samples, stageCount } from './scenarios.ts'
+import { seedWorkflowTarget } from './workflowFixture.ts'
 
 export interface Manifest {
   id: string
@@ -89,6 +90,7 @@ export class LabSession {
     this.modelOrigin = origin(this.modelServer)
     labOrigins.add(this.modelOrigin)
     await this.openService()
+    if (this.scenarioId == 'workflow-call') await seedWorkflowTarget(this.service)
     const flow = (await this.service.control.createFlow('operator', `Lab ${this.scenarioId}`, 'lab-initial')).flow
     const operations = initialOperations(this.scenarioId)
     if (operations.length > 0) await this.service.control.changeDraft('operator', flow.flowId, flow.draftRevisionId, operations, 'lab-seed')
@@ -316,7 +318,8 @@ export class LabSession {
       .update(JSON.stringify([scenario(this.scenarioId, this.stage), this.baseline, samples(this.scenarioId, this.stage)]))
       .update(await readFile(new URL('./acceptance.ts', import.meta.url)))
       .update(await readFile(new URL('./scenarios.ts', import.meta.url)))
-    if (this.scenarioId == 'webhook-live') identity.update(await readFile(new URL('./liveAcceptance.ts', import.meta.url)))
+    if (this.scenarioId == 'webhook-response-node' || this.scenarioId == 'webhook-live' || this.scenarioId == 'webhook-response')
+      identity.update(await readFile(new URL('./liveAcceptance.ts', import.meta.url)))
     if (this.scenarioId == 'fulfillment-ops')
       identity
         .update(await readFile(new URL('./fulfillment.ts', import.meta.url)))
@@ -381,8 +384,9 @@ export class LabSession {
         if (!this.attempt.rejectedEdits) errors.push('No stale edit was rejected without changing the Draft.')
         if (this.service.control.runs.listRuns(this.manifest.flowId, 1, {}).page.runs.length > 0) errors.push('Unexpected run before verification.')
       }
-      if (errors.length == 0 && this.scenarioId == 'webhook-live') {
-        const result = await verifyLiveWebhook(this)
+      if (errors.length == 0 && (this.scenarioId == 'webhook-response-node' || this.scenarioId == 'webhook-live' || this.scenarioId == 'webhook-response')) {
+        const result =
+          this.scenarioId === 'webhook-response-node' ? await verifyEarlyResponse(this) : await verifyLiveWebhook(this, this.scenarioId == 'webhook-response')
         errors.push(...result.errors)
         runIds.push(...result.runIds)
       } else if (errors.length == 0) {
@@ -422,7 +426,7 @@ export class LabSession {
             errors.push(
               ...(this.scenarioId == 'fulfillment-ops'
                 ? fulfillmentRuntimeAssertions(this.stage, ...actual)
-                : runtimeAssertions(this.scenarioId, ...actual)
+                : runtimeAssertions(this.scenarioId, ...actual, revision.content)
               ).map((error) => `${sample.name}: ${error}`),
             )
             this.attempt.excluded!.push({ kind: 'verification', sample: sample.name, durationMs: performance.now() - started, runId: run.runId })

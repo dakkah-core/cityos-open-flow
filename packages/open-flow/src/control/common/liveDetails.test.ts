@@ -17,12 +17,12 @@ const publication: Publication = {
   closureDigest: 'closure',
   revisionDigest: 'revision',
   sharedAccessDigest: 'access',
-  engineContract: 'open-flow-engine/v5',
+  engineContract: 'open-flow-engine/v6',
   modelVersion: currentFlowModelVersion,
   version: 1,
 }
 const nodes: Record<string, TriggerNode> = {
-  start: { kind: 'start', name: 'Start' },
+  start: { inputDefs: [], kind: 'start', name: 'Start' },
   webhook: {
     kind: 'webhook',
     name: 'Receive',
@@ -75,7 +75,19 @@ const nodes: Record<string, TriggerNode> = {
 const content: RevisionContent = {
   modelVersion: currentFlowModelVersion,
   modules: {},
-  document: { inputDefs: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: false }], bindings: {}, graph: { nodes, edges: [] } },
+  document: {
+    bindings: {},
+    graph: {
+      edges: [],
+      nodes: {
+        ...nodes,
+        start: {
+          ...(nodes.start as Extract<import('../../flow/common/change.ts').GraphNode, { kind: 'start' }>),
+          inputDefs: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: false }],
+        },
+      },
+    },
+  },
 }
 const bindings: TriggerBinding[] = Object.entries(nodes).flatMap(([triggerNodeId, node]) =>
   node.kind == 'start' || node.kind == 'manual'
@@ -210,11 +222,7 @@ it('reads legacy published Manual entries without creating a runtime binding', (
   const legacy: RevisionContent = {
     modelVersion: 6,
     modules: {},
-    document: {
-      inputDefs: [{ handle: 'message', jsonSchema: { type: 'string' }, nullable: false }],
-      bindings: {},
-      graph: { nodes: { original: { kind: 'manual', name: 'Original' } }, edges: [] },
-    },
+    document: { bindings: {}, graph: { nodes: { original: { kind: 'manual', name: 'Original' } }, edges: [] } },
   }
   const entries = liveEntries(legacy, publication, [])
   expect(entries).toEqual([{ nodeId: 'original', type: 'manual', name: 'Original', config: {} }])

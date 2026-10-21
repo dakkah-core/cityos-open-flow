@@ -1,5 +1,6 @@
 import type { ComponentProps, ReactElement } from 'react'
 import type { EventSource } from '../../../control/common/api.ts'
+import type { SetNotice } from './stores/workbenchNotice.ts'
 
 import { useCallback, useState } from 'react'
 import { useTranslate } from 'val-i18n-react'
@@ -11,6 +12,8 @@ import { errorNotice } from './stores/workbenchNotice.ts'
 
 export function CreateEventSourceDialog({
   client,
+  sourceKind,
+  notify,
   teamId,
   existingNames,
   disabled,
@@ -20,6 +23,8 @@ export function CreateEventSourceDialog({
   onSelect,
   onCreated,
 }: {
+  readonly sourceKind?: 'feishu' | 'slack' | 'intercom' | 'sentry' | 'zoom' | 'fireflies' | 'jira'
+  readonly notify: SetNotice
   readonly client: ComponentProps<typeof SourceForm>['client']
   readonly teamId: string | null
   readonly existingNames: readonly string[]
@@ -38,17 +43,14 @@ export function CreateEventSourceDialog({
   const [created, setCreated] = useState<EventSource>()
   const [selected, setSelected] = useState(false)
   const [pending, setPending] = useState(false)
-  const [error, setError] = useState<string>()
 
   async function select(source: EventSource) {
     setPending(true)
-    setError(undefined)
     try {
       const saved = await onSelect(source)
       setSelected(saved)
-      if (!saved) setError(t('eventSources.bindFailed'))
     } catch (cause) {
-      setError(errorNotice(cause, t).message)
+      notify(errorNotice(cause, t))
     } finally {
       setPending(false)
     }
@@ -64,7 +66,6 @@ export function CreateEventSourceDialog({
           if (value) {
             setCreated(undefined)
             setSelected(false)
-            setError(undefined)
           }
         }}
       >
@@ -77,6 +78,8 @@ export function CreateEventSourceDialog({
           <div className="min-h-0 overflow-y-auto">
             {open && created == null && (
               <SourceForm
+                sourceKind={sourceKind}
+                notify={notify}
                 client={client}
                 teams={[]}
                 fixedTeamId={teamId}
@@ -93,12 +96,7 @@ export function CreateEventSourceDialog({
             {created != null && (
               <div className="flex flex-col gap-4 py-2">
                 <p className="m-0 font-medium">{created.name}</p>
-                <EventSourceSetup source={created} client={client} onChange={setCreated} />
-                {error != null && (
-                  <p role="alert" className="m-0 text-sm text-destructive">
-                    {error}
-                  </p>
-                )}
+                <EventSourceSetup notify={notify} source={created} client={client} onChange={setCreated} />
                 <div className="flex justify-end gap-2">
                   {!selected && (
                     <Button disabled={pending || disabled} onClick={() => void select(created)}>

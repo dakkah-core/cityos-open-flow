@@ -85,7 +85,7 @@ it('upgrades a readable legacy Draft once while preserving historical Runs, Live
         ...legacy.document.graph,
         nodes: {
           ...legacy.document.graph.nodes,
-          start: { ...legacy.document.graph.nodes.start, kind: 'start' },
+          start: { ...legacy.document.graph.nodes.start, kind: 'start', inputDefs: [] },
         },
       },
     },
@@ -108,7 +108,7 @@ it('upgrades a readable legacy Draft once while preserving historical Runs, Live
   await expect(api.upgradeDraft(flow.flowId, next.revisionId, { idempotencyKey: 'already-upgraded' })).rejects.toMatchObject({ code: 'flow.revision-conflict' })
 })
 
-it.each([7, 8])('opens and edits a model %s legacy Start through HTTP while retaining stored history', async (modelVersion) => {
+it.each([7, 8])('rejects model %s legacy Start configuration without rewriting stored history', async (modelVersion) => {
   const { api, file, service } = await fixture()
   const flow = await api.createFlow('Legacy Start parameters', 'legacy-start-parameters')
   const parameters = [
@@ -129,34 +129,9 @@ it.each([7, 8])('opens and edits a model %s legacy Start through HTTP while reta
     database.prepare('UPDATE revisions SET content = ?, digest = ? WHERE revision_id = ?').run(content, digest, flow.draftRevisionId)
     database.prepare('UPDATE flow_revisions SET digest = ?, model_version = ? WHERE revision_id = ?').run(digest, modelVersion, flow.draftRevisionId)
     const presentation = service.control.updatePresentation(flow.flowId, 1, { nodes: { start: { x: 100, y: 200 } } })
-    const editor = await api.getEditor(flow.flowId)
-    expect(editor.draft).toMatchObject({ revisionId: flow.draftRevisionId, digest, content: { document: { inputDefs: parameters } } })
-    expect(editor.draft.content.document.graph).toEqual({ ...legacy.document.graph, nodes: { ...legacy.document.graph.nodes, start: node } })
+    await expect(api.getEditor(flow.flowId)).rejects.toThrow()
+    await expect(api.upgradeDraft(flow.flowId, flow.draftRevisionId)).rejects.toThrow()
     expect((await api.getFlow(flow.flowId)).draftRevisionId).toBe(flow.draftRevisionId)
-    expect(database.prepare('SELECT content, digest FROM revisions WHERE revision_id = ?').get(flow.draftRevisionId)).toEqual({ content, digest })
-    await expect(api.createDraftRun(flow.flowId, flow.draftRevisionId, { trigger: { nodeId: 'start', outputs: {} } })).rejects.toMatchObject({
-      code: 'run.invalid',
-    })
-    const run = await api.createDraftRun(flow.flowId, flow.draftRevisionId, { trigger: { nodeId: 'start', outputs: { message: 'Preserved' } } })
-    const stored = database.prepare('SELECT trigger_outputs AS outputs FROM runs WHERE run_id = ?').get(run.runId) as { outputs: string }
-    expect(JSON.parse(stored.outputs)).toEqual({ message: 'Preserved', note: null })
-    const changed = await api.changeDraft(
-      flow.flowId,
-      flow.draftRevisionId,
-      [{ kind: 'graph.node.field.set', nodeId: 'start', field: 'name', before: 'Original entry', value: 'Renamed entry' }],
-      'rename-legacy-start',
-    )
-    const next = await api.getEditor(flow.flowId)
-    expect(next.draft.revisionId).toBe(changed.revision.revisionId)
-    expect(next.draft.content).toEqual({
-      ...editor.draft.content,
-      modelVersion: currentFlowModelVersion,
-      document: {
-        ...editor.draft.content.document,
-        graph: { ...editor.draft.content.document.graph, nodes: { ...editor.draft.content.document.graph.nodes, start: { ...node, name: 'Renamed entry' } } },
-      },
-    })
-    expect(await api.getRevision(flow.flowId, flow.draftRevisionId)).toEqual(editor.draft)
     expect(await api.getPresentation(flow.flowId)).toEqual(presentation)
     expect(database.prepare('SELECT content, digest FROM revisions WHERE revision_id = ?').get(flow.draftRevisionId)).toEqual({ content, digest })
   } finally {
@@ -202,19 +177,15 @@ it.each(['draft', 'live'] as const)('persists complete Start arguments for %s Ru
   const flow = await api.createFlow('Start arguments', 'arguments')
   const changed = await api.changeDraft(flow.flowId, flow.draftRevisionId, [
     {
-      kind: 'flow.input-defs.set',
-      before: [],
-      value: [
-        { handle: 'text', jsonSchema: { type: 'string' }, nullable: false },
-        { handle: 'items', jsonSchema: { type: 'array', items: { type: 'string' } }, nullable: true },
-      ],
-    },
-    {
       kind: 'graph.node.create',
       nodeId: 'start',
       node: {
         kind: 'start',
         name: 'Start',
+        inputDefs: [
+          { handle: 'text', jsonSchema: { type: 'string' }, nullable: false },
+          { handle: 'items', jsonSchema: { type: 'array', items: { type: 'string' } }, nullable: true },
+        ],
       },
     },
   ])
@@ -259,7 +230,7 @@ it.each([false, true])('rejects explicit Live Webhook Runs with Start present: %
   const flow = await api.createFlow('Webhook entry', 'webhook-entry')
   const changed = await api.changeDraft(flow.flowId, flow.draftRevisionId, [
     { kind: 'graph.node.create', nodeId: 'webhook', node: { kind: 'webhook', name: 'Webhook', method: 'POST', bodyFields: [] } },
-    ...(withStart ? [{ kind: 'graph.node.create' as const, nodeId: 'start', node: { kind: 'start' as const, name: 'Start' } }] : []),
+    ...(withStart ? [{ kind: 'graph.node.create' as const, nodeId: 'start', node: { kind: 'start' as const, name: 'Start', inputDefs: [] } }] : []),
   ])
   const operation = await api.publishFlow(flow.flowId, changed.revision.revisionId, null)
   await service.tickMaintenance()

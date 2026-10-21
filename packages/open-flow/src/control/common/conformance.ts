@@ -4,6 +4,7 @@ import type { ConnectorConnection, CreateEventSource, ResultInfo, PollTriggerTes
 import type { ProviderAccessIdentity } from './providerAccess.ts'
 
 import { dequal } from 'dequal/lite'
+import { currentEngineContract as engineContract } from '../../execution/common/engineContract.ts'
 import { upgradeRevisionContent } from '../../flow/common/change.ts'
 import { ControlClient, decodeRunEvent } from './api.ts'
 import { allConnectorConnectionsQuery } from './connectorQueries.ts'
@@ -21,8 +22,6 @@ export interface ControlApiConformanceCase {
 }
 
 type RecordValue = Readonly<Record<string, unknown>>
-
-const engineContract = 'open-flow-engine/v5'
 
 function fail(message: string): never {
   throw new Error(message)
@@ -139,7 +138,7 @@ function addValueNode(harness: ControlApiConformanceHarness, flowId: string, rev
 async function addStartTrigger(harness: ControlApiConformanceHarness, flowId: string, revisionId: string): Promise<string> {
   return changedRevisionId(
     await json(
-      await changeRequest(harness, flowId, revisionId, [{ kind: 'graph.node.create', node: { kind: 'start', name: 'Start' }, nodeId: 'start' }]),
+      await changeRequest(harness, flowId, revisionId, [{ kind: 'graph.node.create', node: { inputDefs: [], kind: 'start', name: 'Start' }, nodeId: 'start' }]),
       200,
       'Add Start node',
     ),
@@ -322,19 +321,16 @@ export const controlApiConformanceCases: readonly ControlApiConformanceCase[] = 
         requestId: 'start-parameters-create',
         edits: [
           {
-            op: 'flow.update',
-            set: {
+            op: 'node.add',
+            as: 'start',
+            type: 'start',
+            name: 'Start',
+            config: {
               inputDefs: {
                 message: { schema: { type: 'string' }, nullable: false, description: 'Original' },
                 note: { schema: { type: 'string' }, nullable: true },
               },
             },
-          },
-          {
-            op: 'node.add',
-            as: 'start',
-            type: 'start',
-            name: 'Start',
           },
         ],
       })
@@ -342,11 +338,11 @@ export const controlApiConformanceCases: readonly ControlApiConformanceCase[] = 
       const changed = await api.editAuthoring(flow.flowId, {
         baseRevision: created.revision,
         requestId: 'start-parameters-update',
-        edits: [{ op: 'flow.update', set: { inputDefs: { message: { description: 'Call message' } } } }],
+        edits: [{ op: 'node.update', node: nodeId, set: { config: { inputDefs: { message: { description: 'Call message' } } } } }],
       })
-      const details = await api.readAuthoring(flow.flowId)
+      const details = await api.readAuthoring(flow.flowId, { nodes: [nodeId] })
       equal(
-        details.data.inputDefs,
+        (details.data.nodes?.[0]?.config as Record<string, unknown> | undefined)?.inputDefs,
         {
           message: { schema: { type: 'string' }, nullable: false, description: 'Call message' },
           note: { schema: { type: 'string' }, nullable: true },
@@ -366,9 +362,9 @@ export const controlApiConformanceCases: readonly ControlApiConformanceCase[] = 
       equal(await json(await run({ message: 'Hello' }, 'start-call'), 200, 'Replay Start call'), admitted, 'Stable Start admission')
       await error(await run({ message: 'Hello', note: null }, 'start-call'), 409, 'run.conflict', 'Preserve original request identity before normalization')
       await json(await run({ message: 'Hello', note: null }, 'start-explicit-null'), 202, 'Admit explicit null')
-      const old = await api.readAuthoring(flow.flowId, { revision: created.revision })
+      const old = await api.readAuthoring(flow.flowId, { revision: created.revision, nodes: [nodeId] })
       equal(
-        old.data.inputDefs,
+        (old.data.nodes?.[0]?.config as Record<string, unknown> | undefined)?.inputDefs,
         {
           message: { schema: { type: 'string' }, nullable: false, description: 'Original' },
           note: { schema: { type: 'string' }, nullable: true },
@@ -488,6 +484,7 @@ export const controlApiConformanceCases: readonly ControlApiConformanceCase[] = 
       equal(
         record(created.resourceReferences, 'Flow resource references').draft,
         {
+          calledFlowIds: [],
           variableNames: [],
           connections: [],
           errorSourceFlowIds: [],
@@ -498,15 +495,15 @@ export const controlApiConformanceCases: readonly ControlApiConformanceCase[] = 
       await error(await createFlowRequest(harness, 'Different flow', 'flow-lifecycle'), 409, 'flow.conflict', 'Conflicting Flow')
       equal(await json(await request(harness, `/v1/flows/${flowId}`), 200, 'Read Flow'), created, 'Read Flow')
       const page = await json(await request(harness, '/v1/flows?includeTotal=true'), 200, 'List Flows')
-      equal(page.flows, [created], 'Listed Flows')
+      equal(page.flows, [{ ...created, referenceCount: 0 }], 'Listed Flows')
       equal(page.total, 1, 'Flow total')
       const second = await createFlow(harness, 'Second control flow', 'flow-lifecycle-second')
       const firstPage = await json(await request(harness, '/v1/flows?limit=1'), 200, 'List first Flow page')
-      equal(firstPage.flows, [created], 'First Flow page')
+      equal(firstPage.flows, [{ ...created, referenceCount: 0 }], 'First Flow page')
       const cursor = requiredString(firstPage.nextCursor, 'Flow cursor')
       equal(
         (await json(await request(harness, `/v1/flows?limit=1&cursor=${encodeURIComponent(cursor)}`), 200, 'List second Flow page')).flows,
-        [second],
+        [{ ...second, referenceCount: 0 }],
         'Second Flow page',
       )
       const renamed = await json(
@@ -901,11 +898,19 @@ export const controlApiConformanceCases: readonly ControlApiConformanceCase[] = 
         )
       const run = await create('wait-run', 'Create Wait Run')
       const runId = requiredString(run.runId, 'Wait Run runId')
-      let detail = run
-      for (let attempt = 0; list(detail.waits, 'Waits').length == 0 && attempt < 200; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 10))
-        detail = await json(await request(harness, `/v1/runs/${runId}`), 200, 'Read Wait Run')
+      const awaitRun = async (initial: RecordValue, ready: (value: RecordValue) => boolean, message: string): Promise<RecordValue> => {
+        const id = requiredString(initial.runId, 'Run id')
+        const deadline = performance.now() + 10_000
+        let current = initial
+        while (!ready(current)) {
+          if (performance.now() >= deadline) fail(`${message}: timed out after 10000ms; last Run: ${JSON.stringify(current)}.`)
+          await new Promise((resolve) => setTimeout(resolve, 25))
+          current = await json(await request(harness, `/v1/runs/${id}`), 200, message)
+        }
+        return current
       }
+      const hasWait = (value: RecordValue) => list(value.waits, 'Waits').length > 0
+      let detail = await awaitRun(run, hasWait, 'Wait Run to pause')
       equal(detail.status, 'running', 'Wait Run status')
       const waiting = record(list(detail.waits, 'Waits')[0], 'Active Wait')
       equal(waiting.actions, ['approve', 'reject'], 'Wait actions')
@@ -942,10 +947,7 @@ export const controlApiConformanceCases: readonly ControlApiConformanceCase[] = 
       equal(rejected.action, 'approve', 'Winning action')
       equal(rejected.resolutionAccepted, false, 'Competing resolution')
 
-      for (let attempt = 0; detail.status != 'completed' && attempt < 200; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 10))
-        detail = await json(await request(harness, `/v1/runs/${runId}`), 200, 'Read resumed Run')
-      }
+      detail = await awaitRun(detail, (value) => value.status == 'completed', 'Wait Run to resume')
       equal(detail.status, 'completed', 'Resumed Run status')
       equal(detail.waits, [], 'Completed Wait projection')
       const replay = await json(await resolveWait('approve'), 200, 'Replay approved Wait')
@@ -961,11 +963,7 @@ export const controlApiConformanceCases: readonly ControlApiConformanceCase[] = 
 
       const canceled = await create('wait-run-cancel', 'Create cancelable Wait Run')
       const canceledRunId = requiredString(canceled.runId, 'Cancelable Wait Run id')
-      let canceledDetail = canceled
-      for (let attempt = 0; list(canceledDetail.waits, 'Waits').length == 0 && attempt < 200; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 10))
-        canceledDetail = await json(await request(harness, `/v1/runs/${canceledRunId}`), 200, 'Read cancelable Wait Run')
-      }
+      const canceledDetail = await awaitRun(canceled, hasWait, 'Wait cancelable Run to pause')
       equal(canceledDetail.status, 'running', 'Cancelable Wait status')
       equal(
         (
@@ -1055,9 +1053,9 @@ export const publicationControlApiConformanceCases: readonly ControlApiConforman
       const first = await completePublish(harness, await publishRequest(harness, flowId, revisionId, null, 'enable-first'), 202, 'Publish')
       const publicationId = requiredString(first.publication.publicationId, 'Publication id')
       const disabled = await json(await change(false, publicationId), 200, 'Disable')
-      equal(disabled.live, { enabled: false, publicationId, revisionId }, 'Disabled summary')
+      equal(disabled.live, { enabled: false, hasStart: true, publicationId, revisionId }, 'Disabled summary')
       const page = await json(await request(harness, '/v1/flows'), 200, 'List disabled Flow')
-      equal(page.flows, [disabled], 'List includes Live state')
+      equal(page.flows, [{ ...disabled, referenceCount: 0 }], 'List includes Live state')
       equal((await json(await request(harness, `/v1/flows/${flowId}/live`), 200, 'Disabled Live')).status, 'suspended', 'Disabled Live status')
       await error(await liveRunRequest(harness, publicationId, 'disabled-run'), 412, 'live.conflict', 'Disabled Live rejects Run')
       await json(

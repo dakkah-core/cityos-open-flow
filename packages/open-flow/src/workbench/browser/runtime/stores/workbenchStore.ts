@@ -1,5 +1,6 @@
 import type { I18n } from 'val-i18n'
 import type { ReadonlyVal, Val } from 'value-enhancer'
+import type { FlowSvgOptions } from '../../../../canvas/browser/graph/FlowCanvas/exportSvg.ts'
 import type { InteractiveMode } from '../../../../canvas/browser/stores/canvas/canvas.store.ts'
 import type { WorkflowFile } from '../../../../flow/common/workflowFile.ts'
 import type { ConnectorConnection, WorkbenchClient, Draft, Flow, FlowCheck, Run, RunEvent } from '../api.ts'
@@ -317,6 +318,18 @@ export class WorkbenchStore {
     if (!this.#disposed) this.#notice.set(undefined)
   }
 
+  public async exportSvg(language: string, options: FlowSvgOptions): Promise<void> {
+    const model = this.$.designer.value
+    const title = this.workspace.$.flow.value?.name ?? this.workspace.$.flowId.value ?? 'Workflow'
+    try {
+      const { downloadFlowSvg } = await import('../../../../canvas/browser/graph/FlowCanvas/exportSvg.ts')
+      await downloadFlowSvg(model, title, language, options)
+      if (!this.#disposed) this.#notice.set({ kind: 'success', message: this.#i18n.t('resource.exportSvgComplete') })
+    } catch {
+      if (!this.#disposed) this.#notice.set({ kind: 'error', message: this.#i18n.t('resource.exportSvgFailed') })
+    }
+  }
+
   public invalidateVariableNames(): void {
     this.#variableNamesStale = true
   }
@@ -382,13 +395,13 @@ export class WorkbenchStore {
   }
 
   public async createFlow(name: string, create?: (name: string) => Promise<string>): Promise<boolean> {
-    return await this.#openNewFlow(await this.workspace.createFlow(name, create), 'notice.created')
+    return await this.#openNewFlow(await this.workspace.createFlow(name, create))
   }
 
-  async #openNewFlow(created: Flow | undefined, notice: 'notice.created' | 'notice.flowImported'): Promise<boolean> {
+  async #openNewFlow(created: Flow | undefined, notice?: 'notice.flowImported'): Promise<boolean> {
     if (this.#disposed || created == null) return false
     await this.selectFlow(created.flowId)
-    if (!this.#disposed) this.#notice.set({ kind: 'success', message: this.#i18n.t(notice, { name: created.name }) })
+    if (!this.#disposed && notice != null) this.#notice.set({ kind: 'success', message: this.#i18n.t(notice) })
     return true
   }
 
@@ -458,7 +471,7 @@ export class WorkbenchStore {
       const executor = 'executor' in node.node.task ? node.node.task.executor : undefined
       if (executor?.kind != 'connector' || executor.action != action.actionId || executor.connectionId != null) return
       const connection = prepared.action.defaultConnection
-      if (connection != null) await this.workspace.setConnectorConnection(node.id, connection.connectionId)
+      if (connection != null) await this.workspace.nodes.setConnectorConnection(node.id, connection.connectionId)
       if (!this.#disposed && flowId == this.workspace.$.flowId.value) await this.connectors.refresh()
     } catch (error) {
       if (!this.#disposed && flowId == this.workspace.$.flowId.value) this.#notice.set(errorNotice(error, this.#i18n.t))

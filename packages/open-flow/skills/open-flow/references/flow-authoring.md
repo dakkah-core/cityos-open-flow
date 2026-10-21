@@ -152,7 +152,12 @@ Common sources are `{"kind":"value","value":...}`,
 when there is one output, or select a nested `field`. Each node schema advertises
 supported sources. A Trigger cannot read downstream results before the Run starts.
 
-For workflow business outputs, declare fields through `flow.update.set.outputDefs` using the same named schema/nullable/description map as `inputDefs`. Add one `outputs` node with empty config, set its declared fields with `node.add.inputs` or `input.set`, and connect its execution predecessors. It runs after those dependencies settle and accepts no outgoing connections. `flow_read` exposes `outputDefs` and `outputMappings`; completed Run results expose business `outputs` separately from node results and logs. This does not invoke another workflow.
+For workflow business outputs, add one `outputs` node with `config.outputDefs` as a named schema/nullable/description map. Set sources with `node.add.inputs` or `input.set` and connect execution predecessors. Outputs owns its definitions and mappings; deleting it removes both. Node details expose definitions and inputs. Run results expose business `outputs` separately from node logs. A `workflow` node with `config: { "flowId": "TARGET_FLOW_ID" }` calls the target's current enabled Live with Start. Published interface snapshots supply its ports. A changed Revision with the same interface remains callable; changed interfaces require `node.refresh`. Snapshot comparison ignores descriptions and port ordering, but preserves schema, nullability and node-presence differences.
+
+Workflow target selection may retain an owned unpublished or disabled Flow. Without a loaded interface,
+the call stores an empty source revision; checks report the target problem or missing interface.
+After the target becomes available, `node.refresh` loads its current Live contract. Selection and
+workflow-call checks do not validate Start presence. Start remains required at actual Live invocation.
 Schema `{}` accepts dynamic JSON; it does not convert objects or arrays into text.
 
 ### Change one prompt rule
@@ -284,15 +289,18 @@ unavailable action and an action lacking an active Connection are different
 problems. Actions marked `authenticated: false` need no account. Connection
 selection rules come from the selected node contract.
 
-| Capability                      | Relevant schema and configuration                                                                                       |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Provider read or write          | `connector`: discovered `action`, optional `connectionId`, named input bindings.                                        |
-| Provider event                  | `poll` or `integration`: discovered `key`, Connection and any static inputs; polling also has a schedule.               |
-| Manual, HTTP or scheduled entry | `start`, `webhook`, `cron`: workflow `inputDefs`, HTTP body fields, or schedule.                                        |
-| Workflow failure handler        | `error`: published upstream Flows' automatic Run failures; not a node-level catch or a handler for manual Run failures. |
-| Fixed HTTP operation            | `openapi`: an OpenAPI source, path and method; resolved authentication choices and ports appear in node details.        |
-| Reusable constants              | `value`: named JSON values and optional output constraints.                                                             |
-| Durable interaction             | `wait`, `approval`: prompt and named inputs; resume through the Run's Wait ID.                                          |
+For Connector Tasks, independent Code Actions, Agent tools and notifications, an omitted `connectionId` means unconfigured; `connectionId: ""` explicitly defers account configuration. Deferred selections pass account readiness checks but fail with `connector.connection-required` if invoked. Deferred Agent tools are excluded from the callable tool set. Provider Triggers still require a nonempty account ID. Public edits and portable exports preserve the empty string; clear the field to return to the unconfigured state.
+
+| Capability                      | Relevant schema and configuration                                                                                                  |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Provider read or write          | `connector`: discovered `action`, optional `connectionId`, named input bindings.                                                   |
+| Provider event                  | `poll` or `integration`: discovered `key`, Connection and any static inputs; polling also has a schedule.                          |
+| Manual, HTTP or scheduled entry | `start`, `webhook`, `cron`: workflow `inputDefs`, HTTP body fields, or schedule.                                                   |
+| Workflow failure handler        | `error`: published upstream Flows' automatic Run failures; not a node-level catch or a handler for manual Run failures.            |
+| Call another workflow           | `workflow`: select an owned published Flow ID; inputs and outputs derive from its saved contract. Use `node.refresh` to update it. |
+| Fixed HTTP operation            | `openapi`: an OpenAPI source, path and method; resolved authentication choices and ports appear in node details.                   |
+| Reusable constants              | `value`: named JSON values and optional output constraints.                                                                        |
+| Durable interaction             | `wait`, `approval`: prompt and named inputs; resume through the Run's Wait ID.                                                     |
 
 Connector and LLM services are configured on the Server. Missing capabilities
 should be described in terms of the required operation or event, without silently
@@ -321,7 +329,7 @@ The Start node is selected automatically even when other Triggers exist; use `--
 overrides; command help gives their shape. Live Runs use `--source live` and
 `--expected-publication` instead of `--expected-revision`.
 
-Declare workflow inputs with `{"op":"flow.update","set":{"inputDefs":{"message":{"schema":{"type":"string"},"nullable":false},"note":{"schema":{"type":"string"},"nullable":true}}}}`, and create a Start node with empty config. The `flow_read` outline returns `data.inputDefs` directly; `flow_live` returns the published contract in top-level `inputDefs`. Use workflow-level `clear` paths such as `["inputDefs","message","description"]` for field removal or `["inputDefs"]` to clear the definitions. Downstream nodes bind these fields with `{ "kind": "output", "node": "$start", "port": "message" }` and separate execution edges. Call it with `--outputs '{"message":"Hello"}'`; note becomes null. REST and MCP Run calls use the same map in `trigger.outputs`. Opening an editable legacy Flow upgrades its old Manual node to a Start while preserving omitted workflow inputs in a new Draft Revision; its published Live contract is unchanged until publishing.
+Declare parameters on Start: `{"op":"node.add","as":"start","type":"start","name":"Start","config":{"inputDefs":{"message":{"schema":{"type":"string"},"nullable":false},"note":{"schema":{"type":"string"},"nullable":true}}}}`. Read definitions in Start node details at `config.inputDefs`; `flow_live.inputDefs` remains a derived view of the published Start. Update with `node.update set.config.inputDefs`, and clear node-relative paths such as `["config","inputDefs","message","description"]`. Downstream nodes bind `{ "kind": "output", "node": "$start", "port": "message" }` with separate execution edges. Call with `--outputs '{"message":"Hello"}'`; note becomes null. REST and MCP use `trigger.outputs`. Deleting Start removes its configuration; undo restores it, while a new Start has empty definitions.
 
 ### Inspect or continue an existing Run
 

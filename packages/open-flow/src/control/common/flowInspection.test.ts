@@ -108,7 +108,6 @@ it('preserves editable graph relationships and defaults without catalog schemas 
   expect(compact).toMatchObject({
     flow: { flowId: 'flow', name: 'Mail' },
     draft: {
-      inputDefs: [],
       revisionId: 'r1',
       graph: {
         edges: draft.content.document.graph.edges,
@@ -148,7 +147,7 @@ it('preserves editable graph relationships and defaults without catalog schemas 
 })
 
 it('preserves unreadable Draft diagnostics and published identity in either mode', async () => {
-  const metadata = { ...flow, live: { enabled: true, publicationId: 'p1', revisionId: 'published' } }
+  const metadata = { ...flow, live: { hasStart: true, enabled: true, publicationId: 'p1', revisionId: 'published' } }
   const inspected = await inspectFlowDraft(metadata, () => {
     throw Object.assign(new Error('Upgrade required'), { code: 'flow.revision-upgrade-required' })
   })

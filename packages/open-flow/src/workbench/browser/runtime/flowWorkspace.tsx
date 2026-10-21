@@ -24,9 +24,9 @@ import { NodePickerPopover } from './editor/nodePickerPopover.tsx'
 import { useInspectorPanel } from './editor/useInspectorPanel.ts'
 import { WorkbenchCanvas } from './editor/workbenchCanvas.tsx'
 import { Icon } from './icons.tsx'
+import { WorkbenchLinkContext } from './linkContext.ts'
 import { NavigationStore } from './navigation.ts'
 import { PublicationsView } from './publications/publicationsView.tsx'
-import { RunLinkContext } from './runs/errorHandling.tsx'
 import { RunControl } from './runs/runControl.tsx'
 import { RunDrawer } from './runs/runDrawer.tsx'
 import { readRunDrawerOpen, writeRunDrawerOpen } from './runs/runDrawerPreference.ts'
@@ -99,13 +99,14 @@ function RunDrawerContainer({
 
 // Keep inspector-only data updates out of the canvas render path.
 const NodeInspectorContainer = memo(function NodeInspectorContainer({
+  onAddWorkflowOutputs,
   store,
   focus,
   disabled,
   revision,
   selection,
   theme,
-}: Pick<ComponentProps<typeof NodeInspector>, 'focus' | 'disabled' | 'revision' | 'selection' | 'theme'> & {
+}: Pick<ComponentProps<typeof NodeInspector>, 'focus' | 'disabled' | 'revision' | 'selection' | 'theme' | 'onAddWorkflowOutputs'> & {
   readonly store: WorkbenchStore
 }): ReactElement {
   const t = useTranslate()
@@ -175,6 +176,14 @@ const NodeInspectorContainer = memo(function NodeInspectorContainer({
   }, [language, store])
   return (
     <NodeInspector
+      onAddWorkflowOutputs={onAddWorkflowOutputs}
+      onAddResponseNode={
+        webhookId == null
+          ? undefined
+          : () => {
+              void store.workspace.addWebhookResponseNode(webhookId)
+            }
+      }
       webhookDeployment={
         webhookId == null
           ? undefined
@@ -184,6 +193,7 @@ const NodeInspectorContainer = memo(function NodeInspectorContainer({
               enabled: live?.status == 'runnable',
               hasUnpublishedChanges: live?.hasUnpublishedChanges ?? false,
               onRetry: () => void store.publications.loadBindings(flowId),
+              notify: store.workspace.notify,
             }
       }
       variables={{
@@ -274,6 +284,7 @@ export function FlowEditor({
 }): ReactElement {
   const t = useTranslate()
   const addNodeOptions = useVal(store.workspace.$.addNodeOptions)
+  const language = useLang()
   const connections = useVal(store.connectors.$.pickerConnections)
   const triggerCatalogState = useVal(store.triggers.catalog.state)
   const [startId, setStartId] = useState<string>()
@@ -307,6 +318,19 @@ export function FlowEditor({
     onSelectNodes: (ids) => store.selectNodes(ids),
   })
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false)
+  const [addedNode, setAddedNode] = useState<{ readonly flowId: string; readonly nodeId: string }>()
+  const connectorSetupPending = useVal(store.$.connectorSetupPending)
+  useEffect(() => {
+    if (addedNode == null) return
+    if (addedNode.flowId != flowId || selectedNodeIds.length != 1 || selectedNodeIds[0] != addedNode.nodeId) {
+      setAddedNode(undefined)
+      return
+    }
+    // Creation saves before its asynchronous validation and account setup finish.
+    if (checkLoading || connectorSetupPending || diagnostics == null || diagnostics.revisionId != draft?.revisionId) return
+    setAddedNode(undefined)
+    if (diagnosticItems.some((item) => item.location?.nodeId == addedNode.nodeId)) panel.revealInspector()
+  }, [addedNode, flowId, selectedNodeIds, checkLoading, connectorSetupPending, diagnostics, draft?.revisionId, diagnosticItems])
   useEffect(() => {
     if (runInputRequest != null || diagnosticItems.length == 0) setDiagnosticsOpen(false)
   }, [runInputRequest, diagnosticItems.length])
@@ -318,7 +342,8 @@ export function FlowEditor({
     setAccountReference(undefined)
   }, [accountReference])
   const designerRef = useRef<WorkbenchCanvasHandle>(null)
-  const accessConfiguration = useVal(store.connectorAccess.$).configuration
+  const connectorAccess = useVal(store.connectorAccess.$)
+  const accessConfiguration = connectorAccess.configuration
   useEffect(() => {
     if (accessConfiguration == null) return
     panel.openInspector()
@@ -466,6 +491,11 @@ export function FlowEditor({
               />
             )}
             <WorkspacePublishIsland
+              onExportSvg={
+                connectorAccess.access?.mode != 'selectable' || designer.nodes.length == 0
+                  ? undefined
+                  : () => store.exportSvg(language, { dark: theme == 'dark', ignoredNodeIds })
+              }
               onExport={() => {
                 const id = store.workspace.$.flowId.value
                 if (id != null) void store.workspace.exportFlow(id)
@@ -540,7 +570,10 @@ export function FlowEditor({
         annotationContext={canvasAnnotations(flowId, draft, workspaceStatus, moduleEditor?.status, history.failed)}
         onAddNode={async (option, position, connection) => {
           const nodeId = await store.addNode(option, position, connection)
-          if (nodeId != null && panel.open) panel.activate([nodeId])
+          if (nodeId != null && flowId != null && store.workspace.$.flowId.value == flowId) {
+            setAddedNode({ flowId, nodeId })
+            if (panel.open) panel.activate([nodeId])
+          }
           return nodeId
         }}
         onConnect={(edge) => void store.workspace.connect(edge)}
@@ -585,10 +618,10 @@ export function FlowEditor({
                   disabled: authoringDisabled,
                   fallback: <Icon name={inspectorIcon(selection)} />,
                   onRename: (name) => {
-                    void store.workspace.saveNodeTitle(selection.id, name)
+                    void store.workspace.nodes.saveNodeTitle(selection.id, name)
                   },
                   onIconChange: (icon) => {
-                    void store.workspace.saveNodeIcon(selection.id, icon)
+                    void store.workspace.nodes.saveNodeIcon(selection.id, icon)
                   },
                   validate: (name) => {
                     if (revision == null) return
@@ -635,6 +668,10 @@ export function FlowEditor({
           ) : (
             revision != null && (
               <NodeInspectorContainer
+                onAddWorkflowOutputs={() => {
+                  const option = store.workspace.$.addNodeOptions.value.find((item) => item.kind === 'outputs')
+                  if (option != null) void addFromPicker(option)
+                }}
                 store={store}
                 focus={diagnosticFocus}
                 disabled={authoringDisabled}
@@ -742,7 +779,7 @@ export default function FlowWorkspace({
 
   return (
     <IconifyProvider>
-      <RunLinkContext.Provider value={hrefFor}>
+      <WorkbenchLinkContext.Provider value={hrefFor}>
         <main className="workspace">
           {view == 'design' && !canvasReady && <div className="workspace-navigation-placement">{navigationIsland}</div>}
           {view == 'design' && !canvasReady ? (
@@ -803,7 +840,7 @@ export default function FlowWorkspace({
             <PublicationsView theme={theme} key={flowId} onClose={() => navigation.open('design')} store={store} />
           )}
         </main>
-      </RunLinkContext.Provider>
+      </WorkbenchLinkContext.Provider>
     </IconifyProvider>
   )
 }

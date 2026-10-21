@@ -5,6 +5,7 @@ import { controlErrorCode } from '@oomol-lab/open-flow/control-api'
 import { applyFlowChanges, currentFlowModelVersion } from '@oomol-lab/open-flow/flow-change'
 import { encodeRevision, digestBytes } from '@oomol-lab/open-flow/flow-encoding'
 import { matchesTriggerOutputs } from '@oomol-lab/open-flow/flow-semantics'
+import { currentEngineContract } from '@oomol-lab/open-flow/runtime-contract'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -73,12 +74,13 @@ function fixture(capacity = 10) {
         requestDigest: id,
       })
       const input = {
+        interface: { inputs: null, outputs: null },
         errorTriggers: kind == 'error' ? [{ nodeId: 'start', sourceFlowIds }] : [],
         closureDigest: digest,
         content,
         crons: [],
         expectedLivePublicationId: null,
-        engineContract: 'open-flow-engine/v5',
+        engineContract: currentEngineContract,
         flowId: id,
         idempotencyKey: `publish-${id}`,
         integrations: [],
@@ -121,7 +123,7 @@ it('commits one dispatch with terminal state, recovers it after restart, and nev
   expect(f.store.runViews.errorHandling(handlerId).errorSource).toEqual({ flowId: 'source', runId })
   const accepted = f.store.runs.claim()!
   expect(accepted.runId).toBe(handlerId)
-  expect(matchesTriggerOutputs({ kind: 'error', name: 'Error' }, accepted.trigger!.outputs, [])).toBe(true)
+  expect(matchesTriggerOutputs({ kind: 'error', name: 'Error' }, accepted.trigger!.outputs)).toBe(true)
   expect(accepted.trigger!.outputs.workflow).toMatchObject({ flowId: 'source' })
   f.fail(handlerId)
   f.reopen()
@@ -150,6 +152,7 @@ it.each(['draft', 'live'] as const)('does not dispatch manually admitted %s fail
   const source = await f.flow('source')
   await f.flow('handler', 'error', ['source'])
   const input = {
+    initiator: { channel: 'api' as const },
     ...source,
     expectedPublicationId: source.publicationId,
     idempotencyKey: 'manual',

@@ -1,8 +1,12 @@
 # Node compatibility runtime contract
 
-`open-flow-engine/v5/nodejs-compat-v1` extends the v2 execution model with a fixed builtin module
-allowlist. The existing `open-flow-engine/v5` contract is unchanged. Deployments advertise this
+`open-flow-engine/v7/nodejs-compat-v1` extends the v2 execution model with a fixed builtin module
+allowlist. The existing `open-flow-engine/v7` contract is unchanged. Deployments advertise this
 additional contract only when they implement it; Server does not automatically opt into it.
+
+The published `open-flow-engine/v6` and `open-flow-engine/v6/nodejs-compat-v1` remain supported for
+existing Publications and Runs, with their original platform identity and builtin allowlist.
+Webhook response nodes require v7; v6 cannot prepare them.
 
 `EngineContract.builtinModules` declares accepted builtin specifiers. The list explicitly includes
 both prefixed and bare forms. Static validation recognizes these imports without adding dependencies
@@ -28,3 +32,11 @@ or to durable storage. Node compatibility does not grant additional business cap
 subclasses and library initialization may use mutable guest intrinsics. The runtime must isolate
 these intrinsics from other Task invocations. Task termination revokes associated asynchronous work
 and capabilities.
+
+## Handled task failures
+
+Engine v6 supports node-owned `onError` handling for ordinary Code, Connector, OpenAPI, LLM and
+AI Decision Tasks. Hosts preserve trusted `catchable` separately from `retryable`; absent
+classification forbids handling. Resource limits, cancellation, deadlines, protocol/isolation and
+indeterminate failures cannot be handled. System outputs use an independent namespace and are
+available to downstream inputs and `getPrevious().systemOutputs`; they do not add execution ports.

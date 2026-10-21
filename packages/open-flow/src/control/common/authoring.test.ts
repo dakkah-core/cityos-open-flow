@@ -299,7 +299,7 @@ describe('node authoring', () => {
         empty: { kind: 'value', value: null },
       },
     })
-    expect(checkInputSource(created.content.document.graph, ref, 'orders', { nodeId: created.nodes.source!, output: 'orders' }, [])).toEqual({
+    expect(checkInputSource(created.content.document.graph, ref, 'orders', { nodeId: created.nodes.source!, output: 'orders' })).toEqual({
       kind: 'available',
     })
   })
@@ -313,7 +313,7 @@ describe('node authoring', () => {
       before = taskAt(created.content, ref).inputs
     const changed = await edit(created.content, [{ op: 'input.set', node: ref, input: 'input', source: { kind: 'output', node: created.nodes.source! } }])
     expect(taskAt(changed.content, ref).inputs).toEqual(before)
-    expect(checkInputSource(changed.content.document.graph, ref, 'input', { nodeId: created.nodes.source!, output: 'result' }, []).kind).toBe('schema')
+    expect(checkInputSource(changed.content.document.graph, ref, 'input', { nodeId: created.nodes.source!, output: 'result' }).kind).toBe('schema')
   })
   it('adds an input only to the requested node when Agent configurations are identical', async () => {
     const created = await edit(empty, [{ op: 'node.add', type: 'agent', as: 'customer', name: 'Customer' }])
@@ -593,4 +593,109 @@ it('does not bind other branches or connector actions, or overwrite existing mes
     const changes = connect(created.content, { source: created.nodes.review!, target: created.nodes.notify!, sourceHandle: branch })
     expect(changes).toHaveLength(1)
   }
+})
+
+it('round trips retry settings through public authoring, preserves unrelated edits, and supports explicit clear', async () => {
+  const created = await edit(empty, [
+    { op: 'node.add', type: 'code', as: 'code', name: 'Retry me', retry: { maxRetries: 2, intervalMs: 2000 }, code: 'export default () => ({})' },
+  ])
+  const ref = created.nodes.code!
+  expect(readAuthoring(created.content, { nodes: [ref] })).toMatchObject({ nodes: [{ retry: { maxRetries: 2, intervalMs: 2000 } }] })
+  const renamed = await edit(created.content, [{ op: 'node.update', node: ref, set: { name: 'Renamed' } }])
+  expect(renamed.content.document.graph.nodes[ref]).toMatchObject({ retry: { maxRetries: 2, intervalMs: 2000 } })
+  expect(searchAuthoring(renamed.content, { query: 'maxRetries', limit: 20, offset: 0 }).matches).toContainEqual(
+    expect.objectContaining({ node: ref, field: 'retry' }),
+  )
+  const cleared = await edit(renamed.content, [{ op: 'node.update', node: ref, clear: [['retry']] }])
+  expect(cleared.content.document.graph.nodes[ref]).not.toHaveProperty('retry')
+  expect(applyFlowChanges(cleared.content, inverseFlowChanges(renamed.content, cleared.operations)).document.graph.nodes[ref]).toMatchObject({
+    retry: { maxRetries: 2, intervalMs: 2000 },
+  })
+})
+
+it.each(['value', 'agent', 'workflow'] as const)('rejects retries on %s nodes', async (type) => {
+  const config: Record<string, string> = type == 'agent' ? { model: 'test' } : type == 'workflow' ? { flowId: 'target' } : {}
+  await expect(
+    compileAuthoring(
+      empty,
+      {
+        baseRevision: 'base',
+        requestId: `unsupported-${type}`,
+        edits: [{ op: 'node.add', type, as: 'unsupported', name: 'Unsupported', retry: { maxRetries: 1, intervalMs: 1000 }, config }],
+      },
+      {
+        ...host,
+        workflow: async (flowId) => ({
+          version: 1,
+          flowId,
+          name: 'Target',
+          revisionId: 'r1',
+          publicationId: 'p1',
+          triggerNodeId: 'start',
+          inputs: [],
+          outputs: [],
+        }),
+      },
+    ),
+  ).rejects.toThrow('This node does not support retries.')
+})
+
+it('validates a merged retry policy and preserves partial updates', async () => {
+  const created = await edit(empty, [{ op: 'node.add', type: 'code', as: 'code', name: 'Task', retry: { maxRetries: 2, intervalMs: 2000 } }])
+  const ref = created.nodes.code!
+  const changed = await edit(created.content, [{ op: 'node.update', node: ref, set: { retry: { intervalMs: 3000 } } }])
+  expect(changed.content.document.graph.nodes[ref]).toMatchObject({ retry: { maxRetries: 2, intervalMs: 3000 } })
+  const cleared = await edit(changed.content, [{ op: 'node.update', node: ref, clear: [['retry']] }])
+  await expect(edit(cleared.content, [{ op: 'node.update', node: ref, set: { retry: { maxRetries: 1 } } }])).rejects.toThrow()
+})
+
+it('authors system error sources independently of a business output named error', async () => {
+  const created = await edit(empty, [
+    { op: 'node.add', type: 'start', as: 'start', name: 'Start' },
+    {
+      op: 'node.add',
+      type: 'code',
+      as: 'source',
+      name: 'Source',
+      onError: 'error',
+      code: 'export default () => ({error: "business"})',
+      config: { outputs: { error: { schema: { type: 'string' }, nullable: false } } },
+    },
+    {
+      op: 'node.add',
+      type: 'code',
+      as: 'target',
+      name: 'Target',
+      inputs: {
+        business: { kind: 'output', node: '$source', port: 'error' },
+        failure: { kind: 'system', node: '$source', port: 'error' },
+        code: { kind: 'system', node: '$source', port: 'error', field: 'code' },
+      },
+    },
+    { op: 'edge.connect', source: '$start', target: '$source' },
+    { op: 'edge.connect', source: '$source', target: '$target' },
+  ])
+  const ref = created.nodes.source!
+  expect(readAuthoring(created.content, { nodes: [ref] })).toMatchObject({ nodes: [{ onError: 'error', systemOutputs: { error: { nullable: true } } }] })
+  expect(readAuthoring(created.content, { nodes: [created.nodes.target!] })).toMatchObject({
+    nodes: [
+      {
+        inputs: {
+          business: { kind: 'sources', sources: [{ kind: 'output', node: ref, port: 'error' }] },
+          failure: { kind: 'sources', sources: [{ kind: 'system', node: ref, port: 'error' }] },
+        },
+      },
+    ],
+  })
+  const renamed = await edit(created.content, [{ op: 'node.update', node: ref, set: { name: 'Renamed' } }])
+  expect(renamed.content.document.graph.nodes[ref]).toMatchObject({ onError: 'error' })
+  const cleared = await edit(renamed.content, [{ op: 'node.update', node: ref, clear: [['onError']] }])
+  expect(cleared.content.document.graph.nodes[ref]).not.toHaveProperty('onError')
+  expect(cleared.content.document.graph.nodes[created.nodes.target!]).toMatchObject({ inputs: { failure: { sources: [{ system: true }] } } })
+})
+
+it('rejects error handling on unsupported nodes instead of accepting an ignored setting', async () => {
+  await expect(edit(empty, [{ op: 'node.add', type: 'value', as: 'value', name: 'Value', onError: 'error' }])).rejects.toThrow(
+    'This node does not support this error handling setting.',
+  )
 })

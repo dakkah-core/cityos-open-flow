@@ -12,6 +12,9 @@
 ![Node.js 26](https://img.shields.io/badge/Node.js-26-339933)
 ![Bun 1.4](https://img.shields.io/badge/Bun-1.4-000000)
 
+[![Providers](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fconnector.oomol.com%2Fv1%2Fcatalog&query=data.providerCount&label=Providers&color=%237d7fe9)](https://openflow.run#connector-title)
+[![Actions](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fconnector.oomol.com%2Fv1%2Fcatalog&query=data.actionCount&label=Actions&color=%237d7fe9)](https://openflow.run#connector-title)
+
 </div>
 
 **和 AI Agent 一起建立自動化，讓每一步執行清楚可見。**
@@ -20,7 +23,7 @@ Open Flow 是一個開源工作流程平台，結合 AI 輔助建構的速度與
 
 在一張畫布上組合 JavaScript、應用程式整合、AI、條件分支和人工核准。檢視輸入、追蹤執行，並決定哪個版本正式上線。可以使用 OOMOL Hosted，也可以部署到自己的基礎設施。
 
-[體驗互動示範](https://openflow.run) · [使用 OOMOL Hosted](https://oomol.com) · [用 Docker 自行部署](#選擇適合你的執行方式)
+[體驗互動示範](https://openflow.run) · [使用 OOMOL Hosted](https://console.openflow.run) · [用 Docker 自行部署](#選擇適合你的執行方式)
 
 ![新版 Open Flow Workbench 中的客戶入門流程，包含明確的客戶資料、JavaScript、核准和子流程](assets/readme-workbench.png)
 
@@ -78,11 +81,11 @@ OOMOL Hosted 為支援的整合提供託管 OAuth 應用程式。自行部署時
 
 ## 選擇適合你的執行方式
 
-| 方式             | 你需要管理什麼                                             | 開始使用                                  |
-| ---------------- | ---------------------------------------------------------- | ----------------------------------------- |
-| **OOMOL Hosted** | 工作流程和已連接的帳號；OOMOL 負責維運部署。               | [開啟 OOMOL](https://oomol.com)           |
-| **Docker**       | 部署、儲存、備份、升級和整合。                             | 下方指令                                  |
-| **Fly.io**       | Fly 基礎設施上的應用程式、持久化磁碟區、密鑰、備份和升級。 | [部署指南](server/fly-io/README.zh-TW.md) |
+| 方式             | 你需要管理什麼                                             | 開始使用                                   |
+| ---------------- | ---------------------------------------------------------- | ------------------------------------------ |
+| **OOMOL Hosted** | 工作流程和已連接的帳號；OOMOL 負責維運部署。               | [開啟 OOMOL](https://console.openflow.run) |
+| **Docker**       | 部署、儲存、備份、升級和整合。                             | 下方指令                                   |
+| **Fly.io**       | Fly 基礎設施上的應用程式、持久化磁碟區、密鑰、備份和升級。 | [部署指南](server/fly-io/README.zh-TW.md)  |
 
 若要在本機自行部署，請安裝 Docker 和 OpenSSL，然後執行：
 

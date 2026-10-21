@@ -85,7 +85,7 @@ it('omits only oversized members and still includes complete siblings', () => {
   expect(page.nextOffset).toBeUndefined()
 })
 
-it('decodes explicit result sources and rejects ambiguous code metadata', () => {
+it('decodes explicit result sources, strips additional metadata, and rejects missing connector actions', () => {
   const value = {
     version: 1,
     runId: 'run',
@@ -101,7 +101,7 @@ it('decodes explicit result sources and rejects ambiguous code metadata', () => 
     page: readResult(1),
   }
   expect(decodeResultRead(value).result.source).toEqual({ kind: 'code' })
-  expect(() => decodeResultRead({ ...value, result: { ...value.result, source: { kind: 'code', action: 'mail.send' } } })).toThrow()
+  expect(decodeResultRead({ ...value, result: { ...value.result, source: { kind: 'code', action: 'mail.send' } } }).result.source).toEqual({ kind: 'code' })
   expect(() => decodeResultRead({ ...value, result: { ...value.result, source: { kind: 'connector' } } })).toThrow()
 })
 

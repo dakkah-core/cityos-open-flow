@@ -104,6 +104,8 @@ function menuItems(options: readonly AddNodeOption[], providersOnly = false): Li
 
 function fallbackIcon(item: LibraryNodeItem): IconName {
   switch (item.type) {
+    case 'workflow':
+      return 'flow'
     case 'agent':
       return 'llm'
     case 'condition':
@@ -122,6 +124,8 @@ function fallbackIcon(item: LibraryNodeItem): IconName {
       return 'trigger'
     case 'value':
       return 'value'
+    case 'webhook-response':
+      return 'response'
     case 'outputs':
       return 'outputs'
     case 'wait':

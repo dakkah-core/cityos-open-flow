@@ -28,9 +28,7 @@ async function setup(startParameters?: readonly Port[]) {
   const content = applyFlowChanges({ modelVersion: currentFlowModelVersion, document: { bindings: {}, graph: { nodes: {}, edges: [] } }, modules: {} }, [
     ...createCodeTask({ moduleId: 'a', nodeId: 'a' }, 'A'),
     ...createCodeTask({ moduleId: 'b', nodeId: 'b' }, 'B'),
-    ...(startParameters == null
-      ? []
-      : [{ kind: 'flow.input-defs.set' as const, before: [], value: startParameters }, ...createBuiltinTrigger('start', { kind: 'start', name: 'Start' })]),
+    ...(startParameters == null ? [] : [...createBuiltinTrigger('start', { inputDefs: startParameters, kind: 'start', name: 'Start' })]),
   ])
   let revision: Draft = {
     actorId: 'actor',
@@ -57,7 +55,7 @@ async function setup(startParameters?: readonly Port[]) {
     return Response.json({ revision: metadata, version: 1 })
   })
   const request = async (path: string, init?: RequestInit) => {
-    if (path.startsWith('/v1/flows?')) return Response.json({ flows: [flow], total: 1, version: 1 })
+    if (path.startsWith('/v1/flows?')) return Response.json({ flows: [{ ...flow, referenceCount: 0 }], total: 1, version: 1 })
     if (path.endsWith('/editor'))
       return Response.json({
         flow,
@@ -244,7 +242,7 @@ describe('code autosave', () => {
     })
     const request = vi.spyOn(store.runRequests, action == 'run' ? 'requestDraft' : 'editDraft').mockResolvedValue('unavailable')
     try {
-      const changing = workspace.saveNodeTitle('a', 'Edited A')
+      const changing = workspace.nodes.saveNodeTitle('a', 'Edited A')
       const running = action == 'run' ? store.requestDraftRun('start') : store.editDraftRunInputs('start')
       await Promise.resolve()
       expect(request).not.toHaveBeenCalled()
@@ -269,7 +267,7 @@ describe('code autosave', () => {
     })
     const request = vi.spyOn(store.runRequests, 'requestDraft').mockResolvedValue('unavailable')
     try {
-      const changing = workspace.saveNodeTitle('a', 'Unsaved A')
+      const changing = workspace.nodes.saveNodeTitle('a', 'Unsaved A')
       const running = store.requestDraftRun('start')
       held.resolve()
       await changing
@@ -359,7 +357,7 @@ it('waits for a pending parameter save when confirming an open Run form and reop
       return realChange(...args)
     })
     const createRun = vi.spyOn(client, 'createDraftRun')
-    const changing = workspace.saveFlowInputDefs([{ handle: 'note', jsonSchema: {}, nullable: false }])
+    const changing = workspace.nodes.saveStartInputDefs(startId, [{ handle: 'note', jsonSchema: {}, nullable: false }])
     await entered.promise
     const confirming = store.runRequests.confirmInputs()
     await Promise.resolve()

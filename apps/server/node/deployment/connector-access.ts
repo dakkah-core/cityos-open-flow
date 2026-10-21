@@ -8,12 +8,13 @@ import type {
 import type { FlowDocument } from '@oomol-lab/open-flow/flow-change'
 import type { ConnectorTeamStore } from '../storage/connector-team-store.ts'
 import type { Database } from '../storage/database.ts'
-import type { ConnectorHost } from './connector.ts'
+import type { ConnectorHost } from './connector-contract.ts'
 
 import { decodeConnectorAccess } from '@oomol-lab/open-flow/control-api'
 import { connectionUsage } from '@oomol-lab/open-flow/flow-semantics'
 import { createHash } from 'node:crypto'
-import { ConnectorClient, ConnectorTaskError } from './connector.ts'
+import { ConnectorTaskError } from './connector-contract.ts'
+import { ConnectorClient } from './connector.ts'
 
 export type ConnectorAccessMutation =
   | { readonly kind: 'conflict' }
@@ -269,7 +270,7 @@ export async function captureConnectorAccess(
     selectedBindings: [],
   }
   if (access.mode == 'implicit') return snapshot
-  const uses = connectionUsage(document).filter((use) => use.connectionId != null)
+  const uses = connectionUsage(document).filter((use) => use.connectionId != null && use.connectionId !== '')
   const providerIds = [...new Set(uses.map((use) => use.providerId))]
   if (providerIds.length == 0) return snapshot
   const response = await host.listCandidates('', flowId, providerIds)

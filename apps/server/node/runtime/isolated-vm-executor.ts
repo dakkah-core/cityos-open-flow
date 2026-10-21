@@ -34,7 +34,13 @@ function writeMessage(message: ExecutorMessage, sent: () => void = () => {}): vo
 function remote(result: Effect.Effect<CapabilityResult, Error>): Effect.Effect<unknown, Error> {
   return Effect.flatMap(result, (response) => {
     if (response.ok) return Effect.succeed(response.value ?? null)
-    return Effect.fail(Object.assign(new Error(response.error ?? 'Runtime Host call failed.'), { schedulerCode: response.code ?? 'node.failed' }))
+    return Effect.fail(
+      Object.assign(new Error(response.error ?? 'Runtime Host call failed.'), {
+        schedulerCode: response.code ?? 'node.failed',
+        retryable: response.retryable === true,
+        catchable: response.catchable === true,
+      }),
+    )
   })
 }
 
@@ -189,12 +195,18 @@ globalThis.console = Object.freeze({
   log: (...values) => emitLog('info', values),
   warn: (...values) => emitLog('warn', values),
 })
+const capabilityErrors = new WeakMap()
+export const capabilityFailure = (error) => capabilityErrors.get(error)
 async function invoke(kind, payload) {
   const source = await new Promise((resolve) => {
     call.applyIgnored(undefined, [JSON.stringify({ kind, payload }), resolve], { arguments: { reference: true } })
   })
   const result = JSON.parse(source)
-  if (!result.ok) throw Object.assign(new Error(result.error), { code: result.code })
+  if (!result.ok) {
+    const error = Object.assign(new Error(result.error), { code: result.code })
+    capabilityErrors.set(error, { code: result.code, catchable: result.catchable === true, retryable: result.retryable === true })
+    throw error
+  }
   return result.value
 }
 const createActions = ${createActions.toString()}
@@ -279,7 +291,9 @@ function installGlobals(
   const capability = new ivm.Reference((sourceReference: IsolatedVM.Reference<string>, settle: IsolatedVM.Reference<(source: string) => void>): void => {
     const settleResult = (result: CapabilityOutcome): void => {
       if (!active) return
-      const source = result.ok ? JSON.stringify({ ok: true, value: result.value }) : JSON.stringify({ code: result.code, error: result.error, ok: false })
+      const source = result.ok
+        ? JSON.stringify({ ok: true, value: result.value })
+        : JSON.stringify({ code: result.code, catchable: result.catchable, retryable: result.retryable, error: result.error, ok: false })
       settle.applyIgnored(undefined, [source], { arguments: { copy: true } })
       settle.release()
     }
@@ -302,9 +316,11 @@ function installGlobals(
         void call(request.invocationId, capabilities, capabilityCall.kind, capabilityCall.payload).then(
           (result) => settleResult({ id: 0, ok: true, type: 'capability.result', value: result }),
           (error) => {
-            if (Reflect.get(Object(error), 'schedulerCode') == 'runtime.limit-exceeded') capabilityFailure = error
+            if (['runtime.limit-exceeded', 'connector.indeterminate'].includes(String(Reflect.get(Object(error), 'schedulerCode')))) capabilityFailure = error
             settleResult({
               code: (error as { code?: string; schedulerCode?: string }).schedulerCode ?? (error as { code?: string }).code,
+              catchable: Reflect.get(Object(error), 'catchable') === true,
+              retryable: Reflect.get(Object(error), 'retryable') === true,
               error: normalizedError(error).message,
               id: 0,
               ok: false,
@@ -316,6 +332,8 @@ function installGlobals(
       .catch((error) =>
         settleResult({
           code: (error as { code?: string; schedulerCode?: string }).schedulerCode ?? (error as { code?: string }).code,
+          catchable: Reflect.get(Object(error), 'catchable') === true,
+          retryable: Reflect.get(Object(error), 'retryable') === true,
           error: normalizedError(error).message,
           id: 0,
           ok: false,
@@ -369,13 +387,14 @@ async function compileProgram(
   }
   const mainModule = await isolate.compileModule(
     `import task from '../user/${program.entryModuleId}.mjs'
-import { capability } from './capability.mjs'
+import { capability, capabilityFailure } from './capability.mjs'
 const snapshotResult = ${snapshotRuntimeResult.toString()}
 const cancellation = new AbortController()
 export function cancelTask() {
   cancellation.abort(new Error('Task invocation was canceled.'))
 }
 export async function invoke(source) {
+  let executing = false
   try {
     const inputs = JSON.parse(source)
     const context = Object.freeze(Object.assign({}, capability, {
@@ -385,12 +404,15 @@ export async function invoke(source) {
       inputs,
       signal: cancellation.signal,
     }))
-    const result = snapshotResult(await task(inputs, context))
+    executing = true
+    const value = await task(inputs, context)
+    executing = false
+    const result = snapshotResult(value)
     return result === undefined
       ? JSON.stringify({ engineDigest: ${JSON.stringify(program.engineDigest)}, ok: true, void: true })
       : JSON.stringify({ engineDigest: ${JSON.stringify(program.engineDigest)}, ok: true, value: result })
   } catch (error) {
-    return JSON.stringify({ code: typeof error?.code == 'string' ? error.code : undefined, error: error instanceof Error ? error.message : String(error), ok: false })
+    return JSON.stringify({ retryable: executing, ...capabilityFailure(error), error: error instanceof Error ? error.message : String(error), ok: false })
   }
 }`,
     { filename: 'open-flow:engine/main.mjs' },
@@ -441,19 +463,30 @@ function readResult(
   const result = JSON.parse(source) as {
     readonly engineDigest?: string
     readonly code?: string
+    readonly retryable?: boolean
+    readonly catchable?: boolean
     readonly error?: string
     readonly ok?: boolean
     readonly value?: JsonValue
     readonly void?: boolean
   }
-  if (capabilityFailure != null) throw new IsolatedVmError('limit-exceeded', normalizedError(capabilityFailure).message)
+  if (capabilityFailure != null) {
+    if (Reflect.get(Object(capabilityFailure), 'schedulerCode') == 'connector.indeterminate') throw capabilityFailure
+    throw new IsolatedVmError('limit-exceeded', normalizedError(capabilityFailure).message)
+  }
   const returnedValue = Object.hasOwn(result, 'value') && result.void === undefined
   const returnedVoid = !Object.hasOwn(result, 'value') && result.void === true
-  if (!result.ok || result.engineDigest != program.engineDigest || (!returnedValue && !returnedVoid)) {
+  if (result.ok === false) {
     if (preserveCapabilityFailure && typeof result.code == 'string')
-      throw Object.assign(new Error(result.error ?? 'Action failed.'), { schedulerCode: result.code })
-    throw new IsolatedVmError('task-failed', result.error ?? 'User Task failed.')
+      throw Object.assign(new Error(result.error ?? 'Action failed.'), {
+        schedulerCode: result.code,
+        catchable: result.catchable === true,
+        retryable: result.retryable === true,
+      })
+    throw new IsolatedVmError('task-failed', result.error ?? 'User Task failed.', result.retryable === true)
   }
+  if (result.ok !== true || result.engineDigest != program.engineDigest || (!returnedValue && !returnedVoid))
+    throw new IsolatedVmError('invalid-program', 'Runtime Task result does not match its execution contract.')
   return returnedVoid ? undefined : (result.value as JsonValue)
 }
 
@@ -643,6 +676,8 @@ function executeFlow(
         return yield* remote(call({ invocation, type: 'task' }))
       }),
     projectFailure: (error) => ({
+      catchable: error instanceof IsolatedVmError ? error.catchable : Reflect.get(Object(error), 'catchable') === true,
+      retryable: error instanceof IsolatedVmError ? error.retryable : Reflect.get(Object(error), 'retryable') === true,
       code: typeof Reflect.get(Object(error), 'schedulerCode') == 'string' ? (Reflect.get(Object(error), 'schedulerCode') as string) : 'node.failed',
       message: normalizedError(error).message,
     }),

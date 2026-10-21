@@ -11,7 +11,7 @@ describe('Workbench i18n', () => {
     const i18n = createI18n('zh-CN')
 
     expect(i18n.t('resource.flows')).toBe('工作流')
-    expect(i18n.t('notice.created', { name: '演示' })).toBe('已创建 演示。')
+    expect(i18n.t('notice.createdInDraft', { name: '演示' })).toBe('已在草稿中创建 演示。')
     expect(i18n.t('timeZoneNames.Asia/Shanghai')).toBe('上海')
 
     i18n.dispose()

@@ -102,6 +102,7 @@ export class Supervisor {
       while (this.#failure == null) {
         for (const signal of yield* Queue.clear(this.#signals)) if (signal != null) waiters.push(signal)
         yield* this.#startDue(this.#clock())
+        for (const runId of this.#store.runs.takeInterrupts()) this.interrupt(runId)
         const runQueueEmpty = yield* this.#launchWorkers()
         const tasks = yield* FiberMap.size(this.#tasks)
         const workers = yield* FiberMap.size(this.#workers)

@@ -345,6 +345,7 @@
     "hide": "隐藏内容"
   },
   "nodeStatus": {
+    "connectionDeferred": "暂未设置账号，执行此节点时需要配置账号",
     "connectionRequired": "尚未连接或连接已失效。请在节点设置中重新连接或选择可用连接。",
     "error": "错误",
     "hasError": "存在错误",
@@ -590,7 +591,8 @@
       "running": "运行中",
       "success": "已完成",
       "error": "失败",
-      "waiting": "等待处理"
+      "waiting": "等待处理",
+      "handled": "失败已处理"
     },
     "triggerSource": {
       "manual": "手动",
@@ -608,7 +610,8 @@
       "value": "固定值",
       "input": "流程输入",
       "output": "流程输出",
-      "outputs": "工作流输出"
+      "outputs": "工作流输出",
+      "webhook-response": "Webhook 响应"
     },
     "units": {
       "minute": "分钟",

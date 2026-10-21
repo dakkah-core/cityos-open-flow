@@ -64,7 +64,7 @@ it('offers Start again after the existing one is removed', () => {
   })
   expect(options.some((option) => option.id == 'trigger:start')).toBe(false)
   const webhook = options.find((option) => option.id == 'trigger:webhook')!
-  expect(webhook.outputs).toEqual(triggerOutputDefinitions({ kind: 'webhook', method: 'POST', name: 'Webhook', bodyFields: [] }, []))
+  expect(webhook.outputs).toEqual(triggerOutputDefinitions({ kind: 'webhook', method: 'POST', name: 'Webhook', bodyFields: [] }))
   expect(webhook.outputs.map((port) => port.handle)).toEqual(['headers', 'query', 'body', 'webhookUrl'])
   expect(webhook.outputs.map((port) => port.jsonSchema)).toEqual([
     { type: 'object', additionalProperties: { type: 'string' } },
@@ -73,7 +73,7 @@ it('offers Start again after the existing one is removed', () => {
     { type: 'string' },
   ])
   const cron = options.find((option) => option.id == 'trigger:cron')!
-  expect(cron.outputs).toEqual(triggerOutputDefinitions({ kind: 'cron', name: 'Cron', cronTimes: [] }, []))
+  expect(cron.outputs).toEqual(triggerOutputDefinitions({ kind: 'cron', name: 'Cron', cronTimes: [] }))
   expect(cron.outputs).toEqual([
     {
       handle: 'scheduledAt',
@@ -105,7 +105,7 @@ it.each([
   const intent = addNodeIntent(option, view, i18n.t)!
   const changes = addNode(view, 'start', intent)!
   const created = changes.find((operation) => operation.kind == 'graph.node.create')
-  expect(created?.kind == 'graph.node.create' ? created.node : undefined).toMatchObject({ kind: 'start', name: label })
+  expect(created?.kind == 'graph.node.create' ? created.node : undefined).toMatchObject({ inputDefs: [], kind: 'start', name: label })
   i18n.dispose()
 })
 

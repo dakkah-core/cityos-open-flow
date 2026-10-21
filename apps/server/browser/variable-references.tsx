@@ -78,12 +78,10 @@ export function VariableReferenceResults({
       </div>
     )
   const result = state.result
-  if (result == null || (!showEmpty && result.references.length == 0 && result.unknown.length == 0)) return null
+  if (result == null || (!showEmpty && result.references.length == 0)) return null
   return (
     <div className="variable-reference-results">
-      {showEmpty && result.references.length == 0 && result.unknown.length == 0 && (
-        <p className="m-0 text-muted-foreground">{t('variables.referencesEmpty')}</p>
-      )}
+      {showEmpty && result.references.length == 0 && <p className="m-0 text-muted-foreground">{t('variables.referencesEmpty')}</p>}
       {result.references.length > 0 && (
         <ul>
           {result.references.map((item) => (
@@ -105,24 +103,6 @@ export function VariableReferenceResults({
           ))}
         </ul>
       )}
-      {result.unknown.length > 0 && (
-        <div role="status">
-          <p className="m-0 text-muted-foreground">{t('variables.referencesIncomplete')}</p>
-          <ul>
-            {result.unknown.map((item) => (
-              <li key={`${item.flowId}/${item.scope}`}>
-                <a className="variable-reference-name" href={routePath({ flowId: item.flowId, view: item.scope == 'draft' ? 'design' : 'publications' })}>
-                  <i aria-hidden="true" className="i-lucide-light:workflow size-4 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0">{item.flowName}</span>
-                </a>
-                <div className="variable-reference-scopes">
-                  <span>{t(item.scope == 'draft' ? 'variables.referenceDraft' : 'variables.referenceLive')}</span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
   )
 }
@@ -136,19 +116,33 @@ export function VariableReferencesButton({
   name,
   container,
   disabled,
+  referenceCount,
 }: {
   readonly client: ControlClient
   readonly name: string
   readonly container: HTMLElement | null
+  readonly referenceCount: number
   readonly disabled: boolean
 }) {
   const t = useTranslate()
   const [open, setOpen] = useState(false)
+  if (referenceCount == 0) return null
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <HostTooltip label={t('variables.viewReferences')}>
-        <PopoverTrigger render={<Button aria-label={t('variables.viewReferences')} variant="ghost" size="icon-sm" disabled={disabled} />}>
+      <HostTooltip label={t('variables.referenceCount', { count: referenceCount })}>
+        <PopoverTrigger
+          render={
+            <Button
+              aria-label={t('variables.referenceCount', { count: referenceCount })}
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              disabled={disabled}
+            />
+          }
+        >
           <i aria-hidden="true" className="i-lucide-light:link" />
+          <span>{referenceCount}</span>
         </PopoverTrigger>
       </HostTooltip>
       <PopoverContent container={container} align="end" className="variable-references-popover p-4">
@@ -184,9 +178,7 @@ export function VariableDeletionDialog({
       ? undefined
       : state.result.references.length > 0
         ? 'variables.deleteReferencesImpact'
-        : state.result.unknown.length == 0
-          ? 'variables.deleteUnreferenced'
-          : undefined
+        : 'variables.deleteUnreferenced'
   return (
     <Dialog
       open

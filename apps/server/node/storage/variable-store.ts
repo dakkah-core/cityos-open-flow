@@ -6,6 +6,10 @@ export interface StoredVariable {
   readonly value: string
 }
 
+export interface StoredVariableListItem extends StoredVariable {
+  readonly referenceCount: number
+}
+
 const maxVariables = 200
 
 /** User-owned configuration values, independent of any Flow. */
@@ -20,10 +24,17 @@ export class VariableStore {
     this.#transaction = transaction
   }
 
-  list(ownerId: string): readonly StoredVariable[] {
+  /** One statement reads values and indexed counts from the same database snapshot. */
+  list(ownerId: string): readonly StoredVariableListItem[] {
     return this.#database
-      .prepare('SELECT name, updated_at AS updatedAt, value FROM variables WHERE owner_id = ? ORDER BY name COLLATE BINARY')
-      .all(ownerId) as unknown as readonly StoredVariable[]
+      .prepare(`SELECT v.name, v.updated_at AS updatedAt, v.value,
+      (SELECT COUNT(DISTINCT r.source_flow_id) FROM flow_resource_references r
+        JOIN flows f ON f.flow_id = r.source_flow_id AND f.owner_id = r.owner_id
+        WHERE r.owner_id = v.owner_id AND r.relation_kind = 'variable'
+          AND r.target_key = v.name AND f.status = 'active') AS referenceCount
+      FROM variables v WHERE v.owner_id = ? ORDER BY v.name COLLATE BINARY
+    `)
+      .all(ownerId) as unknown as readonly StoredVariableListItem[]
   }
 
   get(ownerId: string, name: string): StoredVariable | undefined {

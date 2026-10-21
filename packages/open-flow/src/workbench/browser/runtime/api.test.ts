@@ -39,6 +39,20 @@ describe('WorkbenchClient notifications', () => {
     expect(runCreated).toHaveBeenNthCalledWith(2, { flowId: 'flow-1', kind: 'run.changed', runId: 'run-1', version: 1 })
   })
 
+  it('marks both Run admission routes as Workbench calls', async () => {
+    const request = vi.fn(async (_path: string, _init?: RequestInit) =>
+      Response.json({ error: { code: 'run.invalid', message: 'Test admission' } }, { status: 400 }),
+    )
+    const client = new WorkbenchClient(request)
+    const options = { trigger: { nodeId: 'start', outputs: {} } }
+    await expect(client.createDraftRun('flow', 'revision', options)).rejects.toMatchObject({ code: 'run.invalid' })
+    await expect(client.createLiveRun('publication', options)).rejects.toMatchObject({ code: 'run.invalid' })
+    expect(request).toHaveBeenCalledTimes(2)
+    for (const [, init] of request.mock.calls) {
+      expect(new Headers(init?.headers).get('x-open-flow-client')).toBe('workbench')
+    }
+  })
+
   it('uses the Flow-scoped Presentation route', async () => {
     const request = vi.fn(async () => Response.json({ revision: 2, updatedAt: '2026-08-14T00:00:00.000Z', value: {}, version: 1 }))
     const client = new WorkbenchClient(request)

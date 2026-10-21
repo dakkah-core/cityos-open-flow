@@ -57,6 +57,7 @@ export async function buildBrowserPackage(options: BuildBrowserPackageOptions): 
   await buildRuntime(options, commonOutputPath, connectorProxyEntryPath, 'connector-proxy', true)
   await buildRuntime(options, commonOutputPath, 'src/decision/common/decision.ts', 'decision', false)
   await buildRuntime(options, commonOutputPath, 'src/openapi/common/openapi.ts', 'openapi', false)
+  await buildRuntime(options, commonOutputPath, 'src/workflow/common/workflow.ts', 'workflow', false)
   await buildRuntime(options, commonOutputPath, connectorActionEntryPath, 'connector-action', false)
   await buildRuntime(options, commonOutputPath, controlRequestsEntryPath, 'control-requests', false)
   await buildRuntime(options, commonOutputPath, mcpEntryPath, 'mcp', false)
@@ -216,18 +217,10 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
       ],
       { cwd: options.sourceRoot },
     )
-    await Promise.all(
-      ['events', 'subscriptions'].map(async (name) => {
-        const declaration = (await readFile(path.join(declarationRoot, `trigger/providers/feishu/${name}.d.ts`), 'utf8'))
-          .replaceAll("'../../../connector/common/proxy.ts'", "'./connector-proxy.js'")
-          .replaceAll("'../../../flow/common/change.ts'", "'../browser/flow-change.js'")
-        await writeFile(path.join(commonOutputPath, `feishu-${name}.d.ts`), declaration)
-      }),
-    )
-    for (const name of ['index', 'definition', 'feishu']) {
+    for (const name of ['index', 'definition']) {
       const declaration = (await readFile(path.join(declarationRoot, `event-source/common/${name}.d.ts`), 'utf8'))
         .replaceAll("'./definition.ts'", "'./event-source-definition.js'")
-        .replaceAll("'./feishu.ts'", "'./event-source-feishu.js'")
+        .replaceAll("'../../connector/common/proxy.ts'", "'./connector-proxy.js'")
         .replaceAll("'../../control/common/eventSources.ts'", "'./event-sources.js'")
         .replaceAll("'../../flow/common/change.ts'", "'../browser/flow-change.js'")
       await writeFile(path.join(commonOutputPath, name == 'index' ? 'event-source.d.ts' : `event-source-${name}.d.ts`), declaration)
@@ -236,6 +229,7 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
     await writeFile(
       path.join(browserOutputPath, 'event-sources.d.ts'),
       (await readFile(path.join(declarationRoot, 'workbench/browser/runtime/eventSources.d.ts'), 'utf8'))
+        .replaceAll("'./contract.ts'", "'./workbench-contract.js'")
         .replaceAll("'../../../control/common/api.ts'", "'../common/control-api.js'")
         .replaceAll("'../../../localization/common/languages.ts'", "'../common/localization.js'"),
     )
@@ -283,10 +277,13 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
     const flowChangeDeclaration = (await readFile(path.join(declarationRoot, 'flow/common/change.d.ts'), 'utf8'))
       .replaceAll("'../../decision/common/decision.ts'", "'../common/decision.js'")
       .replaceAll("'../../openapi/common/openapi.ts'", "'../common/openapi.js'")
+      .replaceAll("'../../workflow/common/workflow.ts'", "'../common/workflow.js'")
       .replaceAll("'../../types/index.ts'", "'../index.js'")
       .replaceAll("'./changeSchema.ts'", "'./flow-change-schema.js'")
       .replaceAll("'./inputValue.ts'", "'./flow-input-value.js'")
       .replaceAll("'./webhookMethod.ts'", "'./webhook-method.js'")
+      .replaceAll("'./retry.ts'", "'../common/flow-retry.js'")
+      .replaceAll("'./errorHandling.ts'", "'../common/flow-errorHandling.js'")
     const flowInputValueDeclaration = (await readFile(path.join(declarationRoot, 'flow/common/inputValue.d.ts'), 'utf8')).replaceAll(
       "'./change.ts'",
       "'./flow-change.js'",
@@ -296,10 +293,9 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
       "'./flow-change.js'",
     )
     const connectorActionDeclaration = await readFile(path.join(declarationRoot, 'connector/common/actionSchema.d.ts'), 'utf8')
-    const connectorProxyDeclaration = (await readFile(path.join(declarationRoot, 'connector/common/proxy.d.ts'), 'utf8')).replaceAll(
-      "'../../flow/common/change.ts'",
-      "'../browser/flow-change.js'",
-    )
+    const connectorProxyDeclaration = (await readFile(path.join(declarationRoot, 'connector/common/proxy.d.ts'), 'utf8'))
+      .replaceAll("'../../flow/common/change.ts'", "'../browser/flow-change.js'")
+      .replaceAll("'../../event-source/common/definition.ts'", "'./event-source-definition.js'")
     await Promise.all(
       [
         'authoring',
@@ -316,21 +312,26 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
         const declaration = (await readFile(path.join(declarationRoot, `control/common/${name}.d.ts`), 'utf8'))
           .replaceAll(/(['"])\.\/api\.ts\1/g, "'./control-api.js'")
           .replaceAll(/(['"])\.\.\/\.\.\/types\/index\.ts\1/g, "'../index.js'")
+          .replaceAll('./eventSources.ts', './event-sources.js')
           .replaceAll("'./draftOperations.ts'", "'./draftOperations.js'")
           .replaceAll("'./authoring.ts'", "'./authoring.js'")
+          .replaceAll("'../../workflow/common/workflow.ts'", "'./workflow.js'")
           .replaceAll("'./authoringSchema.ts'", "'./authoringSchema.js'")
           .replaceAll("'../../flow/common/changeSchema.ts'", "'../browser/flow-change-schema.js'")
           .replaceAll("'./providerAccess.ts'", "'./providerAccess.js'")
           .replaceAll("'./connectorDecoders.ts'", "'./connectorDecoders.js'")
           .replaceAll(/(['"])\.\.\/\.\.\/flow\/common\/change\.ts\1/g, "'../browser/flow-change.js'")
+          .replaceAll(/(['"])\.\.\/\.\.\/flow\/common\/retry\.ts\1/g, "'./flow-retry.js'")
         await writeFile(path.join(commonOutputPath, `${name}.d.ts`), declaration)
       }),
     )
     const controlApiDeclaration = (await readFile(path.join(declarationRoot, 'control/common/api.d.ts'), 'utf8'))
+      .replaceAll("'../../workflow/common/workflow.ts'", "'./workflow.js'")
       .replaceAll("'../../canvas/common/commands.ts'", "'./canvas-commands.js'")
       .replaceAll("'../../flow/common/workflowFile.ts'", "'./flow-workflowFile.js'")
       .replaceAll("'../../flow/common/semantics.ts'", "'./flow-semantics.js'")
       .replaceAll("'./providerIconSprite.ts'", "'./providerIconSprite.js'")
+      .replaceAll('./eventSources.ts', './event-sources.js')
       .replaceAll("'./draftOperations.ts'", "'./draftOperations.js'")
       .replaceAll("'./authoring.ts'", "'./authoring.js'")
       .replaceAll("'./authoringSchema.ts'", "'./authoringSchema.js'")
@@ -340,7 +341,7 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
       .replaceAll("'./flowInspection.ts'", "'./flowInspection.js'")
       .replaceAll("'./liveDetails.ts'", "'./liveDetails.js'")
       .replaceAll("'./authoringFields.ts'", "'./authoringFields.js'")
-      .replaceAll("'./eventSources.ts'", "'./event-sources.js'")
+      .replaceAll('./eventSources.ts', './event-sources.js')
       .replaceAll("'../../execution/common/runLifecycle.ts'", "'./run-lifecycle.js'")
       .replaceAll("'../../flow/common/change.ts'", "'../browser/flow-change.js'")
       .replaceAll("'./errors.ts'", "'./control-api-errors.js'")
@@ -370,13 +371,14 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
       .replaceAll("'./changeSchema.ts'", "'../browser/flow-change-schema.js'")
       .replaceAll("'./json.ts'", "'./flow-json.js'")
     await Promise.all(
-      ['agent', 'semantics', 'graph', 'schema', 'modules', 'connectionUsage', 'promptTemplate', 'workflowFile'].map(async (name) => {
+      ['agent', 'semantics', 'graph', 'schema', 'modules', 'connectionUsage', 'promptTemplate', 'workflowFile', 'retry', 'errorHandling'].map(async (name) => {
         const declaration = (await readFile(path.join(declarationRoot, `flow/common/${name}.d.ts`), 'utf8'))
           .replaceAll("'../../execution/common/engineContract.ts'", "'./engine-contract.js'")
           .replaceAll("'../../execution/common/runtime.ts'", "'./runtime-contract.js'")
           .replaceAll("'../../trigger/common/contract.ts'", "'./trigger-contract.js'")
           .replaceAll("'./change.ts'", "'../browser/flow-change.js'")
           .replaceAll("'./semantics.ts'", "'./flow-semantics.js'")
+          .replaceAll("'./errorHandling.ts'", "'./flow-errorHandling.js'")
           .replaceAll("'./graph.ts'", "'./flow-graph.js'")
           .replaceAll("'./schema.ts'", "'./flow-schema.js'")
           .replaceAll("'./modules.ts'", "'./flow-modules.js'")
@@ -387,13 +389,17 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
       }),
     )
     const runLifecycleDeclaration = await readFile(path.join(declarationRoot, 'execution/common/runLifecycle.d.ts'), 'utf8')
-    const runEventsDeclaration = await readFile(path.join(declarationRoot, 'execution/common/events.d.ts'), 'utf8')
+    const runEventsDeclaration = (await readFile(path.join(declarationRoot, 'execution/common/events.d.ts'), 'utf8')).replaceAll(
+      "'../../flow/common/webhookResponse.ts'",
+      "'./webhook-response.js'",
+    )
     const engineContractDeclaration = await readFile(path.join(declarationRoot, 'execution/common/engineContract.d.ts'), 'utf8')
     const runtimeContractDeclaration = (await readFile(path.join(declarationRoot, 'execution/common/runtime.d.ts'), 'utf8'))
       .replaceAll("'../../decision/common/decision.ts'", "'./decision.js'")
       .replaceAll("'../../flow/common/change.ts'", "'../browser/flow-change.js'")
       .replaceAll("'./engineContract.ts'", "'./engine-contract.js'")
     const schedulerDeclaration = (await readFile(path.join(declarationRoot, 'execution/common/scheduler.d.ts'), 'utf8'))
+      .replaceAll("'../../flow/common/webhookResponse.ts'", "'./webhook-response.js'")
       .replaceAll("'../../types/index.ts'", "'../index.js'")
       .replaceAll("'./runtime.ts'", "'./runtime-contract.js'")
       .replaceAll("'../../flow/common/change.ts'", "'../browser/flow-change.js'")
@@ -417,14 +423,13 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
       "'../browser/flow-change.js'",
     )
     const providerTriggersDeclaration = (await readFile(path.join(declarationRoot, 'trigger/providers/definitions.d.ts'), 'utf8'))
-      .replaceAll("'./feishu/events.ts'", "'./feishu-events.js'")
-      .replaceAll("'./feishu/subscriptions.ts'", "'./feishu-subscriptions.js'")
       .replaceAll("'../common/integration.ts'", "'./integration-trigger.js'")
       .replaceAll("'../common/poll.ts'", "'./poll-trigger.js'")
       .replaceAll("'../common/configOptions.ts'", "'./trigger-config-options.js'")
       .replaceAll("'./localization.ts'", "'./trigger-localization.js'")
     const webhookTriggerDeclaration = (await readFile(path.join(declarationRoot, 'trigger/common/webhook.d.ts'), 'utf8'))
       .replaceAll("'../../flow/common/change.ts'", "'../browser/flow-change.js'")
+      .replaceAll("'../../flow/common/webhookResponse.ts'", "'./webhook-response.js'")
       .replaceAll("'./contract.ts'", "'./trigger-contract.js'")
     await Promise.all([
       writeFile(path.join(browserOutputPath, 'flow-authoring.d.ts'), flowAuthoringDeclaration),
@@ -475,14 +480,23 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
           "'../browser/flow-change.js'",
         ),
       ),
+      writeFile(
+        path.join(commonOutputPath, 'workflow.d.ts'),
+        (await readFile(path.join(declarationRoot, 'workflow/common/workflow.d.ts'), 'utf8')).replaceAll(
+          "'../../flow/common/change.ts'",
+          "'../browser/flow-change.js'",
+        ),
+      ),
       writeFile(path.join(commonOutputPath, 'connector-action.d.ts'), connectorActionDeclaration),
       writeFile(path.join(commonOutputPath, 'connector-proxy.d.ts'), connectorProxyDeclaration),
       writeFile(
         path.join(commonOutputPath, 'control-requests.d.ts'),
         (await readFile(path.join(declarationRoot, 'control/common/requests.d.ts'), 'utf8'))
           .replaceAll("'../../canvas/common/commands.ts'", "'./canvas-commands.js'")
+          .replaceAll('./eventSources.ts', './event-sources.js')
           .replaceAll("'./draftOperations.ts'", "'./draftOperations.js'")
           .replaceAll("'./authoring.ts'", "'./authoring.js'")
+          .replaceAll("'../../workflow/common/workflow.ts'", "'./workflow.js'")
           .replaceAll("'./authoringSchema.ts'", "'./authoringSchema.js'")
           .replaceAll("'../../flow/common/changeSchema.ts'", "'../browser/flow-change-schema.js'")
           .replaceAll("'./providerAccess.ts'", "'./providerAccess.js'")
@@ -530,6 +544,10 @@ async function writeDeclarations(options: BuildBrowserPackageOptions, browserOut
       writeFile(path.join(commonOutputPath, 'poll-trigger.d.ts'), pollTriggerDeclaration),
       writeFile(path.join(commonOutputPath, 'provider-triggers.d.ts'), providerTriggersDeclaration),
       writeFile(path.join(commonOutputPath, 'webhook-trigger.d.ts'), webhookTriggerDeclaration),
+      writeFile(
+        path.join(commonOutputPath, 'webhook-response.d.ts'),
+        (await readFile(path.join(declarationRoot, 'flow/common/webhookResponse.d.ts'), 'utf8')).replaceAll("'./change.ts'", "'../browser/flow-change.js'"),
+      ),
       writeFile(path.join(commonOutputPath, 'localization.d.ts'), localizationDeclaration),
     ])
   } finally {

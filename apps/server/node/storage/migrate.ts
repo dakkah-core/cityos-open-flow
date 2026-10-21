@@ -2,7 +2,9 @@ import type { Database } from './database.ts'
 
 import { readFileSync } from 'node:fs'
 import { migrateConnectorAccess } from './migrate-connector-access.ts'
+import { migrateFlowResourceReferences } from './migrate-flow-resource-references.ts'
 import { migrateFlowResources } from './migrate-flow-resources.ts'
+import { migrateWorkflowInterfaces } from './migrate-workflow-interfaces.ts'
 
 const migrations = [
   '0001_flow.sql',
@@ -51,6 +53,12 @@ const migrations = [
   '0044_service_profiles.sql',
   '0045_connector_team_names.sql',
   '0046_flow_trigger_control.sql',
+  migrateFlowResourceReferences,
+  '0048_workflow_calls.sql',
+  migrateWorkflowInterfaces,
+  '0050_run_initiator.sql',
+  '0051_event_source_apps.sql',
+  '0052_webhook_responses.sql',
 ] as const
 const migrationsDirectory = new URL(import.meta.url.endsWith('.ts') ? '../../migrations/' : '../migrations/', import.meta.url)
 

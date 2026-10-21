@@ -29,9 +29,11 @@ describe('ControlClient Flow API', () => {
     { draft: null, sharedAccess: { accessRevision: 2, providerIds: [], bindings: [{ providerId: 'mail', connectionId: null, accessBindingId: 'missing' }] } },
   ])('decodes resource references in Flow detail and list responses', async (resourceReferences) => {
     const expected = { ...flow, resourceReferences }
-    const client = new ControlClient(async (url) => Response.json(String(url).endsWith('/v1/flows') ? { flows: [expected], version: 1 } : expected))
+    const client = new ControlClient(async (url) =>
+      Response.json(String(url).endsWith('/v1/flows') ? { flows: [{ ...expected, referenceCount: 0 }], version: 1 } : expected),
+    )
     await expect(client.getFlow(flow.flowId)).resolves.toEqual(expected)
-    await expect(client.listFlows()).resolves.toEqual({ flows: [expected], version: 1 })
+    await expect(client.listFlows()).resolves.toEqual({ flows: [{ ...expected, referenceCount: 0 }], version: 1 })
   })
 
   it.each([
@@ -48,13 +50,13 @@ describe('ControlClient Flow API', () => {
   it('creates and lists top-level Flows', async () => {
     const request = vi.fn(async (path: string, init?: RequestInit) => {
       if (path == '/v1/flows' && init?.method == 'POST') return Response.json(flow, { status: 201 })
-      if (path == '/v1/flows?limit=50&includeTotal=true') return Response.json({ flows: [flow], total: 1, version: 1 })
+      if (path == '/v1/flows?limit=50&includeTotal=true') return Response.json({ flows: [{ ...flow, referenceCount: 0 }], total: 1, version: 1 })
       throw new Error(path)
     })
     const client = new ControlClient(request)
 
     await expect(client.createFlow('Main', 'flow-create')).resolves.toEqual(flow)
-    await expect(client.listFlows({ includeTotal: true, limit: 50 })).resolves.toEqual({ flows: [flow], total: 1, version: 1 })
+    await expect(client.listFlows({ includeTotal: true, limit: 50 })).resolves.toEqual({ flows: [{ ...flow, referenceCount: 0 }], total: 1, version: 1 })
     expect(JSON.parse(String(request.mock.calls[0]![1]?.body))).toEqual({ name: 'Main', version: 1 })
     expect(new Headers(request.mock.calls[0]![1]?.headers).get('idempotency-key')).toBe('flow-create')
   })
@@ -300,7 +302,7 @@ describe('ControlClient Flow API', () => {
           values: { nodeId: 'task' },
         },
       ],
-      engineContract: 'open-flow-engine/v5',
+      engineContract: 'open-flow-engine/v6',
       flowId: flow.flowId,
       modelVersion: currentFlowModelVersion,
       revisionDigest: 'revision-digest-1',
@@ -346,7 +348,7 @@ describe('ControlClient Publish API', () => {
       1,
       '/v1/flows/flow%2F1/revisions/revision-1/publications',
       expect.objectContaining({
-        body: JSON.stringify({ engineContract: 'open-flow-engine/v5', expectedLivePublicationId: null, version: 1 }),
+        body: JSON.stringify({ engineContract: 'open-flow-engine/v7', expectedLivePublicationId: null, version: 1 }),
         method: 'POST',
       }),
     )
@@ -354,10 +356,16 @@ describe('ControlClient Publish API', () => {
     expect(request).toHaveBeenNthCalledWith(2, '/v1/flows/flow%2F1/publish-operations/publish-1', expect.anything())
   })
 
+  it('ignores additional Publish operation and issue fields', async () => {
+    const issue = { code: 'provider.failed', message: 'Failed.' }
+    const result = { ...pending, issue, status: 'failed' }
+    const client = new ControlClient(async () => Response.json({ ...result, extra: true, issue: { ...issue, response: {} } }))
+    await expect(client.getPublishOperation(flow.flowId, pending.operationId)).resolves.toEqual(result)
+  })
+
   it.each([
-    ['an extra pending field', { ...pending, extra: true }],
     ['a succeeded result without a Publication', { ...pending, status: 'succeeded' }],
-    ['a failed result with an unsafe issue shape', { ...pending, issue: { code: 'provider.failed', message: 'Failed.', response: {} }, status: 'failed' }],
+    ['a failed result without an issue message', { ...pending, issue: { code: 'provider.failed' }, status: 'failed' }],
   ])('rejects %s', async (_name, response) => {
     const client = new ControlClient(async () => Response.json(response))
     await expect(client.getPublishOperation(flow.flowId, pending.operationId)).rejects.toMatchObject({ code: 'response.invalid', status: 502 })
@@ -374,7 +382,7 @@ describe('ControlClient Variable API', () => {
 
   it('lists, reads, writes, and deletes Variables with encoded names', async () => {
     const request = vi.fn(async (path: string, init?: RequestInit) => {
-      if (path == '/v1/variables') return Response.json({ variables: [variable], version: 1 })
+      if (path == '/v1/variables') return Response.json({ variables: [{ ...variable, referenceCount: 2 }], version: 1 })
       if (path == '/v1/variables/Token%2FName' && init?.method == null) return Response.json(variable)
       if (path == '/v1/variables/Token%2FName' && init?.method == 'PUT') return Response.json({ ...variable, value: 'next' })
       if (path == '/v1/variables/Token%2FName' && init?.method == 'DELETE') return Response.json({ version: 1 })
@@ -382,7 +390,7 @@ describe('ControlClient Variable API', () => {
     })
     const client = new ControlClient(request)
 
-    await expect(client.listVariables()).resolves.toEqual({ variables: [variable], version: 1 })
+    await expect(client.listVariables()).resolves.toEqual({ variables: [{ ...variable, referenceCount: 2 }], version: 1 })
     await expect(client.getVariable('Token/Name')).resolves.toEqual(variable)
     await expect(client.putVariable('Token/Name', 'next')).resolves.toEqual({ ...variable, value: 'next' })
     await expect(client.deleteVariable('Token/Name')).resolves.toBeUndefined()
@@ -393,8 +401,17 @@ describe('ControlClient Variable API', () => {
     )
   })
 
+  it('ignores additional Variable list, item, and delete fields', async () => {
+    const responses = [
+      { variables: [{ ...variable, referenceCount: 2, extra: true }], version: 1, extra: true },
+      { version: 1, extra: true },
+    ]
+    const client = new ControlClient(async () => Response.json(responses.shift()))
+    await expect(client.listVariables()).resolves.toEqual({ variables: [{ ...variable, referenceCount: 2 }], version: 1 })
+    await expect(client.deleteVariable('TOKEN')).resolves.toBeUndefined()
+  })
+
   it.each([
-    ['extra field', { ...variable, extra: true }],
     ['missing field', { name: variable.name, updatedAt: variable.updatedAt, version: 1 }],
     ['invalid timestamp', { ...variable, updatedAt: 'today' }],
     ['invalid value', { ...variable, value: null }],
@@ -404,8 +421,13 @@ describe('ControlClient Variable API', () => {
     await expect(client.getVariable('TOKEN')).rejects.toMatchObject({ code: 'response.invalid', status: 502 })
   })
 
+  it.each([undefined, -1, 1.5, '2', null])('rejects an invalid reference count: %j', async (referenceCount) => {
+    const client = new ControlClient(async () => Response.json({ variables: [{ ...variable, referenceCount }], version: 1 }))
+    await expect(client.listVariables()).rejects.toMatchObject({ code: 'response.invalid' })
+  })
+
   it('rejects malformed Variable list and delete responses', async () => {
-    const responses = [Response.json({ variables: {}, version: 1 }), Response.json({ version: 1, extra: true })]
+    const responses = [Response.json({ variables: {}, version: 1 }), Response.json({ version: 2 })]
     const client = new ControlClient(async () => responses.shift()!)
 
     await expect(client.listVariables()).rejects.toMatchObject({ code: 'response.invalid', status: 502 })
@@ -417,7 +439,7 @@ describe('ControlClient Wait API', () => {
   const waiting = {
     closureDigest: 'closure-1',
     createdAt: '2026-09-01T00:00:00.000Z',
-    engineContract: 'open-flow-engine/v5',
+    engineContract: 'open-flow-engine/v6',
     engineDigest: 'engine-1',
     flowId: flow.flowId,
     modelVersion: currentFlowModelVersion,
@@ -440,6 +462,24 @@ describe('ControlClient Wait API', () => {
       },
     ],
   } as const
+
+  it.each([
+    { actorId: 'user-1', channel: 'workbench' },
+    { actorId: 'user-1', channel: 'cli' },
+    { actorId: 'user-1', channel: 'mcp' },
+    { actorId: 'user-1', channel: 'api' },
+    { channel: 'trigger' },
+    { actorId: 'user-1', channel: 'workflow' },
+  ])('decodes Run initiators: %j', async (initiator) => {
+    const response = { ...waiting, initiator }
+    const client = new ControlClient(async () => Response.json(response))
+    await expect(client.getRun(waiting.runId)).resolves.toEqual(response)
+  })
+
+  it.each([null, {}, { channel: 'other' }, { channel: 'cli', actorId: 42 }])('rejects invalid Run initiators: %j', async (initiator) => {
+    const client = new ControlClient(async () => Response.json({ ...waiting, initiator }))
+    await expect(client.getRun(waiting.runId)).rejects.toMatchObject({ code: 'response.invalid' })
+  })
 
   it.each([false, true])('decodes Live runs with occurrence metadata: %s', async (automatic) => {
     const response = {
@@ -774,7 +814,6 @@ it('decodes Variable references and forwards cancellation', async () => {
   const result = {
     version: 1,
     references: [{ flowId: 'f', flowName: 'Flow', draft: true, live: { publicationId: 'p', enabled: false } }],
-    unknown: [{ flowId: 'g', flowName: 'Other', scope: 'draft' }],
   }
   const request = vi.fn(async () => Response.json(result))
   const client = new ControlClient(request)
@@ -784,9 +823,8 @@ it('decodes Variable references and forwards cancellation', async () => {
   for (const invalid of [
     { ...result, version: 2 },
     { ...result, references: null },
-    { ...result, unknown: [{ flowId: 'f', flowName: 'Flow', scope: 'history' }] },
     { ...result, references: [{ ...result.references[0], draft: 'yes' }] },
-    { ...result, references: [{ ...result.references[0], live: { publicationId: 'p', enabled: 1 } }] },
+    { ...result, references: [{ ...result.references[0], live: { hasStart: true, publicationId: 'p', enabled: 1 } }] },
   ]) {
     request.mockImplementation(async () => Response.json(invalid))
     await expect(client.getVariableReferences('TOKEN')).rejects.toThrow()
@@ -796,4 +834,14 @@ it('decodes Variable references and forwards cancellation', async () => {
 it('reports malformed workflow exports through the standard Control response error', async () => {
   const client = new ControlClient(async () => Response.json({ kind: 'open-flow-workflow', version: 99 }))
   await expect(client.exportFlow('flow')).rejects.toMatchObject({ code: 'response.invalid', status: 502 })
+})
+
+it.each([undefined, null, -1, 1.5, '2'])('rejects an invalid list-only reference count: %j', async (referenceCount) => {
+  const client = new ControlClient(async () => Response.json({ version: 1, flows: [{ ...flow, referenceCount }] }))
+  await expect(client.listFlows()).rejects.toMatchObject({ code: 'response.invalid' })
+})
+
+it('keeps reference counts out of Flow detail decoding', async () => {
+  const client = new ControlClient(async () => Response.json({ ...flow, referenceCount: 3 }))
+  await expect(client.getFlow(flow.flowId)).resolves.toEqual(flow)
 })

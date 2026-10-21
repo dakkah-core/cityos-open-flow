@@ -1,0 +1,107 @@
+{
+  "schemaVersion": "cityos.upstream-integration.v1",
+  "upstream": {
+    "repository": "https://github.com/oomol-lab/open-flow",
+    "branch": "main",
+    "commit": "0103070aea74d007660844d965b446664fc6eb52"
+  },
+  "baselineForkCommit": "227b75c563b37aaf99eb53280298047c2db87c23",
+  "ownedDirectories": [
+    "config/upstream",
+    "scripts/upstream"
+  ],
+  "publicEntries": [
+    "@oomol-lab/open-flow/workbench",
+    "@oomol-lab/open-flow/control-api",
+    "@oomol-lab/open-flow/workbench-host-conformance"
+  ],
+  "toolchain": "package.json#workspaces.catalog;.node-version;.bun-version",
+  "consumerProvenance": "dakkah-cityos-cms/packages/engineering-pipeline-runtime-core/src/open-flow-authoring.ts",
+  "supportedConsumerContracts": [
+    "cityos.open-flow-authoring.v1 (engine/v5; candidate v7 is not installation-qualified)"
+  ],
+  "requiredChecks": [
+    "source-boundary",
+    "editor-host",
+    "packed-consumers",
+    "cms-http-authoring"
+  ],
+  "changes": [
+    {
+      "id": "catalog-runtime-distribution",
+      "purpose": "Preserve the canonical CityOS Node/Bun/TypeScript and dependency catalog, materialized public peers and package compatibility checks.",
+      "invariant": "Development and packed dependencies use the owning catalog; no alternate runtime or generated lock side is substituted.",
+      "paths": [
+        ".bun-version",
+        ".node-version",
+        "apps/server/Dockerfile",
+        "apps/server/package.json",
+        "bun.lock",
+        "docs/control/contracts/typescript-toolchain.md",
+        "package.json",
+        "packages/command/package.json",
+        "packages/open-flow/package.json",
+        "packages/open-flow/test/babel-gen-mapping.node-test.mjs",
+        "packages/open-flow/test/miniflare-tooling.node-test.mjs",
+        "packages/open-flow/test/toolchain.node-test.mjs"
+      ],
+      "tests": [
+        "packages/open-flow/test/toolchain.node-test.mjs",
+        "packages/open-flow/test/miniflare-tooling.node-test.mjs",
+        "packages/open-flow/test/babel-gen-mapping.node-test.mjs"
+      ]
+    },
+    {
+      "id": "generic-editor-compatibility",
+      "purpose": "Retain typed React ref, value and cron compatibility fixes; maintain fork validation without adding CityOS authority into the Workbench.",
+      "invariant": "The generic Workbench delegates identity and operations to its public host and retains editing behavior.",
+      "paths": [
+        ".github/workflows/ci.yaml",
+        ".gitignore",
+        "packages/command/src/cli/common/version.ts",
+        "packages/open-flow/src/canvas/browser/graph/FlowCanvas/FlowCanvasView.tsx",
+        "packages/open-flow/src/canvas/browser/graph/Nodes/components/CommentNodeContent.tsx",
+        "packages/open-flow/src/distribution/node/npmPackage.ts",
+        "packages/open-flow/src/form/browser/colorEditor.tsx",
+        "packages/open-flow/src/form/browser/jsonEditor.tsx",
+        "packages/open-flow/src/form/browser/sortableFieldList.tsx",
+        "packages/open-flow/src/ui/browser/json-viewer/hooks.ts",
+        "packages/open-flow/src/workbench/browser/runtime/editor/blockLibrary.tsx",
+        "packages/open-flow/src/workbench/browser/runtime/editor/codeEditor.tsx",
+        "packages/open-flow/src/workbench/browser/runtime/editor/connectorAccessSettings.test.tsx",
+        "packages/open-flow/src/workbench/browser/runtime/editor/contextPanel.tsx",
+        "packages/open-flow/src/workbench/browser/runtime/editor/decisionSection.tsx",
+        "packages/open-flow/src/workbench/browser/runtime/editor/nodeInputValue.test.tsx",
+        "packages/open-flow/src/workbench/browser/runtime/editor/nodeInspector.tsx",
+        "packages/open-flow/src/workbench/browser/runtime/editor/portDefinitionEditor.tsx",
+        "packages/open-flow/src/workbench/browser/runtime/editor/promptEditor.tsx",
+        "packages/open-flow/src/workbench/browser/runtime/editor/triggerScheduleEditor.tsx",
+        "packages/open-flow/src/workbench/browser/runtime/editor/webhookEditor.tsx",
+        "packages/open-flow/src/workbench/browser/runtime/flowWorkspace.tsx",
+        "packages/open-flow/src/workbench/browser/runtime/publications/publicationsView.tsx",
+        "packages/open-flow/src/workbench/browser/runtime/runs/runDrawer.tsx",
+        "packages/open-flow/src/workbench/browser/runtime/runs/runResults.tsx",
+        "packages/open-flow/src/workbench/browser/runtime/shell/resourceBrowser.tsx",
+        "packages/open-flow/test/cron-description.test.ts",
+        "packages/open-flow/test/form-value-validation.test.tsx",
+        "packages/open-flow/test/skill-generation.test.ts",
+        "packages/open-flow/src/workbench/browser/runtime/editor/retrySettings.tsx",
+        "packages/open-flow/src/workbench/browser/runtime/editor/workflowSection.tsx",
+        "packages/open-flow/src/canvas/browser/graph/FlowCanvas/exportSvg.test.ts"
+      ],
+      "tests": [
+        "packages/open-flow/src/workbench/browser/runtime/editor/nodeInspector.test.tsx",
+        "packages/open-flow/src/workbench/browser/runtime/editor/codeEditor.test.tsx",
+        "packages/open-flow/src/workbench/browser/runtime/flowWorkspace.test.tsx",
+        "packages/open-flow/test/cron-description.test.ts",
+        "packages/open-flow/src/workbench/browser/runtime/editor/retrySettings.test.tsx",
+        "packages/open-flow/src/workbench/browser/runtime/editor/workflowSection.test.tsx",
+        "packages/open-flow/src/canvas/browser/graph/FlowCanvas/exportSvg.test.ts"
+      ]
+    }
+  ],
+  "nonClaims": [
+    "Source integration does not qualify the CMS engine/v5 installation against candidate engine/v7.",
+    "Local qualification is not publication or activation."
+  ]
+}

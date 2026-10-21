@@ -1,14 +1,14 @@
 import type { Flow, RunDetails } from '../../src/workbench/browser/runtime/api.ts'
 import type { FrontendStory } from './stories.tsx'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { I18nProvider } from 'val-i18n-react'
 import { Button } from '../../src/ui/browser/button.tsx'
-import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '../../src/ui/browser/dialog.tsx'
 import { ErrorTriggerSources } from '../../src/workbench/browser/runtime/editor/errorTriggerSources.tsx'
 import { createI18n } from '../../src/workbench/browser/runtime/i18n.ts'
-import { ErrorHandling, RunLinkContext } from '../../src/workbench/browser/runtime/runs/errorHandling.tsx'
-import { FlowDeletionImpact } from '../../src/workbench/browser/runtime/shell/resourceBrowser.tsx'
+import { WorkbenchLinkContext } from '../../src/workbench/browser/runtime/linkContext.ts'
+import { ErrorHandling } from '../../src/workbench/browser/runtime/runs/errorHandling.tsx'
+import { FlowDeletionDialog, FlowDeletionImpact } from '../../src/workbench/browser/runtime/shell/flowDeletionDialog.tsx'
 import { useStoryActions } from './storyActions.tsx'
 
 const flows: readonly Flow[] = ['source', 'handler', 'upstream-2', 'offline', 'retiring'].map((flowId) => ({
@@ -23,7 +23,7 @@ const flows: readonly Flow[] = ['source', 'handler', 'upstream-2', 'offline', 'r
   },
   status: flowId == 'retiring' ? 'retiring' : 'active',
   version: 1,
-  live: flowId == 'offline' ? undefined : { enabled: true, publicationId: 'publication', revisionId: 'revision' },
+  live: flowId == 'offline' ? undefined : { hasStart: true, enabled: true, publicationId: 'publication', revisionId: 'revision' },
 }))
 const run: RunDetails = {
   runId: 'source-run',
@@ -44,19 +44,34 @@ const run: RunDetails = {
   waits: [],
 }
 
+const deletionWorkspace = {
+  async getFlowReferences() {
+    return { version: 1 as const, direction: 'incoming' as const, total: 0, references: [] }
+  },
+  async getErrorListeners() {
+    return [
+      { flowId: 'alerts', flowName: 'Incident notifications', nodeId: 'error', nodeName: 'Order failure alerts', enabled: true },
+      { flowId: 'ops', flowName: 'Operations', nodeId: 'error', nodeName: 'Flow Error', enabled: false },
+    ]
+  },
+}
+
 function Sample({ dark, language }: { dark: boolean; language: Parameters<FrontendStory['render']>[2] }) {
   const i18n = useMemo(() => createI18n(language), [language])
   useEffect(() => () => i18n.dispose(), [i18n])
   const [value, setValue] = useState<readonly string[]>([])
   const [unavailable, setUnavailable] = useState<readonly string[]>(['handler', 'offline', 'retiring', 'deleted-upstream'])
   const [readOnly, setReadOnly] = useState(false)
+  const [deletionOpen, setDeletionOpen] = useState(false)
+  const [container, setContainer] = useState<HTMLDivElement | null>(null)
+  const deletionTrigger = useRef<HTMLButtonElement>(null)
   useStoryActions([
     { label: readOnly ? 'Enable editing' : 'Read only', onClick: () => setReadOnly(!readOnly) },
     { label: 'Reset', onClick: () => setValue([]) },
   ])
   return (
     <I18nProvider i18n={i18n}>
-      <div className="open-flow-workbench open-flow-theme grid gap-6 p-6" data-theme={dark ? 'dark' : 'light'}>
+      <div ref={setContainer} className="open-flow-workbench open-flow-theme grid gap-6 p-6" data-theme={dark ? 'dark' : 'light'}>
         <div className="grid gap-6 md:grid-cols-2">
           <section className="w-full max-w-sm min-w-0 space-y-3">
             <h3>Choose published upstream workflows</h3>
@@ -77,31 +92,27 @@ function Sample({ dark, language }: { dark: boolean; language: Parameters<Fronte
         </div>
         <section className="space-y-3">
           <h3>Delete workflow · Published listeners</h3>
-          <Dialog>
-            <DialogTrigger render={<Button variant="outline" />}>Preview deletion warning</DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>{i18n.t('sidebar.deleteFlowConfirm', { name: 'Orders' })}</DialogTitle>
-                <DialogDescription>{i18n.t('resource.deleteDescription')}</DialogDescription>
-              </DialogHeader>
-              <FlowDeletionImpact
-                listeners={[
-                  { flowId: 'alerts', flowName: 'Incident notifications', nodeId: 'error', nodeName: 'Order failure alerts', enabled: true },
-                  { flowId: 'ops', flowName: 'Operations', nodeId: 'error', nodeName: 'Flow Error', enabled: false },
-                ]}
-                failed={false}
-                onRetry={() => {}}
-              />
-              <DialogFooter>
-                <DialogClose render={<Button variant="outline" />}>{i18n.t('common.cancel')}</DialogClose>
-                <DialogClose render={<Button variant="destructive" />}>{i18n.t('common.delete')}</DialogClose>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <Button ref={deletionTrigger} variant="outline" onClick={() => setDeletionOpen(true)}>
+            Preview deletion warning
+          </Button>
+          {deletionOpen && (
+            <FlowDeletionDialog
+              flow={{ flowId: 'source', name: 'Orders' }}
+              workspace={deletionWorkspace}
+              container={container}
+              busy={undefined}
+              finalFocus={() => deletionTrigger.current}
+              onClose={() => setDeletionOpen(false)}
+              onDelete={() => setDeletionOpen(false)}
+              hrefForFlow={({ flowId }, view) => `?flow=${flowId}&view=${view}`}
+              onSelectFlow={() => {}}
+            />
+          )}
+
           <FlowDeletionImpact listeners={undefined} failed={false} onRetry={() => {}} />
           <FlowDeletionImpact listeners={undefined} failed onRetry={() => {}} />
         </section>
-        <RunLinkContext.Provider value={({ flowId, runId }) => `?flow=${flowId}&run=${runId}`}>
+        <WorkbenchLinkContext.Provider value={({ flowId, runId }) => `?flow=${flowId}&run=${runId}`}>
           <section className="space-y-3">
             <h3>Error handling status</h3>
             <ErrorHandling run={{ ...run, errorDispatches: [{ status: 'pending', flowId: 'handler' }] }} />
@@ -109,7 +120,7 @@ function Sample({ dark, language }: { dark: boolean; language: Parameters<Fronte
             <ErrorHandling run={{ ...run, errorDispatches: [{ status: 'failed', flowId: 'handler', message: 'The error workflow is disabled.' }] }} />
             <ErrorHandling run={{ ...run, errorSource: { flowId: 'source', runId: 'source-run' } }} />
           </section>
-        </RunLinkContext.Provider>
+        </WorkbenchLinkContext.Provider>
       </div>
     </I18nProvider>
   )

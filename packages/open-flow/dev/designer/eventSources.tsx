@@ -1,19 +1,28 @@
 import type { ComponentProps } from 'react'
+import type { SetNotice } from '../../src/workbench/browser/runtime/stores/workbenchNotice.ts'
 import type { FrontendStory } from './stories.tsx'
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Toaster, toast } from 'sonner'
 import { I18nProvider } from 'val-i18n-react'
 import snapshots from 'virtual:lab-trigger-snapshots'
+import { notificationToasterProps } from '../../src/ui/browser/public.ts'
 import { ApiError } from '../../src/workbench/browser/runtime/api.ts'
 import { CreateEventSourceDialog } from '../../src/workbench/browser/runtime/createEventSourceDialog.tsx'
 import { EditorContextPanel } from '../../src/workbench/browser/runtime/editor/editorContextPanel.tsx'
 import { FeishuEventFilters } from '../../src/workbench/browser/runtime/editor/feishuEventFilters.tsx'
 import { TriggerSummary } from '../../src/workbench/browser/runtime/editor/triggerSummary.tsx'
+import { eventSourcePresentations } from '../../src/workbench/browser/runtime/eventSourcePresentation.ts'
 import { EventSourcesPage, SourceForm } from '../../src/workbench/browser/runtime/eventSources.tsx'
 import { EventSourceSetup } from '../../src/workbench/browser/runtime/eventSourceSetup.tsx'
 import { FeishuEventPicker } from '../../src/workbench/browser/runtime/feishuEventPicker.tsx'
 import { createI18n } from '../../src/workbench/browser/runtime/i18n.ts'
 import { useStoryActions } from './storyActions.tsx'
+
+const notify: SetNotice = (notice) => {
+  if (notice.kind === 'error') toast.error(notice.message)
+  else toast.success(notice.message)
+}
 
 const sampleSource: NonNullable<ComponentProps<typeof SourceForm>['source']> = {
   version: 1,
@@ -39,13 +48,13 @@ const sampleSource: NonNullable<ComponentProps<typeof SourceForm>['source']> = {
 const client: ComponentProps<typeof SourceForm>['client'] = {
   createConnectorConnectionPage: async () => 'https://connector.example/providers/feishu_app_bot',
   listEventSources: async () => ({ version: 1, sources: [] }),
-  listEventSourceConnections: async () => [
+  listEventSourceConnections: async (_team, _signal, kind) => [
     {
       connectionId: 'sample-bot',
-      providerAccountId: 'cli_demo',
-      displayName: 'Feishu · Demo bot',
+      providerAccountId: kind === 'jira' ? 'jira:cloud:user' : kind === 'intercom' ? 'workspace:admin' : kind === 'slack' ? 'UDEMO' : 'cli_demo',
+      displayName: `${eventSourcePresentations[kind ?? 'feishu'].label} · Demo`,
       isDefault: true,
-      serviceId: 'feishu_app_bot',
+      serviceId: eventSourcePresentations[kind ?? 'feishu'].provider,
       status: 'active',
     },
   ],
@@ -66,13 +75,50 @@ const unavailableClient = {
 }
 
 function Forms({ language, dark, log }: { language: Parameters<FrontendStory['render']>[2]; dark: boolean; log: Parameters<FrontendStory['render']>[0] }) {
+  useEffect(
+    () => () => {
+      toast.dismiss()
+    },
+    [],
+  )
   const i18n = useMemo(() => createI18n(language), [language])
   return (
     <I18nProvider i18n={i18n}>
+      <Toaster {...notificationToasterProps} theme={dark ? 'dark' : 'light'} />
       <div className="open-flow-theme grid gap-6 p-6 text-sm text-foreground xl:grid-cols-2" data-theme={dark ? 'dark' : 'light'}>
+        {(['intercom', 'sentry', 'zoom', 'fireflies', 'jira'] as const).map((kind) => (
+          <section key={kind}>
+            <h2 className="m-0 mb-4 text-sm font-medium">{eventSourcePresentations[kind].label}</h2>
+            <SourceForm sourceKind={kind} notify={notify} client={client} teams={[]} onCancel={() => log('Canceled')} onSaved={() => log('Saved')} />
+          </section>
+        ))}
+        <section>
+          <h2 className="m-0 mb-4 text-sm font-medium">Slack · shared application source</h2>
+          <SourceForm sourceKind="slack" notify={notify} client={client} teams={[]} onCancel={() => log('Canceled')} onSaved={() => log('Saved')} />
+        </section>
+        <section>
+          <h2 className="m-0 mb-4 text-sm font-medium">Slack · callback configuration</h2>
+          <SourceForm
+            notify={notify}
+            client={client}
+            teams={[]}
+            source={{
+              ...sampleSource,
+              provider: 'slackbot',
+              appId: 'ADEMO',
+              workspaceId: 'TDEMO',
+              eventTypes: ['app_mention', 'message.im'],
+              verificationTokenConfigured: false,
+              encryptKeyConfigured: false,
+              signingSecretConfigured: true,
+            }}
+            onCancel={() => log('Canceled')}
+            onSaved={() => log('Saved')}
+          />
+        </section>
         <section className="xl:col-span-2">
           <h2 className="m-0 mb-4 text-sm font-medium">Page content · host supplies the container</h2>
-          <EventSourcesPage client={client} language={language} teams={[]} />
+          <EventSourcesPage notify={notify} client={client} language={language} teams={[]} />
         </section>
         {(
           [
@@ -91,12 +137,19 @@ function Forms({ language, dark, log }: { language: Parameters<FrontendStory['re
         ).map(([label, fixture]) => (
           <section key={label}>
             <h2 className="m-0 mb-4 text-sm font-medium">{label}</h2>
-            <SourceForm client={fixture} teams={[{ id: 'demo', name: 'Demo team' }]} onCancel={() => log('Cancel')} onSaved={() => log('Saved')} />
+            <SourceForm
+              notify={notify}
+              client={fixture}
+              teams={[{ id: 'demo', name: 'Demo team' }]}
+              onCancel={() => log('Cancel')}
+              onSaved={() => log('Saved')}
+            />
           </section>
         ))}
         <section>
           <h2 className="m-0 mb-4 text-sm font-medium">No event sources</h2>
           <CreateEventSourceDialog
+            notify={notify}
             client={client}
             teamId="demo"
             existingNames={[]}
@@ -108,7 +161,7 @@ function Forms({ language, dark, log }: { language: Parameters<FrontendStory['re
         </section>
         <section>
           <h2 className="m-0 mb-4 text-sm font-medium">Callback settings · existing app identity</h2>
-          <SourceForm client={client} teams={[]} source={sampleSource} onCancel={() => log('Cancel edit')} onSaved={() => log('Saved')} />
+          <SourceForm notify={notify} client={client} teams={[]} source={sampleSource} onCancel={() => log('Cancel edit')} onSaved={() => log('Saved')} />
         </section>
       </div>
     </I18nProvider>
@@ -119,7 +172,8 @@ export const eventSourcesStory: FrontendStory = {
   group: 'Workbench',
   id: 'event-source-forms',
   title: 'Event Sources',
-  description: 'Application selection, connection failure and callback settings using the production source form. No external requests or saved changes.',
+  description:
+    'Application selection, connection failure and callback settings using the production source form. Saving fails with a notification and preserves the form for retry. No external requests or saved changes.',
   standalone: true,
   render: (log, dark, language) => <Forms log={log} dark={dark} language={language} />,
 }
@@ -164,14 +218,22 @@ function CreateDialogStory({
   dark: boolean
   log: Parameters<FrontendStory['render']>[0]
 }) {
+  useEffect(
+    () => () => {
+      toast.dismiss()
+    },
+    [],
+  )
   const i18n = useMemo(() => createI18n(language), [language])
   const created = useRef<typeof sampleSource | undefined>(undefined)
   const [failBinding, setFailBinding] = useState(false)
   useStoryActions([{ label: failBinding ? 'Binding: fail' : 'Binding: succeed', onClick: () => setFailBinding(!failBinding) }])
   return (
     <I18nProvider i18n={i18n}>
+      <Toaster {...notificationToasterProps} theme={dark ? 'dark' : 'light'} />
       <div className="open-flow-theme p-6 text-foreground" data-theme={dark ? 'dark' : 'light'}>
         <CreateEventSourceDialog
+          notify={notify}
           defaultOpen
           client={{
             ...client,
@@ -183,7 +245,7 @@ function CreateDialogStory({
                 connectionId: input.connectionId,
                 teamId: input.teamId,
                 eventTypes: input.eventTypes,
-                manageSubscriptions: input.manageSubscriptions,
+                manageSubscriptions: input.kind == null || input.kind === 'feishu' ? input.manageSubscriptions : false,
               }
               return created.current
             },
@@ -194,6 +256,7 @@ function CreateDialogStory({
           onCreated={(source) => log(`Created ${source.name}`)}
           onSelect={async () => {
             log(failBinding ? 'Binding failed' : 'Selected')
+            if (failBinding) notify({ kind: 'error', message: i18n.t('eventSources.bindFailed') })
             return !failBinding
           }}
         />
@@ -212,14 +275,22 @@ export const createEventSourceStory: FrontendStory = {
 }
 
 function SetupStates({ language, dark }: { language: Parameters<FrontendStory['render']>[2]; dark: boolean }) {
+  useEffect(
+    () => () => {
+      toast.dismiss()
+    },
+    [],
+  )
   const i18n = useMemo(() => createI18n(language), [language])
   const [source, setSource] = useState(sampleSource)
   return (
     <I18nProvider i18n={i18n}>
+      <Toaster {...notificationToasterProps} theme={dark ? 'dark' : 'light'} />
       <div className="open-flow-theme grid gap-6 p-6 text-foreground xl:grid-cols-3" data-theme={dark ? 'dark' : 'light'}>
         <section className="rounded-lg border border-border p-4">
           <h2 className="mt-0 text-base font-medium">Awaiting verification → Check to verify</h2>
           <EventSourceSetup
+            notify={notify}
             source={source}
             onChange={setSource}
             client={{ listEventSources: async () => ({ version: 1, sources: [{ ...sampleSource, verifiedAt: sampleSource.updatedAt }] }) }}
@@ -228,6 +299,7 @@ function SetupStates({ language, dark }: { language: Parameters<FrontendStory['r
         <section className="rounded-lg border border-border p-4">
           <h2 className="mt-0 text-base font-medium">Verified · no business events yet</h2>
           <EventSourceSetup
+            notify={notify}
             source={{ ...sampleSource, verifiedAt: sampleSource.updatedAt }}
             onChange={() => {}}
             client={{
@@ -239,7 +311,24 @@ function SetupStates({ language, dark }: { language: Parameters<FrontendStory['r
         </section>
         <section className="rounded-lg border border-border p-4">
           <h2 className="mt-0 text-base font-medium">Public URL missing</h2>
-          <EventSourceSetup source={{ ...sampleSource, endpointUrl: null }} onChange={() => {}} client={client} />
+          <EventSourceSetup notify={notify} source={{ ...sampleSource, endpointUrl: null }} onChange={() => {}} client={client} />
+        </section>
+        <section className="rounded-lg border border-border p-4">
+          <h2 className="mt-0 text-base font-medium">Source details unavailable</h2>
+          <EventSourceSetup
+            notify={notify}
+            source={{
+              ...sampleSource,
+              appId: null,
+              endpointUrl: null,
+              manageSubscriptions: null,
+              verificationTokenConfigured: null,
+              encryptKeyConfigured: null,
+              lastError: 'Source details are unavailable. Restore Connector access and refresh to retry.',
+            }}
+            onChange={() => {}}
+            client={client}
+          />
         </section>
       </div>
     </I18nProvider>
@@ -347,7 +436,7 @@ function SummarySample({ language }: { language: Parameters<FrontendStory['rende
     <I18nProvider i18n={i18n}>
       <section>
         <h2 className="text-sm font-medium">{language}</h2>
-        <TriggerSummary inputDefs={[]} trigger={{ kind: 'integration', name: 'Feishu', definition, config: {} }} />
+        <TriggerSummary trigger={{ kind: 'integration', name: 'Feishu', definition, config: {} }} />
       </section>
     </I18nProvider>
   )

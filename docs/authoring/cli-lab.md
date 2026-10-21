@@ -128,7 +128,7 @@ attempt as mixed.
 
 `workflow-outputs` builds separate Code paths and joins them at Outputs, preserving an independent terminal Code result. It edits the output description in a later request and verifies typed business outputs, zero, nullable values, ordinary node events and retained logs. Run `bun run lab test workflow-outputs` and `bun run lab test workflow-outputs --mcp`; the existing `start-parameters` scenario remains a regression check.
 
-`start-parameters` declares workflow `inputDefs` through `flow.update`, then creates a Start node with required message and amount inputs and a nullable note. The public reference reads definitions directly from the workflow outline. The public reference edits the amount description in a later request and preserves its schema. Acceptance runs the Flow with zero, an omitted note, explicit null and an ordinary note, then checks the actual archive call. This exercises the same configuration and execution contract through CLI and MCP.
+`start-parameters` creates a Start node with `config.inputDefs` with required message and amount inputs and a nullable note. The public reference reads definitions from Start node details. The public reference edits the amount description in a later request and preserves its schema. Acceptance runs the Flow with zero, an omitted note, explicit null and an ordinary note, then checks the actual archive call. This exercises the same configuration and execution contract through CLI and MCP.
 
 ```bash
 bun run lab test start-parameters
@@ -140,7 +140,7 @@ bun run lab test start-parameters --mcp
 `connector-responses` creates a workflow through the public authoring interface, consumes a dynamic
 object response and spreadsheet rows containing string, number, boolean and null cells, and archives
 both through a downstream Code node. Acceptance checks empty and mixed rows and preserves an
-`output` property inside the dynamic response. The Connector and accounts are deterministic mocks;
+`output` property inside the dynamic response. The reference first creates the dynamic-response node with `connectionId: ""`, confirms the public read and check, and restores its real account before the final run. The Connector and accounts are deterministic mocks;
 this does not verify production Marketplace authorization.
 
 ```bash
@@ -326,3 +326,36 @@ The Lab host allows fetch requests only to registered local services and does no
 Undefined model, Action, or other external requests fail. Lab is a development experiment
 environment, not a general-purpose network sandbox for arbitrary untrusted code. Code isolation
 remains the responsibility of the production runtime.
+
+`workflow-call` discovers a published target through the public Flow catalog, creates a Call Workflow node, edits its name, explicitly refreshes its contract, and returns the child business output. It verifies zero and signed numeric parameters and parent/child log isolation. Run `bun run lab test workflow-call` and `bun run lab test workflow-call --mcp`.
+
+`node-retries` creates retry policies through the public authoring contract, updates one interval
+without losing its count, explicitly clears another policy, and runs both Code nodes. Run
+`bun run lab test node-retries` and `bun run lab test node-retries --mcp`. Scheduler and isolated
+runtime tests separately verify actual failed attempts, deadlines and uncertain outcomes.
+
+`node-errors` verifies same-path error handling, independent business and system outputs named error,
+nullable success errors, setting preservation and complete failure metadata. Run
+`bun run lab test node-errors` and `bun run lab test node-errors --mcp`.
+
+## Dynamic Webhook response regression
+
+`webhook-response` builds Webhook → Code → Outputs through public authoring, selects and renames
+a numeric status output, preserves a fixed status, and verifies HTTP 201 from the published result. It also configures whole-object headers, restores per-header bindings, follows output renames, and verifies text, numeric and boolean response header values with preserved fixed headers. The reference selects
+one response field, renames it, updates only the timeout, clears and restores dynamic mode, and
+publishes. Acceptance calls the published HTTP endpoint and verifies the response body, content type,
+renamed business output and separation from later Draft edits. Both transports share the scenario:
+
+```bash
+bun run lab test webhook-response
+bun run lab test webhook-response --mcp
+```
+
+`webhook-response-node` builds two response nodes, selects one, supplies its body and complete
+headers from upstream outputs, and puts a Wait after it. Its independent verifier checks early
+HTTP completion, continued execution, scalar header conversion and concurrent idempotent replay.
+
+```bash
+bun run lab test webhook-response-node
+bun run lab test webhook-response-node --mcp
+```

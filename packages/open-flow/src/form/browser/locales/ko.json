@@ -58,6 +58,7 @@
     "hours": "시",
     "minutes": "분",
     "seconds": "초",
+    "constant": "상수 {{value}}",
     "components": {
       "string": "한 줄",
       "text": "여러 줄",

@@ -1,40 +1,4 @@
 {
-  "name": "open-flow-workspace",
-  "private": true,
-  "packageManager": "bun@1.4.3",
-  "license": "Apache-2.0",
-  "type": "module",
-  "workspaces": [
-    "packages/*",
-    "apps/*"
-  ],
-  "devDependencies": {
-    "oxfmt": "catalog:",
-    "wrangler": "catalog:"
-  },
-  "scripts": {
-    "build": "bun run --workspaces --if-present build",
-    "build:designer": "bun run --filter @oomol-lab/open-flow designer:build",
-    "check": "bun run test:toolchain && bun run format -- --check && bun run --workspaces --if-present check",
-    "dev": "bun run dev:server",
-    "dev:designer": "bun run --filter @oomol-lab/open-flow designer:dev",
-    "dev:server": "bun run --cwd apps/server dev",
-    "deploy:designer": "bun run --filter @oomol-lab/open-flow designer:deploy",
-    "format": "oxfmt .",
-    "lint": "bun run --workspaces --if-present lint",
-    "test": "bun run --workspaces --if-present test",
-    "test:coverage": "bun run --workspaces --if-present test:coverage",
-    "test:docker": "bun run --filter @oomol-lab/open-flow-server test:docker",
-    "test:npm-package": "bun run --filter @oomol-lab/open-flow test:package",
-    "test:package": "bun run test:npm-package",
-    "lab": "node --no-node-snapshot apps/server/scripts/lab/main.ts",
-    "flow": "bun apps/server/scripts/flow.ts",
-    "skill:generate": "bun run --filter @oomol-lab/open-flow skill:generate",
-    "test:toolchain": "node --max-old-space-size=256 --test --test-concurrency=1 packages/open-flow/test/toolchain.node-test.mjs packages/open-flow/test/miniflare-tooling.node-test.mjs packages/open-flow/test/babel-gen-mapping.node-test.mjs"
-  },
-  "engines": {
-    "node": ">=26.0.0 <27.0.0"
-  },
   "catalog": {
     "@babel/parser": "8.0.7",
     "@babel/traverse": "8.0.7",
@@ -152,8 +116,23 @@
     "yaml": "2.9.1",
     "youch": "4.1.1",
     "zod": "4.6.7",
-    "zustand": "5.0.15"
+    "zustand": "5.0.15",
+    "html-to-image": "1.11.11"
   },
+  "catalogs": {
+    "typescript-compat": {
+      "typescript-lsp": "npm:typescript@6.0.2"
+    }
+  },
+  "devDependencies": {
+    "oxfmt": "catalog:",
+    "wrangler": "catalog:"
+  },
+  "engines": {
+    "node": ">=26.0.0 <27.0.0"
+  },
+  "license": "Apache-2.0",
+  "name": "open-flow-workspace",
   "overrides": {
     "miniflare@5.20261019.1-beta": {
       "youch": "catalog:"
@@ -162,9 +141,32 @@
       "@jridgewell/gen-mapping": "catalog:"
     }
   },
-  "catalogs": {
-    "typescript-compat": {
-      "typescript-lsp": "npm:typescript@6.0.2"
-    }
-  }
+  "packageManager": "bun@1.4.3",
+  "private": true,
+  "scripts": {
+    "build": "bun run --workspaces --if-present build",
+    "build:designer": "bun run --filter @oomol-lab/open-flow designer:build",
+    "check": "bun run test:toolchain && bun run format -- --check && bun run check:locales && bun run --workspaces --if-present check",
+    "check:locales": "node --test scripts/locale-files.test.mjs",
+    "deploy:designer": "bun run --filter @oomol-lab/open-flow designer:deploy",
+    "dev": "bun run dev:server",
+    "dev:designer": "bun run --filter @oomol-lab/open-flow designer:dev",
+    "dev:server": "bun run --cwd apps/server dev",
+    "flow": "bun apps/server/scripts/flow.ts",
+    "format": "oxfmt .",
+    "lab": "node --no-node-snapshot apps/server/scripts/lab/main.ts",
+    "lint": "bun run --workspaces --if-present lint",
+    "skill:generate": "bun run --filter @oomol-lab/open-flow skill:generate",
+    "test": "bun run --workspaces --if-present test",
+    "test:coverage": "bun run --workspaces --if-present test:coverage",
+    "test:docker": "bun run --filter @oomol-lab/open-flow-server test:docker",
+    "test:npm-package": "bun run --filter @oomol-lab/open-flow test:package",
+    "test:package": "bun run test:npm-package",
+    "test:toolchain": "node --max-old-space-size=256 --test --test-concurrency=1 packages/open-flow/test/toolchain.node-test.mjs packages/open-flow/test/miniflare-tooling.node-test.mjs packages/open-flow/test/babel-gen-mapping.node-test.mjs"
+  },
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ]
 }

@@ -13,7 +13,7 @@ const samples = {
     baseRevision: 'r',
     requestId: 'change',
     edits: [
-      { op: 'flow.update', set: { inputDefs: {} } },
+      { op: 'node.update', node: 'start', set: { config: { inputDefs: {} } } },
       { op: 'node.add', as: 'start', type: 'start', name: 'Start' },
     ],
   },
@@ -35,17 +35,17 @@ const samples = {
   renameFlow: { name: 'Flow', version: 1 },
   changeDraft: {
     expectedRevisionId: 'r1',
-    operations: [{ kind: 'graph.node.create', nodeId: 'start', node: { kind: 'start', name: 'Start' } }],
+    operations: [{ kind: 'graph.node.create', nodeId: 'start', node: { inputDefs: [], kind: 'start', name: 'Start' } }],
     version: 1,
   },
   repairDraft: { expectedRevisionId: 'r1', version: 1 },
   upgradeDraft: { expectedRevisionId: 'r1', version: 1 },
   setEnabled: { enabled: false, expectedPublicationId: 'p1', version: 1 },
   updatePresentation: { expectedRevision: 1, value: {}, version: 1 },
-  checkFlow: { engineContract: 'open-flow-engine/v5', version: 1 },
-  publishFlow: { engineContract: 'open-flow-engine/v5', expectedLivePublicationId: null, version: 1 },
+  checkFlow: { engineContract: 'open-flow-engine/v6', version: 1 },
+  publishFlow: { engineContract: 'open-flow-engine/v6', expectedLivePublicationId: null, version: 1 },
   rollbackFlow: { expectedLivePublicationId: 'p1', version: 1 },
-  createDraftRun: { engineContract: 'open-flow-engine/v5', inputs: {}, trigger: { nodeId: 'start', outputs: { payload: null } }, version: 2 },
+  createDraftRun: { engineContract: 'open-flow-engine/v6', inputs: {}, trigger: { nodeId: 'start', outputs: { payload: null } }, version: 2 },
   createLiveRun: { publicationId: 'p1', inputs: {}, trigger: { nodeId: 'start', outputs: {} }, version: 2 },
   resolveWait: { action: 'continue', version: 1 },
   putVariable: { value: '' },
@@ -80,7 +80,7 @@ describe('Control request boundaries', () => {
   for (const name of Object.keys(samples) as (keyof typeof samples)[]) {
     it(`decodes ${name} and rejects unknown fields and unsupported versions`, () => {
       expect(controlRequests[name](samples[name])).toEqual(samples[name])
-      expect(controlRequestSchema(name)).toHaveProperty('additionalProperties', false)
+      expect(new Validator(controlRequestSchema(name) as object).validate({ ...samples[name], extra: true }).valid).toBe(false)
       expect(() => controlRequests[name]({ ...samples[name], extra: true })).toThrow()
       expect(() => controlRequests[name]({ ...samples[name], version: 999 })).toThrow()
     })
@@ -106,7 +106,7 @@ it('validates MCP defaults without accepting extra arguments', () => {
 
 it('requires the versioned explicit output map for Run creation', () => {
   const run = {
-    engineContract: 'open-flow-engine/v5',
+    engineContract: 'open-flow-engine/v6',
     inputs: {},
     trigger: { nodeId: 'hook', outputs: { headers: {}, query: {}, body: {}, webhookUrl: 'https://example.com/webhook' } },
     version: 2,

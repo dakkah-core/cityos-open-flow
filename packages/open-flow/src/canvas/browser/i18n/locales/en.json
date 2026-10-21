@@ -345,6 +345,7 @@
     "hide": "Hide content"
   },
   "nodeStatus": {
+    "connectionDeferred": "No account is configured for now. Configure an account before executing this node.",
     "connectionRequired": "A connection is missing or unavailable. Reconnect or select an available connection in the node settings.",
     "error": "Error",
     "hasError": "Has errors",
@@ -590,7 +591,8 @@
       "running": "Running",
       "success": "Completed",
       "error": "Failed",
-      "waiting": "Waiting"
+      "waiting": "Waiting",
+      "handled": "Failure handled"
     },
     "triggerSource": {
       "manual": "Manual",
@@ -608,7 +610,8 @@
       "value": "Fixed Values",
       "input": "Flow input",
       "output": "Flow output",
-      "outputs": "Workflow Outputs"
+      "outputs": "Workflow Outputs",
+      "webhook-response": "Webhook Response"
     },
     "units": {
       "minute": "minutes",

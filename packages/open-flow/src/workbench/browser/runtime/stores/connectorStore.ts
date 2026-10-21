@@ -154,7 +154,7 @@ function connectionDiagnostics(
   const diagnostics: Diagnostic[] = []
   for (const { nodeId, actionId, connectionId } of revision.connectorNodes()) {
     const action = actions[actionId]
-    if (action?.authenticated != true) continue
+    if (action?.authenticated != true || connectionId === '') continue
     const connection = connectionId == null ? undefined : catalogs[action.serviceId]?.byId.get(connectionId)
     if (connectionId != null && (catalogs[action.serviceId] == null || connection?.status == 'active')) continue
     diagnostics.push({
@@ -469,7 +469,7 @@ export class ConnectorStore {
   }
 
   public async setConnection(nodeId: string, connectionId: string | undefined): Promise<boolean> {
-    return await this.#workspace.setConnectorConnection(nodeId, connectionId)
+    return await this.#workspace.nodes.setConnectorConnection(nodeId, connectionId)
   }
 
   public async refreshAfterAuthorization(): Promise<void> {
@@ -522,7 +522,7 @@ export class ConnectorStore {
       task.executor.kind == 'connector' &&
       task.executor.connectionId == null
     ) {
-      await this.#workspace.setConnectorConnection(target.nodeId, connection.connectionId)
+      await this.#workspace.nodes.setConnectorConnection(target.nodeId, connection.connectionId)
     }
   }
 

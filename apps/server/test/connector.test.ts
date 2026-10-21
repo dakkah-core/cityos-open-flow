@@ -2,15 +2,17 @@ import type { ConnectorAction, ConnectorConnection, ConnectorProvider } from '@o
 import type { ConnectorCapability, JsonValue, RevisionContent } from '@oomol-lab/open-flow/flow-change'
 import type { TaskNode } from '../../../packages/open-flow/src/flow/common/change.ts'
 import type { ManagedTaskDefinition } from '../../../packages/open-flow/src/flow/common/change.ts'
-import type { ConnectorHost } from '../node/deployment/connector.ts'
+import type { ConnectorHost } from '../node/deployment/connector-contract.ts'
 
 import { currentFlowModelVersion } from '@oomol-lab/open-flow/flow-change'
+import { currentEngineContract } from '@oomol-lab/open-flow/runtime-contract'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ServerService } from '../node/application/service.ts'
-import { ConnectorClient, ConnectorTaskError } from '../node/deployment/connector.ts'
+import { ConnectorTaskError } from '../node/deployment/connector-contract.ts'
+import { ConnectorClient } from '../node/deployment/connector.ts'
 import { createServerApp } from '../node/transport/http.ts'
 import { createConnectorHost } from './connectorHost.ts'
 import { acceptRun, storeRevision } from './runFixture.ts'
@@ -218,6 +220,45 @@ describe('Server Connector host', () => {
     expect(service.events(uncaught).find((event) => event.kind == 'node.failed')).toMatchObject({ payload: { error: { code: 'connector.unavailable' } } })
   })
 
+  it.each(['connector', 'code'] as const)('keeps an unconfirmed %s Action indeterminate and never replays it', async (kind) => {
+    const execute = vi.fn<ConnectorHost['execute']>(async () => {
+      throw new ConnectorTaskError('connector.indeterminate', 'The Action outcome is unknown.')
+    })
+    const service = await open(
+      createConnectorHost({
+        execute,
+        getAction: async () => ({
+          actionId: 'example.echo',
+          authenticated: false,
+          description: '',
+          inputs: { message: port },
+          outputs: { message: port },
+          name: 'Echo',
+          serviceId: 'example',
+          serviceName: 'Example',
+        }),
+        listConnections: async () => [{ connectionId: 'connection-work', displayName: 'Work', serviceId: 'example', status: 'active', isDefault: true }],
+      }),
+    )
+    const source =
+      kind == 'connector'
+        ? connectorFlow()
+        : capabilityFlow(true, `(async () => { try { await capability.actions.example.echo({}) } catch {} return {message: 'ignored'} })()`, [
+            { kind: 'connector', action: 'example.echo', connections: [] },
+          ])
+    const nodeId = kind == 'connector' ? 'connector' : 'capability'
+    const node = source.document.graph.nodes[nodeId]
+    if (node?.kind != 'task') throw new Error('Expected Task')
+    const revision = {
+      ...source,
+      document: { ...source.document, graph: { ...source.document.graph, nodes: { [nodeId]: { ...node, retry: { maxRetries: 2, intervalMs: 1000 } } } } },
+    }
+    const runId = await run(service, revision)
+    expect(service.run(runId)).toMatchObject({ status: 'indeterminate', result: { error: { code: 'execution.terminal-unknown' } } })
+    expect(execute).toHaveBeenCalledTimes(1)
+    expect(service.events(runId).filter((event) => event.kind == 'node.log')).toHaveLength(0)
+  })
+
   it('checks the selected Connection without treating legacy capability hints as an allowlist', async () => {
     let active = true
     const listConnections = vi.fn(
@@ -246,12 +287,12 @@ describe('Server Connector host', () => {
     ])
     const stored = await storeRevision(service, revision, 'multi-account-publish')
     active = false
-    const accepted = await service.control.publishFlow('test', stored.flowId, stored.revisionId, 'open-flow-engine/v5', null, 'publish')
+    const accepted = await service.control.publishFlow('test', stored.flowId, stored.revisionId, currentEngineContract, null, 'publish')
     await expect(
-      service.control.runs.createDraftRun(stored.flowId, stored.revisionId, 'open-flow-engine/v5', {}, 'run', { nodeId: 'start', outputs: {} }),
+      service.control.runs.createDraftRun(stored.flowId, stored.revisionId, currentEngineContract, {}, 'run', { nodeId: 'start', outputs: {} }),
     ).resolves.toMatchObject({ created: true })
     const checks = listConnections.mock.calls.length
-    const replay = await service.control.publishFlow('test', stored.flowId, stored.revisionId, 'open-flow-engine/v5', null, 'publish')
+    const replay = await service.control.publishFlow('test', stored.flowId, stored.revisionId, currentEngineContract, null, 'publish')
     expect(replay.operationId).toBe(accepted.operationId)
     expect(listConnections).toHaveBeenCalledTimes(checks)
   })
@@ -500,7 +541,7 @@ describe('Server Connector host', () => {
       },
       { kind: 'graph.edge.connect', edge: { source: 'start', target: 'connector' } },
     ])
-    const accepted = await service.control.runs.createDraftRun(created.flow.flowId, changed.revision.revisionId, 'open-flow-engine/v5', {}, 'team-run', {
+    const accepted = await service.control.runs.createDraftRun(created.flow.flowId, changed.revision.revisionId, currentEngineContract, {}, 'team-run', {
       nodeId: 'start',
       outputs: {},
     })
@@ -712,4 +753,45 @@ it('opens hosted connection pages in the Flow team or explicitly selected team',
   expect(await service.control.connectorConnectionPage('feishu_app_bot')).toBe('https://console.oomol.com/team/team_b/connections/feishu_app_bot')
   await expect(service.control.connectorConnectionPage('feishu_app_bot', undefined, 'unknown-team')).rejects.toThrow('Team')
   await expect(service.control.connectorConnectionPage('feishu_app_bot', flow.flowId, 'team-b-id')).rejects.toThrow('either a Flow or a Team')
+})
+
+it.each(['connector', 'code-call', 'code-unused'] as const)('admits and publishes deferred accounts but fails only on actual invocation: %s', async (kind) => {
+  const execute = vi.fn<ConnectorHost['execute']>(async () => ({ message: 'unexpected' }))
+  const service = await open(createConnectorHost({ execute }))
+  let revision: RevisionContent
+  if (kind == 'connector') {
+    revision = connectorFlow()
+    const node = revision.document.graph.nodes.connector!
+    if (node.kind != 'task' || !('executor' in node.task) || node.task.executor.kind != 'connector') throw new Error('Expected Connector')
+    revision = {
+      ...revision,
+      document: {
+        ...revision.document,
+        graph: {
+          ...revision.document.graph,
+          nodes: {
+            connector: { ...node, task: { ...node.task, executor: { ...node.task.executor, connectionId: '' } } },
+          },
+        },
+      },
+    }
+  } else {
+    revision = capabilityFlow(true, kind == 'code-call' ? 'capability.actions.example.echo(input)' : 'Promise.resolve(input)', [
+      { kind: 'connector', mode: 'independent', actions: [{ action: 'example.echo', connectionId: '' }] },
+    ])
+  }
+  const stored = await storeRevision(service, revision, `deferred-${kind}`)
+  expect(await service.control.checkFlow(stored.flowId, stored.revisionId, currentEngineContract)).toMatchObject({ valid: true })
+  await expect(service.control.publishFlow('test', stored.flowId, stored.revisionId, currentEngineContract, null, 'publish-deferred')).resolves.toBeDefined()
+  const accepted = await service.control.runs.createDraftRun(stored.flowId, stored.revisionId, currentEngineContract, {}, 'run-deferred', {
+    nodeId: 'start',
+    outputs: {},
+  })
+  await service.waitForIdle()
+  expect(execute).not.toHaveBeenCalled()
+  expect(service.run(accepted.run.runId)).toMatchObject({ status: kind == 'code-unused' ? 'completed' : 'failed' })
+  if (kind != 'code-unused')
+    expect(service.events(accepted.run.runId).find((event) => event.kind == 'node.failed')).toMatchObject({
+      payload: { error: { code: 'connector.connection-required' } },
+    })
 })

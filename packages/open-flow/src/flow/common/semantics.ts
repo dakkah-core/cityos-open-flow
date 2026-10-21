@@ -14,7 +14,7 @@ import type { ConnectorActionCapability, ConnectorCapability, Graph, InputMappin
 import { findEngineContract } from '../../execution/common/engineContract.ts'
 import { agentConfigIssues } from './agent.ts'
 import { decodeConnectorCapabilities } from './change.ts'
-import { canonicalInputs, canonicalJsonBytes, canonicalPorts, canonicalModule, canonicalRevisionGraph, digestBytes } from './encoding.ts'
+import { canonicalJsonBytes, canonicalModule, canonicalRevisionGraph, digestBytes } from './encoding.ts'
 import { nodeInputPorts, validateFlowGraph } from './graph.ts'
 import { inputValue } from './inputValue.ts'
 import { compareDiagnostics, validateModuleGraph } from './modules.ts'
@@ -64,7 +64,7 @@ export function flowDependencies(content: RevisionContent, triggerId?: string): 
 
   function visitGraph(value: Graph): void {
     for (const [, node] of entries(value.nodes)) {
-      if (!isTriggerNode(node)) visitInputMappings(nodeInputMappings(node, content.document))
+      if (!isTriggerNode(node)) visitInputMappings(nodeInputMappings(node))
       switch (node.kind) {
         case 'condition':
           break
@@ -96,15 +96,18 @@ export function flowDependencies(content: RevisionContent, triggerId?: string): 
 
 export async function flowClosure(content: RevisionContent): Promise<SemanticClosure> {
   const dependencies = flowDependencies(content)
-  const { bindings, modules } = dependencies
+  return { dependencies, digest: await digestBytes(closureBytes(content, dependencies)) }
+}
 
-  const bytes = canonicalJsonBytes({
-    ...(Object.values(content.document.graph.nodes).some((node) => node.kind == 'start')
-      ? { inputDefs: canonicalPorts(content.document.inputDefs ?? []) }
-      : {}),
-    ...(Object.values(content.document.graph.nodes).some((node) => node.kind == 'outputs')
-      ? { outputDefs: canonicalPorts(content.document.outputDefs ?? []), outputMappings: canonicalInputs(content.document.outputMappings ?? {}) }
-      : {}),
+/** Canonical semantic bytes, also used by transactional storage upgrades. */
+export function encodeFlowClosure(content: RevisionContent, triggerId?: string): Uint8Array {
+  const scoped = triggerId == null ? content : runRevision(content, triggerId)
+  return closureBytes(scoped, flowDependencies(scoped))
+}
+
+function closureBytes(content: RevisionContent, dependencies: SemanticClosure['dependencies']): Uint8Array {
+  const { bindings, modules } = dependencies
+  return canonicalJsonBytes({
     bindings: Object.fromEntries([...bindings].toSorted().map((id) => [id, content.document.bindings[id] ?? null])),
     graph: canonicalRevisionGraph(content, content.document.graph),
     kind: 'open-flow-semantic-closure',
@@ -114,7 +117,6 @@ export async function flowClosure(content: RevisionContent): Promise<SemanticClo
     ...(content.modelVersion < 6 ? { tasks: {} } : {}),
     version: 2,
   })
-  return { dependencies, digest: await digestBytes(bytes) }
 }
 
 export function variableBindings(revision: RevisionContent, bindingIds: Iterable<string>): Readonly<Record<string, string>> {
@@ -127,6 +129,7 @@ export function variableBindings(revision: RevisionContent, bindingIds: Iterable
 }
 
 export interface FlowResourceReferences {
+  readonly calledFlowIds?: readonly string[]
   readonly variableNames: readonly string[]
   readonly connections: readonly { readonly providerId: string; readonly connectionId: string }[]
   readonly errorSourceFlowIds: readonly string[]
@@ -135,10 +138,19 @@ export interface FlowResourceReferences {
 export function flowResourceReferences(content: RevisionContent): FlowResourceReferences {
   const connections = new Map<string, { readonly providerId: string; readonly connectionId: string }>()
   for (const use of connectionUsage(content.document)) {
-    if (use.connectionId == null) continue
+    if (use.connectionId == null || use.connectionId === '') continue
     connections.set(JSON.stringify([use.providerId, use.connectionId]), { providerId: use.providerId, connectionId: use.connectionId })
   }
   return {
+    calledFlowIds: [
+      ...new Set(
+        Object.values(content.document.graph.nodes).flatMap((node) =>
+          node.kind == 'task' && 'executor' in node.task && node.task.executor.kind == 'workflow' && node.task.executor.flowId
+            ? [node.task.executor.flowId]
+            : [],
+        ),
+      ),
+    ].toSorted(),
     variableNames: [...new Set(Object.values(variableBindings(content, flowDependencies(content).bindings)))].toSorted(),
     connections: [...connections].toSorted(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)).map(([, value]) => value),
     errorSourceFlowIds: [
@@ -172,7 +184,7 @@ export function validRunTrigger(revision: RevisionContent, value: unknown): bool
   if (Object.keys(trigger).some((key) => key != 'nodeId' && key != 'outputs') || typeof trigger.nodeId != 'string' || !Object.hasOwn(trigger, 'outputs'))
     return false
   const node = revision.document.graph.nodes[trigger.nodeId]
-  return node != null && isTriggerNode(node) && matchesTriggerOutputs(node, trigger.outputs, revision.document.inputDefs ?? [])
+  return node != null && isTriggerNode(node) && matchesTriggerOutputs(node, trigger.outputs)
 }
 
 export function normalizeRunTrigger(
@@ -184,7 +196,7 @@ export function normalizeRunTrigger(
   if (Object.keys(trigger).some((key) => key != 'nodeId' && key != 'outputs') || typeof trigger.nodeId != 'string' || !Object.hasOwn(trigger, 'outputs')) return
   const node = revision.document.graph.nodes[trigger.nodeId]
   if (node == null || !isTriggerNode(node)) return
-  const outputs = normalizeTriggerOutputs(node, trigger.outputs, revision.document.inputDefs ?? [])
+  const outputs = normalizeTriggerOutputs(node, trigger.outputs)
   return outputs == null ? undefined : { nodeId: trigger.nodeId, outputs }
 }
 
@@ -196,11 +208,10 @@ export function validateFlowInputs(revision: RevisionContent, value: unknown): F
     if (node == null || isTriggerNode(node) || node.kind == 'condition' || candidate == null || typeof candidate != 'object' || Array.isArray(candidate)) {
       return 'invalid'
     }
-    const inputs = nodeInputPorts(node, revision.document)
+    const inputs = nodeInputPorts(node)
     for (const handle of Object.keys(candidate)) {
       const port = inputs[handle]
-      if (port == null || hasRetiredRef(port.jsonSchema) || nodeInputMappings(node, revision.document)[handle] != null || Object.hasOwn(port, 'value'))
-        return 'invalid'
+      if (port == null || hasRetiredRef(port.jsonSchema) || nodeInputMappings(node)[handle] != null || Object.hasOwn(port, 'value')) return 'invalid'
     }
   }
   return 'valid'
@@ -350,20 +361,19 @@ function runRevision(revision: RevisionContent, triggerId: string): RevisionCont
     const node = graph.nodes[nodeId]
     if (node == null) continue
     nodes[nodeId] =
-      isTriggerNode(node) || node.kind == 'outputs'
-        ? node
-        : {
-            ...node,
-            inputs: inputs(nodeId, node.inputs),
-          }
+      node.kind == 'outputs'
+        ? { ...node, outputMappings: inputs(nodeId, node.outputMappings) }
+        : isTriggerNode(node)
+          ? node
+          : {
+              ...node,
+              inputs: inputs(nodeId, node.inputs),
+            }
   }
-  const outputNodeId = Object.keys(nodes).find((id) => nodes[id]?.kind == 'outputs')
   const content = {
     ...revision,
     document: {
       ...revision.document,
-      inputDefs: Object.values(nodes).some((node) => node.kind == 'start') ? (revision.document.inputDefs ?? []) : [],
-      ...(outputNodeId == null ? {} : { outputMappings: inputs(outputNodeId, revision.document.outputMappings ?? {}) }),
       graph: { nodes, edges: graph.edges.filter((edge) => reachable.has(edge.source)) },
     },
   }
@@ -399,16 +409,25 @@ export async function prepareFlow(revision: RevisionContent, engineContract: str
       }
     revision = runRevision(revision, triggerId)
   }
+  if (
+    !engine.webhookResponses &&
+    Object.values(revision.document.graph.nodes).some(
+      (node) => node.kind === 'webhook-response' || (node.kind === 'webhook' && node.options?.responseBody?.kind === 'webhook-response'),
+    )
+  )
+    return { kind: 'engine-unsupported' }
   const validation = await validateFlow(revision, engine)
   if (!validation.valid) return { kind: 'flow-invalid', validation }
   const { closure } = validation
+  const start = Object.values(revision.document.graph.nodes).find((node) => node.kind == 'start')
+  const outputs = Object.values(revision.document.graph.nodes).find((node) => node.kind == 'outputs')
   return {
     flow: {
       closureDigest: closure.digest,
       engineContract,
-      inputDefs: revision.document.inputDefs ?? [],
-      outputDefs: revision.document.outputDefs ?? [],
-      outputMappings: revision.document.outputMappings ?? {},
+      inputDefs: start?.inputDefs ?? [],
+      outputDefs: outputs?.outputDefs ?? [],
+      outputMappings: outputs?.outputMappings ?? {},
       graph: revision.document.graph,
       modules: Object.fromEntries([...closure.dependencies.modules].toSorted().map((id) => [id, revision.modules[id]!])),
     },
@@ -433,11 +452,13 @@ export function agentActions(flow: Pick<PreparedFlow, 'graph'>): readonly Connec
     const task = node.task
     if (task.executor.kind != 'agent') return []
     const notice = task.executor.notification
-    return [...task.executor.tools, ...(notice != null ? [notice] : [])].map((tool) => ({
-      kind: 'connector' as const,
-      action: tool.action,
-      connections: tool.connectionId == null ? [] : [{ connectionId: tool.connectionId }],
-    }))
+    return [...task.executor.tools, ...(notice != null ? [notice] : [])]
+      .filter((tool) => tool.connectionId !== '')
+      .map((tool) => ({
+        kind: 'connector' as const,
+        action: tool.action,
+        connections: tool.connectionId == null ? [] : [{ connectionId: tool.connectionId }],
+      }))
   })
 }
 

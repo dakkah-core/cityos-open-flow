@@ -345,6 +345,7 @@
     "hide": "内容を非表示"
   },
   "nodeStatus": {
+    "connectionDeferred": "アカウントは未設定です。このノードを実行する前に設定してください。",
     "connectionRequired": "接続が未設定、または無効です。ノード設定で再接続するか、利用可能な接続を選択してください。",
     "error": "エラー",
     "hasError": "エラーあり",
@@ -590,7 +591,8 @@
       "running": "実行中",
       "success": "完了",
       "error": "失敗",
-      "waiting": "待機中"
+      "waiting": "待機中",
+      "handled": "失敗を処理済み"
     },
     "triggerSource": {
       "manual": "手動",
@@ -608,7 +610,8 @@
       "value": "固定値",
       "input": "入力",
       "output": "出力",
-      "outputs": "ワークフロー出力"
+      "outputs": "ワークフロー出力",
+      "webhook-response": "Webhook レスポンス"
     },
     "units": {
       "minute": "分",

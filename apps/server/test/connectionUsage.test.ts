@@ -3,8 +3,9 @@ import type { FlowDocument } from '@oomol-lab/open-flow/flow-change'
 
 import { providerAccessBindingId } from '@oomol-lab/open-flow/control-api'
 import { afterEach, expect, it, vi } from 'vitest'
+import { checkCodePermissions } from '../node/application/connector-capabilities.ts'
 import { captureConnectorAccess, ImplicitConnectorAccessHost } from '../node/deployment/connector-access.ts'
-import { checkCodePermissions, ConnectorClient } from '../node/deployment/connector.ts'
+import { ConnectorClient } from '../node/deployment/connector.ts'
 
 const document: FlowDocument = {
   bindings: {},
@@ -287,4 +288,31 @@ it('lists a new Flow’s accounts using the complete catalog even when no-auth p
   })
   expect(connections.map((connection) => connection.connectionId)).toEqual(['gmail-account', 'utility-placeholder'])
   expect(request.mock.calls.some(([input]) => String(input).includes('/v1/apps/services/'))).toBe(false)
+})
+
+it('excludes deferred references from authorization snapshots and rejects direct execution before network access', async () => {
+  const host = new ImplicitConnectorAccessHost()
+  const lookup = vi.spyOn(host, 'listCandidates')
+  const deferred: FlowDocument = {
+    bindings: {},
+    graph: {
+      edges: [],
+      nodes: {
+        send: {
+          kind: 'task',
+          inputs: {},
+          task: { name: 'Send', inputs: [], outputs: [], executor: { kind: 'connector', action: 'mail.send', connectionId: '' } },
+        },
+      },
+    },
+  }
+  expect(await captureConnectorAccess(host, 'flow', deferred, access)).toMatchObject({ selectedBindings: [] })
+  expect(lookup).not.toHaveBeenCalled()
+  const fetch = vi.fn()
+  vi.stubGlobal('fetch', fetch)
+  const client = new ConnectorClient('https://connector.example/', 'token')
+  await expect(client.execute('mail.send', '', {}, 'deferred-call', new AbortController().signal)).rejects.toMatchObject({
+    code: 'connector.connection-required',
+  })
+  expect(fetch).not.toHaveBeenCalled()
 })

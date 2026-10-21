@@ -3,7 +3,7 @@ import type { PreparedFlow } from '@oomol-lab/open-flow/flow-semantics'
 import type { IntegrationDefinition, ListenerReadContext } from '@oomol-lab/open-flow/integration-trigger'
 import type { PollContext, PollDefinition, PollResult } from '@oomol-lab/open-flow/poll-trigger'
 import type { Logger } from 'pino'
-import type { ConnectorAccessContext, ConnectorHost } from '../deployment/connector.ts'
+import type { ConnectorAccessContext, ConnectorHost } from '../deployment/connector-contract.ts'
 import type { ListenerLease } from '../storage/integration-store.ts'
 import type { PollCandidate } from '../storage/poll-store.ts'
 import type { Store } from '../storage/store.ts'
@@ -35,7 +35,7 @@ import * as Clock from 'effect/Clock'
 import * as Effect from 'effect/Effect'
 import * as Semaphore from 'effect/Semaphore'
 import { isDeepStrictEqual } from 'node:util'
-import { ConnectorTaskError } from '../deployment/connector.ts'
+import { ConnectorTaskError } from '../deployment/connector-contract.ts'
 import { ControlError, serverErrorCode } from '../error.ts'
 import { errorKind } from '../logger.ts'
 
@@ -330,7 +330,7 @@ export class ListenerRuntime {
       let event: { occurrenceId: string; outputs: Readonly<Record<string, JsonValue>>; requestDigest: string } | undefined
       if (page.outputs != null) {
         const outputs = page.outputs
-        if (!matchesTriggerOutputs(trigger, outputs, [])) throw new Error('Invalid Integration Trigger outputs.')
+        if (!matchesTriggerOutputs(trigger, outputs)) throw new Error('Invalid Integration Trigger outputs.')
         const occurrenceId = yield* Effect.tryPromise({
           try: () => integrationOccurrenceId(target.bindingId, target.runtimeVersion, definition.snapshot.key, page.dedupeKey),
           catch: (error) => error,
@@ -534,7 +534,7 @@ export class ListenerRuntime {
           return true
         })
         const outputs = fresh.length == 0 ? null : definition.buildOutputs(fresh.map((item) => item.event))
-        if (outputs != null && !matchesTriggerOutputs(trigger, outputs, [])) throw new Error('Invalid Poll Trigger outputs.')
+        if (outputs != null && !matchesTriggerOutputs(trigger, outputs)) throw new Error('Invalid Poll Trigger outputs.')
         const requestDigest =
           outputs == null
             ? null

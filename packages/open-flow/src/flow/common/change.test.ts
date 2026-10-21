@@ -130,10 +130,10 @@ describe('Flow changes', () => {
     const parameters = [{ handle: 'note', jsonSchema: { type: 'string' }, nullable: true }] as const
     const source: RevisionContent = {
       ...revision(),
-      document: { inputDefs: parameters, bindings: {}, graph: { edges: [], nodes: { start: { kind: 'start', name, description: 'Purpose' } } } },
+      document: { bindings: {}, graph: { edges: [], nodes: { start: { kind: 'start', name, description: 'Purpose', inputDefs: parameters } } } },
     }
     const changed = applyFlowChanges(source, repairNodeNames(source, { start: '开始' }))
-    expect(changed.document.graph.nodes.start).toEqual({ kind: 'start', name: '开始', description: 'Purpose' })
+    expect(changed.document.graph.nodes.start).toEqual({ inputDefs: parameters, kind: 'start', name: '开始', description: 'Purpose' })
     expect(source.document.graph.nodes.start?.name).toBe(name)
     expect(repairNodeNames(changed, { start: '开始' })).toEqual([])
   })
@@ -145,7 +145,7 @@ describe('Flow changes', () => {
         bindings: {},
         graph: {
           edges: [],
-          nodes: { start: { kind: 'start', name: 'Manual trigger' }, other: { kind: 'value', name: '开始', inputs: {}, values: [] } },
+          nodes: { start: { inputDefs: [], kind: 'start', name: 'Manual trigger' }, other: { kind: 'value', name: '开始', inputs: {}, values: [] } },
         },
       },
     }
@@ -155,7 +155,7 @@ describe('Flow changes', () => {
     expect(repairNodeNames(changed, { start: '开始' })).toEqual([])
     const custom: RevisionContent = {
       ...source,
-      document: { ...source.document, graph: { edges: [], nodes: { start: { kind: 'start', name: 'My entry' } } } },
+      document: { ...source.document, graph: { edges: [], nodes: { start: { inputDefs: [], kind: 'start', name: 'My entry' } } } },
     }
     expect(repairNodeNames(custom, { start: '开始' })).toEqual([])
   })

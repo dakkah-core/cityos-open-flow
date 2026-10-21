@@ -17,6 +17,7 @@ import { Button } from '../../../../ui/browser/button.tsx'
 import { Field, FieldLabel, FieldDescription } from '../../../../ui/browser/field.tsx'
 import { Input } from '../../../../ui/browser/input.tsx'
 import { Switch } from '../../../../ui/browser/switch.tsx'
+import { errorNotice } from '../stores/workbenchNotice.ts'
 import { agentFixedValuesValid } from './agentChanges.ts'
 import { AgentTools } from './agentTools.tsx'
 import { PromptEditor } from './promptEditor.tsx'
@@ -54,7 +55,8 @@ function EditableAgentSettingsProvider({
 }): ReactElement | null {
   const t = useTranslate()
   const [config, renderConfig] = useState(task.executor)
-  const [saveError, setSaveError] = useState<string>()
+  const [validationError, setValidationError] = useState<string>()
+  const [saveFailed, setSaveFailed] = useState(false)
   const [flowId] = useState(store.$.flowId.value)
   const [changes] = useState(
     () =>
@@ -62,7 +64,10 @@ function EditableAgentSettingsProvider({
         if (store.$.flowId.value != flowId) return false
         const current = store.$.revision.value?.node(nodeId)
         const definition = current?.kind == 'task' ? current.definition : undefined
-        if (definition == null || !('executor' in definition) || !dequal(definition.executor, before)) return false
+        if (definition == null || !('executor' in definition) || !dequal(definition.executor, before)) {
+          store.notify({ kind: 'error', message: t('notice.error.flowConflict') })
+          return false
+        }
         const decoded = decodeRevisionContent({
           modelVersion: currentFlowModelVersion,
           modules: {},
@@ -72,7 +77,7 @@ function EditableAgentSettingsProvider({
           },
         }).document.graph.nodes.agent!
         if (decoded.kind != 'task' || !('executor' in decoded.task)) return false
-        return store.saveTaskSettings(nodeId, { kind: 'agent', name: definition.name, before: definition, task: decoded.task })
+        return store.nodes.saveTaskSettings(nodeId, { kind: 'agent', name: definition.name, before: definition, task: decoded.task })
       }),
   )
   useEffect(() => {
@@ -80,21 +85,23 @@ function EditableAgentSettingsProvider({
     renderConfig(changes.value)
   }, [changes, task.executor])
   const save = async (): Promise<boolean> => {
+    setSaveFailed(false)
     const value = changes.value
     const notification = value.kind === 'agent' ? value.notification : undefined
     const notificationInputs = notification?.inputDefinitions ?? []
     if (value.kind == 'agent' && (!value.model.trim() || !Number.isSafeInteger(value.maxRounds) || value.maxRounds < 1 || value.maxRounds > 100)) return false
     if (!agentFixedValuesValid(value, notificationInputs)) {
-      setSaveError(t('agent.invalidValues'))
+      setValidationError(t('agent.invalidValues'))
       return false
     }
-    setSaveError(undefined)
+    setValidationError(undefined)
     try {
       const saved = await changes.save()
-      if (!saved) setSaveError(t('agent.saveFailed'))
+      setSaveFailed(!saved)
       return saved
     } catch (cause) {
-      setSaveError(cause instanceof Error ? cause.message : String(cause))
+      setSaveFailed(true)
+      store.notify(errorNotice(cause, t))
       return false
     }
   }
@@ -112,13 +119,24 @@ function EditableAgentSettingsProvider({
       task={task}
       config={config}
       nodeId={nodeId}
-      connectors={connectors}
-      prepareAction={prepareAction}
+      toolsEditor={{
+        connectors,
+        prepareAction,
+        notify: store.notify,
+        onSave: async (tools) => {
+          const previous = config.tools
+          setConfig((before) => (before.kind == 'agent' ? { ...before, tools } : before), false)
+          const saved = await save()
+          if (!saved) setConfig((before) => (before.kind == 'agent' && before.tools === tools ? { ...before, tools: previous } : before), false)
+          return saved
+        },
+      }}
       disabled={disabled}
       theme={theme}
-      saveError={saveError}
+      validationError={validationError}
       setConfig={setConfig}
       save={save}
+      saveFailed={saveFailed}
     />
   )
 }
@@ -128,24 +146,24 @@ function AgentSettingsContent({
   task,
   config,
   nodeId,
-  connectors,
-  prepareAction,
+  toolsEditor,
   disabled,
   theme,
-  saveError,
+  validationError,
   setConfig,
   save,
+  saveFailed = false,
 }: {
   readonly children: ReactNode
   readonly task: ManagedTaskDefinition
   readonly config: Extract<ManagedTaskExecutor, { kind: 'agent' }>
   readonly nodeId: string
-  readonly connectors?: ConnectorStore
-  readonly prepareAction?: ComponentProps<typeof AgentTools>['prepareAction']
+  readonly toolsEditor?: ComponentProps<typeof AgentTools>['editor']
   readonly disabled: boolean
   readonly theme: WorkbenchTheme
-  readonly saveError?: string
+  readonly validationError?: string
   readonly setConfig?: (value: SetStateAction<ManagedTaskExecutor>, commit?: boolean) => void
+  readonly saveFailed?: boolean
   readonly save?: () => Promise<boolean>
 }) {
   const t = useTranslate()
@@ -154,27 +172,14 @@ function AgentSettingsContent({
     <section className="inspector-section inspector-titled-section code-section" data-inspector-section="task">
       <h3 className="inspector-section-title">
         <span className="min-w-0 flex-1">{t('agent.prompt')}</span>
-        <AgentTools
-          config={config}
-          disabled={disabled}
-          inputs={inputs}
-          connectors={connectors}
-          prepareAction={prepareAction}
-          onSave={async (tools) => {
-            const previous = config.tools
-            setConfig?.((before) => (before.kind == 'agent' ? { ...before, tools } : before), false)
-            const saved = await save?.()
-            if (!saved) setConfig?.((before) => (before.kind == 'agent' && before.tools === tools ? { ...before, tools: previous } : before), false)
-            return saved ?? false
-          }}
-        />
+        <AgentTools config={config} disabled={disabled} inputs={inputs} editor={toolsEditor} />
       </h3>
       <div className="inspector-section-content" data-inset>
-        <ValueEditorFeedback error={saveError}>
+        <ValueEditorFeedback error={validationError}>
           {(errorId) => (
             <PromptEditor
               ariaDescribedBy={errorId}
-              invalid={saveError != null}
+              invalid={validationError != null}
               value={config.prompt}
               inputs={inputs.map((port) => port.handle)}
               disabled={disabled}
@@ -184,7 +189,7 @@ function AgentSettingsContent({
             />
           )}
         </ValueEditorFeedback>
-        {saveError != null && (
+        {(saveFailed || validationError != null) && (
           <div className="form-actions code-actions">
             <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => void save?.()}>
               {t('inspector.task.retrySave')}

@@ -9,9 +9,10 @@ import type { FrontendStory, LogAction } from './stories.tsx'
 
 import { currentFlowModelVersion } from '@oomol-lab/open-flow/flow-change'
 import { ReactFlow } from '@xyflow/react'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { I18nProvider } from 'val-i18n-react'
 import { val } from 'value-enhancer'
+import { downloadFlowSvg, flowToSvg } from '../../src/canvas/browser/graph/FlowCanvas/exportSvg.ts'
 import { FlowCanvasView } from '../../src/canvas/browser/graph/FlowCanvas/FlowCanvasView.tsx'
 import { CanvasViewControls, CanvasTopLeftControls } from '../../src/canvas/browser/graph/ReactFlowContainer/CanvasControls.tsx'
 import { CornerControls } from '../../src/canvas/browser/graph/ReactFlowContainer/CornerControls.tsx'
@@ -27,6 +28,8 @@ import { RunControl } from '../../src/workbench/browser/runtime/runs/runControl.
 import { WorkspaceNavigationIsland } from '../../src/workbench/browser/runtime/shell/workspaceNavigationIsland.tsx'
 import { WorkspacePublishIsland } from '../../src/workbench/browser/runtime/shell/workspacePublishIsland.tsx'
 import { designerGraph } from '../../src/workbench/browser/runtime/workspace.ts'
+import googleSheetsIcon from './fixtures/google-sheets.ico'
+import { remoteGithubArtwork, sampleSprite } from './fixtures/providerSprite.ts'
 import { useStoryActions } from './storyActions.tsx'
 
 const pickerDraft: Draft = {
@@ -79,9 +82,6 @@ const workflowPositions = {
   value: { x: 0, y: 440 },
 }
 const stateViewport = { x: 45, y: 100, zoom: 0.9 }
-const statePositions = Object.fromEntries(
-  ['idle', 'selected', 'waiting', 'running', 'success', 'error', 'account'].map((id, index) => [id, { x: (index % 3) * 400, y: Math.floor(index / 3) * 240 }]),
-)
 
 const workflow: FlowCanvasViewModel = {
   viewport: workflowViewport,
@@ -224,43 +224,60 @@ const states: FlowCanvasViewModel = {
         run: { status: 'running', progress: 42 },
       },
       {
+        id: 'running-content',
+        title: 'Summarize customer feedback',
+        description:
+          'Review recent customer conversations, group recurring issues, and draft a concise summary with examples and suggested follow-ups for the product team.',
+        run: { status: 'running', progress: 26 },
+      },
+      {
         id: 'success',
         title: 'Build the weekly report',
         run: { status: 'success', progress: 100, successCount: 3 },
       },
       { id: 'error', title: 'Send the campaign', run: { status: 'error' } },
       { id: 'account', title: 'Code · Missing account', run: { status: 'idle' } },
+      { id: 'deferred', title: 'Provider · Account deferred', run: { status: 'idle' } },
     ] as const
-  ).map((node) => ({
-    id: node.id,
-    title: node.title,
-    run: { ...node.run, runId: 'lab-run-042' },
-    executorName: 'JavaScript',
-    actionSummary:
-      node.id === 'idle'
-        ? undefined
-        : {
-            count: node.id === 'selected' ? 3 : 9,
-            providers: (node.id === 'selected' ? ['slack'] : ['slack', 'github', 'notion', 'google-drive', 'feishu', 'airtable']).map((id) => ({
-              id,
-              icon: providerIcon({ serviceId: id, serviceName: id }),
-              label: id,
-            })),
-          },
-    diagnostics: node.id == 'error' || node.id == 'account' ? 1 : undefined,
-    connectionRequired: node.id == 'account',
-    kind: 'task',
-    reference: 'lab/status',
-    position: statePositions[node.id],
-    inputs: [
-      {
-        handle: 'message',
-        jsonSchema: { type: 'string' },
-        value: 'Sample input',
-      },
-    ],
-    outputs: [{ handle: 'result', jsonSchema: { type: 'string' } }],
-  })),
+  ).map((node, index) =>
+    Object.assign(node, {
+      run: { ...node.run, runId: 'lab-run-042' },
+      executorName: node.id == 'deferred' ? 'Connector · Gmail' : 'JavaScript',
+      actionSummary:
+        node.id === 'idle' || node.id === 'deferred'
+          ? undefined
+          : {
+              count: node.id === 'selected' ? 3 : 9,
+              providers: (node.id === 'selected' ? ['slack'] : ['slack', 'github', 'notion', 'google-drive', 'feishu', 'airtable']).map((id) => ({
+                id,
+                icon: providerIcon({ serviceId: id, serviceName: id }),
+                label: id,
+              })),
+            },
+      diagnostics: node.id == 'error' || node.id == 'account' ? 1 : undefined,
+      connectionRequired: node.id == 'account',
+      connectionDeferred: node.id == 'deferred',
+      kind: 'task' as const,
+      reference: 'lab/status',
+      position: { x: (index % 3) * 400, y: Math.floor(index / 3) * 240 },
+      inputs: [
+        {
+          handle: 'message',
+          jsonSchema: { type: 'string' as const },
+          value: 'Sample input',
+        },
+      ],
+      outputs: [{ handle: 'result', jsonSchema: { type: 'string' as const } }],
+    }),
+  ),
+}
+
+const completedStates: FlowCanvasViewModel = {
+  ...states,
+  runStatus: 'idle',
+  nodes: states.nodes.map((node) =>
+    node.kind !== 'comment' && node.run?.status === 'running' ? { ...node, run: { ...node.run, status: 'success', progress: 100 } } : node,
+  ),
 }
 
 function WorkflowStory({
@@ -271,6 +288,7 @@ function WorkflowStory({
   initialSelectedNodeId = 'task',
   picker = false,
   remoteCommands = false,
+  completedModel,
 }: {
   readonly dark: boolean
   readonly language: UiLanguage
@@ -278,6 +296,7 @@ function WorkflowStory({
   readonly model: FlowCanvasViewModel
   readonly initialSelectedNodeId?: string
   readonly remoteCommands?: boolean
+  readonly completedModel?: FlowCanvasViewModel
   readonly picker?: boolean
 }) {
   const remote = useMemo(() => {
@@ -300,6 +319,7 @@ function WorkflowStory({
   const [selectedTriggerId, setSelectedTriggerId] = useState(triggers[0]?.id ?? '')
   const [version, setVersion] = useState(0)
   const [editable, setEditable] = useState(true)
+  const [runCompleted, setRunCompleted] = useState(false)
   const [pickerRequest, setPickerRequest] = useState<CanvasNodePickerRequest>()
   const [addNodeRequest, setAddNodeRequest] = useState<FlowCanvasViewProps['addNodeRequest']>(
     picker ? { position: { x: 140, y: 80 }, onComplete: () => setAddNodeRequest(undefined) } : undefined,
@@ -307,6 +327,7 @@ function WorkflowStory({
   const { ignoredNodeIds, onIgnoreNodes } = useIgnoredNodes(String(version))
   const [selected, setSelected] = useState<readonly string[]>([initialSelectedNodeId])
   useStoryActions([
+    ...(completedModel ? [{ label: runCompleted ? 'Restart running nodes' : 'Finish running nodes', onClick: () => setRunCompleted((value) => !value) }] : []),
     ...(remoteCommands
       ? [
           { label: 'Focus last node', onClick: () => remote.send({ type: 'focus', nodeId: model.nodes.at(-1)!.id }) },
@@ -328,6 +349,7 @@ function WorkflowStory({
       onClick: () => {
         setSelected([initialSelectedNodeId])
         setEditable(true)
+        setRunCompleted(false)
         setVersion((value) => value + 1)
         log('samples.reset')
       },
@@ -368,7 +390,7 @@ function WorkflowStory({
             language={language}
             layoutMotion={false}
             editable={editable}
-            model={model}
+            model={runCompleted && completedModel ? completedModel : model}
             toolbar={
               <WorkbenchCanvasActions
                 pickerOpen={addNodeRequest != null}
@@ -443,6 +465,15 @@ const edgeColors: FlowCanvasViewModel = {
 export const workflowStories: readonly FrontendStory[] = [
   {
     group: 'Workbench',
+    id: 'workflow-svg',
+    title: 'SVG export',
+    description:
+      'Compare the canvas and exported SVG. Exports use individual Provider images regardless of sprite availability; check Connector icons, JavaScript and AI Agent tool lists, branches, comments and both themes. Simulate a slow export to inspect the waiting dialog.',
+    standalone: true,
+    render: (_log, dark, language) => <SvgExportStory dark={dark} language={language} />,
+  },
+  {
+    group: 'Workbench',
     id: 'canvas-commands',
     title: 'Remote canvas commands',
     description:
@@ -457,7 +488,7 @@ export const workflowStories: readonly FrontendStory[] = [
     id: 'wrapped-layout',
     title: 'Long workflow layout',
     description:
-      'A twelve-step flow without saved positions wraps after four dependency columns. Inspect the parallel fourth step and return connections between rows. Use Re-layout to compare measured node spacing, then Reset samples to restore the default layout.',
+      'Default placement wraps after six dependency columns. Re-layout uses the current canvas width, zoom and measured node sizes. Compare at 50% and 100%, or resize the window before re-layout. Parallel steps stay together; zooming alone preserves positions. Reset samples restores default placement.',
     standalone: true,
     render: (log, dark, language) => <WorkflowStory dark={dark} language={language} log={log} model={longChainModel} initialSelectedNodeId="step-1" />,
   },
@@ -466,7 +497,7 @@ export const workflowStories: readonly FrontendStory[] = [
     id: 'workspace-navigation-island',
     title: 'Workspace navigation island',
     description:
-      'Compare the canvas island with the ghost style used while loading or recovering a workflow. Cycle names and the draft status dot beside the title. Open the publish confirmation to inspect its content insets and separation between copy and actions in both themes. Open the menu with the MiniMap expanded to inspect overlapping controls. Cancel or dismiss confirmation without publishing; confirm to log one publication.publish event.',
+      'Compare the canvas island with the ghost style used while loading or recovering a workflow. Cycle names and the draft status dot beside the title. Open the publish confirmation to inspect its content insets and separation between copy and actions in both themes. Cycle History and switch languages to inspect single-line published, empty, and loading menu labels. Open the menu with the MiniMap expanded to inspect overlapping controls. Cancel or dismiss confirmation without publishing; confirm to log one publication.publish event.',
     standalone: true,
     render: (log, dark, language) => <NavigationIslandStory dark={dark} language={language} log={log} />,
   },
@@ -492,9 +523,11 @@ export const workflowStories: readonly FrontendStory[] = [
     id: 'node-states',
     title: 'Node states',
     description:
-      'Compare Code nodes with no actions, one provider with multiple actions, and more than five providers. Check the stack beside JavaScript, long titles, execution states and the missing-account icon. Interactions appear in the status below.',
+      'Compare compact and content-filled running nodes with the other execution states, provider stacks and account warnings. Finish and restart both running nodes to check the beam lifecycle. Compare corners, selection, themes, zoom and reduced motion.',
     standalone: true,
-    render: (log, dark, language) => <WorkflowStory dark={dark} language={language} log={log} model={states} initialSelectedNodeId="selected" />,
+    render: (log, dark, language) => (
+      <WorkflowStory dark={dark} language={language} log={log} model={states} completedModel={completedStates} initialSelectedNodeId="selected" />
+    ),
   },
   {
     group: 'Workbench',
@@ -506,6 +539,136 @@ export const workflowStories: readonly FrontendStory[] = [
     render: (log, dark, language) => <WorkflowStory dark={dark} language={language} log={log} model={workflow} picker />,
   },
 ]
+
+function SvgExportStory({ dark, language }: { readonly dark: boolean; readonly language: UiLanguage }) {
+  const [wrapped, setWrapped] = useState(false)
+  const [remoteIcons, setRemoteIcons] = useState(false)
+  const [taskKind, setTaskKind] = useState<'connector' | 'javascript' | 'agent'>('connector')
+  const [slowExport, setSlowExport] = useState(false)
+  const providerArtwork = remoteIcons
+    ? providerIcon(remoteGithubArtwork)
+    : providerIcon({ serviceId: 'google-sheets', serviceName: 'Google Sheets', icon: googleSheetsIcon })
+  const i18n = useMemo(() => createI18n(language), [language])
+  const model = useMemo(
+    () =>
+      wrapped
+        ? longChainModel
+        : {
+            ...workflow,
+            edges: workflow.edges.map((edge) => (edge.id == 'condition-value' ? Object.assign({}, edge, { target: 'task' }) : edge)),
+            nodes: workflow.nodes.map((node) =>
+              Object.assign({}, node, {
+                title: node.kind == 'task' ? '汇总客户反馈并生成每周产品分析报告 & Review' : node.title,
+                icon:
+                  node.kind == 'task'
+                    ? taskKind == 'agent'
+                      ? ':carbon:machine-learning-model:'
+                      : providerArtwork
+                    : node.kind == 'trigger'
+                      ? remoteIcons
+                        ? providerArtwork
+                        : providerIcon({ serviceId: 'sample', serviceName: 'Sample', iconSprite: sampleSprite, iconSpritePosition: { x: 54, y: 2 } })
+                      : 'icon' in node
+                        ? node.icon
+                        : undefined,
+                position: { x: node.position.x - 500, y: node.position.y - 180 },
+                ...(node.kind == 'task'
+                  ? {
+                      executorName:
+                        taskKind == 'agent' ? 'AI Agent' : taskKind == 'connector' ? 'Connector · ' + (remoteIcons ? 'GitHub' : 'Google Sheets') : 'JavaScript',
+                      fallbackIcon:
+                        taskKind == 'agent' ? ':carbon:machine-learning-model:' : taskKind == 'connector' ? ':carbon:connection-signal:' : ':carbon:code:',
+                      actionSummary:
+                        taskKind == 'connector'
+                          ? undefined
+                          : { count: 2, providers: [{ id: 'provider', icon: providerArtwork, label: remoteIcons ? 'GitHub' : 'Google Sheets' }] },
+                    }
+                  : {}),
+              }),
+            ),
+          },
+    [wrapped, remoteIcons, taskKind, providerArtwork],
+  )
+  const title = wrapped ? 'Weekly records pipeline' : 'Customer insights'
+  const [source, setSource] = useState<string>()
+  const [error, setError] = useState<string>()
+  useEffect(() => {
+    let active = true
+    setSource(undefined)
+    setError(undefined)
+    void flowToSvg(model, title, language, { dark }).then(
+      (value) => {
+        if (active) setSource(value)
+      },
+      (reason) => {
+        if (active) setError(String(reason))
+      },
+    )
+    return () => {
+      active = false
+    }
+  }, [model, title, language, dark])
+  useStoryActions([
+    { label: slowExport ? 'Use normal export speed' : 'Simulate slow export', onClick: () => setSlowExport((value) => !value) },
+    { label: wrapped ? 'Show branches & Chinese titles' : 'Show wrapped pipeline', onClick: () => setWrapped((value) => !value) },
+    { label: remoteIcons ? 'Use local provider artwork' : 'Use remote provider artwork', onClick: () => setRemoteIcons((value) => !value) },
+    {
+      label: taskKind == 'connector' ? 'Show JavaScript' : taskKind == 'javascript' ? 'Show AI Agent' : 'Show Connector',
+      onClick: () => setTaskKind((value) => (value == 'connector' ? 'javascript' : value == 'javascript' ? 'agent' : 'connector')),
+    },
+  ])
+  return (
+    <I18nProvider i18n={i18n}>
+      <div style={{ display: 'grid', gap: 24, padding: 24, justifyItems: 'start', alignItems: 'start', alignContent: 'start' }}>
+        <WorkspacePublishIsland
+          hasPublications={false}
+          onExportSvg={async () => {
+            if (slowExport) await new Promise((resolve) => setTimeout(resolve, 5000))
+            await downloadFlowSvg(model, title, language, { dark })
+          }}
+          onOpenPublications={() => {}}
+          onOpenRuns={() => {}}
+          onPublish={() => {}}
+          state="current"
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 24, width: '100%' }}>
+          <section>
+            <p>Canvas</p>
+            <div style={{ height: 620 }}>
+              <FlowCanvasView
+                identity={`svg-comparison:${wrapped}`}
+                model={model}
+                dark={dark}
+                language={language}
+                editable={false}
+                nodesDraggable={false}
+                fitView
+                autoLayout={false}
+                layoutMotion={false}
+                ignoredNodeIds={[]}
+                selectedNodeIds={[]}
+                onMoveNodes={() => {}}
+                onMoveViewport={() => {}}
+                onSelectionChange={() => {}}
+              />
+            </div>
+          </section>
+          <section>
+            <p>Exported SVG</p>
+            {source && (
+              <img
+                alt={title}
+                src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(source)}`}
+                style={{ width: '100%', height: 620, objectFit: 'contain' }}
+              />
+            )}
+            {error && <p role="alert">{error}</p>}
+          </section>
+        </div>
+      </div>
+    </I18nProvider>
+  )
+}
 
 function NavigationIslandStory({ dark, language, log }: { readonly dark: boolean; readonly language: UiLanguage; readonly log: LogAction }) {
   const i18n = useMemo(() => createI18n(language), [language])
@@ -555,6 +718,7 @@ function NavigationIslandStory({ dark, language, log }: { readonly dark: boolean
                   before={
                     <WorkspacePublishIsland
                       onExport={() => log('flow.export')}
+                      onExportSvg={async () => log('flow.exportSvg')}
                       hasPublications={hasPublications}
                       onOpenPublications={() => log('publication.history')}
                       onOpenRuns={() => log('run.history')}

@@ -212,7 +212,7 @@ export function ErrorTriggerSourcesEditor({
           </>
         }
         onChange={(next) => {
-          void store.saveErrorSources(nodeId, next)
+          void store.nodes.saveErrorSources(nodeId, next)
         }}
       />
     </div>

@@ -24,7 +24,7 @@ const publication = {
   closureDigest: 'closure',
   revisionDigest: 'revision',
   sharedAccessDigest: 'access',
-  engineContract: 'open-flow-engine/v5',
+  engineContract: 'open-flow-engine/v6',
   modelVersion: 6,
   version: 1,
 }
@@ -101,7 +101,7 @@ function host(options: { live?: unknown; metadataFailure?: boolean; detailsFailu
     request: async (path: string) => {
       paths.push(path)
       if (path == '/v1/flows/Main') return Response.json({ version: 1, error: { code: 'flow.not-found', message: 'Missing' } }, { status: 404 })
-      if (path == '/v1/flows?limit=100') return Response.json({ flows: [flow], version: 1 })
+      if (path == '/v1/flows?limit=100') return Response.json({ flows: [{ ...flow, referenceCount: 0 }], version: 1 })
       if (path == '/v1/flows/flow') return Response.json(flow)
       if (path == '/v1/flows/flow/live/details') {
         if (options.detailsFailure) throw new Error('Offline')

@@ -51,9 +51,9 @@ describe('Flow Error contract', () => {
   it('validates the complete error context', () => {
     const trigger = content.document.graph.nodes.error!
     if (!isTriggerNode(trigger)) throw new Error('Expected a Trigger')
-    expect(matchesTriggerOutputs(trigger, sampleErrorOutputs, [])).toBe(true)
-    expect(matchesTriggerOutputs(trigger, { ...sampleErrorOutputs, error: { message: 'Missing code' } }, [])).toBe(false)
-    expect(matchesTriggerOutputs(trigger, { ...sampleErrorOutputs, execution: { ...(sampleErrorOutputs.execution as object), status: 'completed' } }, [])).toBe(
+    expect(matchesTriggerOutputs(trigger, sampleErrorOutputs)).toBe(true)
+    expect(matchesTriggerOutputs(trigger, { ...sampleErrorOutputs, error: { message: 'Missing code' } })).toBe(false)
+    expect(matchesTriggerOutputs(trigger, { ...sampleErrorOutputs, execution: { ...(sampleErrorOutputs.execution as object), status: 'completed' } })).toBe(
       false,
     )
   })
@@ -87,7 +87,7 @@ describe('Flow Error contract', () => {
         },
       },
     }
-    const prepared = await prepareFlow(revision, 'open-flow-engine/v5')
+    const prepared = await prepareFlow(revision, 'open-flow-engine/v7')
     if (prepared.kind != 'prepared') throw new Error(prepared.kind)
     const started: string[] = []
     await Effect.runPromise(

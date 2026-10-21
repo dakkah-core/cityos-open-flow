@@ -129,9 +129,9 @@ function NodeStory({ fixture, dark, language, log, active = true, onActivate }: 
           if (sample.kind === 'poll' || sample.kind === 'integration') sample = { ...sample, config: {} }
           else if (sample.kind === 'webhook') sample = { ...sample, bodyFields: [], options: {} }
         }
-        samples.set(entry.id, { id: `${fixture.id}-${entry.id}`, trigger: sample, inputDefs: fixture.inputDefs, outputs: fixture.outputs })
+        samples.set(entry.id, { id: `${fixture.id}-${entry.id}`, trigger: sample, outputs: fixture.outputs })
         const base = designerGraph(
-          triggerDraft(sample, false, fixture.inputDefs).draft,
+          triggerDraft(sample).draft,
           {},
           entry.id === 'disconnected'
             ? [
@@ -249,7 +249,7 @@ function RunSample({
   const logRef = useRef(log)
   logRef.current = log
   useEffect(() => {
-    const { flow, draft } = triggerDraft(fixture.trigger, downstream, fixture.inputDefs)
+    const { flow, draft } = triggerDraft(fixture.trigger, downstream)
     const inputs = { flow, draft }
     const i18n = createI18n(language)
     let release: (() => void) | undefined
@@ -269,7 +269,7 @@ function RunSample({
         version: 1,
         waits: [],
         closureDigest: 'lab',
-        engineContract: 'open-flow-engine/v5',
+        engineContract: 'open-flow-engine/v6',
         engineDigest: 'lab',
         modelVersion: currentFlowModelVersion,
         sharedAccessDigest: 'implicit:lab',
@@ -311,11 +311,7 @@ function RunSample({
           const trigger = fixture.trigger
           onContractChangeReady?.(() => {
             inputs.draft = {
-              ...triggerDraft(
-                trigger,
-                downstream,
-                (fixture.inputDefs ?? []).map((port) => Object.assign({}, port, { nullable: false })),
-              ).draft,
+              ...triggerDraft({ ...trigger, inputDefs: trigger.inputDefs.map((port) => Object.assign({}, port, { nullable: false })) }, downstream).draft,
               revisionId: `${draft.revisionId}-required`,
             }
             logRef.current('run.contractChanged', inputs.draft.revisionId)
@@ -384,16 +380,16 @@ function RunStory(props: StoryProps) {
     return {
       nullable: {
         ...props.fixture,
-        inputDefs: (props.fixture.inputDefs ?? []).map((port) => Object.assign({}, port, { nullable: true })),
+        trigger: { ...props.fixture.trigger, inputDefs: props.fixture.trigger.inputDefs.map((port) => Object.assign({}, port, { nullable: true })) },
       },
-      empty: { ...props.fixture, inputDefs: [], outputs: {} },
+      empty: { ...props.fixture, trigger: { ...props.fixture.trigger, inputDefs: [] }, outputs: {} },
     }
   }, [props.fixture])
   useStoryActions(startSamples == null ? [] : [{ label: 'Make parameters required', onClick: () => changeContract?.(), disabled: changeContract == null }])
   const direct =
     props.fixture.trigger.kind === 'manual' ||
     props.fixture.trigger.kind === 'cron' ||
-    (props.fixture.trigger.kind === 'start' && (props.fixture.inputDefs ?? []).length === 0)
+    (props.fixture.trigger.kind === 'start' && props.fixture.trigger.inputDefs.length === 0)
   return (
     <Gallery {...props}>
       <div className="trigger-case-grid">
@@ -433,6 +429,7 @@ function RunStory(props: StoryProps) {
 }
 
 type SidebarState =
+  | 'response-outputs-missing'
   | 'empty-options'
   | 'missing-status'
   | 'options-error'
@@ -457,6 +454,8 @@ function SidebarSample({ fixture, dark, language, log, state, framed = true }: S
   logRef.current = log
   useEffect(() => {
     let trigger: TriggerNode = fixture.trigger
+    if (trigger.kind === 'webhook' && state === 'response-outputs-missing')
+      trigger = { ...trigger, options: { ...trigger.options, responseBody: { kind: 'workflow-outputs' } } }
     if (trigger.kind === 'error' && state !== 'unconfigured') trigger = { ...trigger, sourceFlowIds: ['orders', 'billing'] }
     if (state === 'description')
       trigger = {
@@ -468,6 +467,7 @@ function SidebarSample({ fixture, dark, language, log, state, framed = true }: S
       if (trigger.kind === 'poll' || trigger.kind === 'integration') trigger = { ...trigger, config: {} }
       else if (trigger.kind === 'cron') trigger = { ...trigger, cronTimes: [] }
       else if (trigger.kind === 'webhook') trigger = { ...trigger, bodyFields: [], options: {} }
+      else if (trigger.kind === 'start') trigger = { ...trigger, inputDefs: [] }
     }
     if (trigger.kind === 'poll' && trigger.definition.provider === 'linear') {
       if (state === 'missing-status')
@@ -485,7 +485,6 @@ function SidebarSample({ fixture, dark, language, log, state, framed = true }: S
       undefined,
       state === 'no-event-sources' ? [] : undefined,
       state === 'created-with-allowed-account' ? 'alternative' : state === 'created-without-permission' ? 'none' : undefined,
-      state.startsWith('created-') || state === 'unconfigured' ? [] : fixture.inputDefs,
     )
     setSession(next)
     void next.start()
@@ -517,6 +516,10 @@ function SidebarSample({ fixture, dark, language, log, state, framed = true }: S
             theme={dark ? 'dark' : 'light'}
           >
             <NodeInspector
+              onAddWorkflowOutputs={() => {
+                const option = session.workspace.$.addNodeOptions.value.find((item) => item.kind === 'outputs')
+                if (option != null) void session.workspace.addNode(option, { x: 320, y: 0 })
+              }}
               webhookDeployment={
                 fixture.trigger.kind === 'webhook'
                   ? {
@@ -535,6 +538,7 @@ function SidebarSample({ fixture, dark, language, log, state, framed = true }: S
                               runtimeVersion: 1,
                               updatedAt: '2026-10-12T00:00:00.000Z',
                             },
+                      notify: session.workspace.notify,
                       status: state === 'deployment-loading' ? 'loading' : state === 'deployment-error' ? 'failed' : 'loaded',
                       enabled: state !== 'paused',
                       hasUnpublishedChanges: state === 'edit',
@@ -591,7 +595,7 @@ function SidebarStory(props: StoryProps) {
           : []),
       ]
     : props.fixture.trigger.kind === 'webhook'
-      ? ['display', 'edit', 'unconfigured', 'paused', 'deployment-loading', 'deployment-error', 'retired', 'deployment-failed']
+      ? ['display', 'edit', 'unconfigured', 'response-outputs-missing', 'paused', 'deployment-loading', 'deployment-error', 'retired', 'deployment-failed']
       : ['display', 'edit', props.fixture.trigger.kind === 'manual' ? 'description' : 'unconfigured']
   return (
     <Gallery {...props}>
@@ -740,7 +744,7 @@ export const triggerStories: readonly FrontendStory[] = [
             return (
               <section key={label} className="rounded-lg border p-4">
                 <h3>{label}</h3>
-                <TriggerSummary inputDefs={fixture.inputDefs ?? []} trigger={fixture.trigger} />
+                <TriggerSummary trigger={fixture.trigger} />
                 <TriggerStatus binding={binding} enabled={enabled} />
                 <ListenerHealth binding={binding} enabled={enabled} />
               </section>
@@ -793,7 +797,7 @@ export const triggerStories: readonly FrontendStory[] = [
           ? 'Provider trigger states and configuration.'
           : view === 'run'
             ? 'Provider payloads, validation and run states.'
-            : 'Provider properties, permitted default accounts, missing permissions and optional configuration.',
+            : 'Provider properties, permitted default accounts, missing permissions and optional configuration. Compare Gmail, Google Sheets and GitHub: business fields stay visible while technical options start collapsed under Advanced settings. Expand, edit, collapse and reopen to check saved values and keyboard access in editable and read-only panels.',
       id: `trigger-provider-${view}`,
       title: view === 'nodes' ? 'Node states' : view === 'run' ? 'Run menu states' : 'Properties',
       standalone: true,

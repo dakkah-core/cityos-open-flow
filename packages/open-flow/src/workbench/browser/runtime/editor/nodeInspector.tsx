@@ -18,7 +18,9 @@ import type { WebhookDeploymentProps } from './webhookDeployment.tsx'
 import { useEffect, useRef } from 'react'
 import { useTranslate } from 'val-i18n-react'
 import { decisionModel } from '../../../../decision/common/decision.ts'
+import { executionReachableNodes, webhookResponseDiagnostics } from '../../../../flow/common/graph.ts'
 import { inputValue } from '../../../../flow/common/inputValue.ts'
+import { webhookResponseInputs } from '../../../../flow/common/webhookResponse.ts'
 import { Field, FieldLabel } from '../../../../ui/browser/field.tsx'
 import { Input } from '../../../../ui/browser/input.tsx'
 import { ScrollArea } from '../../../../ui/browser/scroll-area.tsx'
@@ -28,13 +30,16 @@ import {
   presentBuiltInSourceCandidates,
   presentDecisionOutputs,
   presentResolutionOutputs,
+  presentSystemOutputs,
 } from './builtInOutputPresentation.ts'
 import { CodeTaskSection } from './codeTaskSection.tsx'
 import { ConditionBranchesEditor } from './conditionBranchesEditor.tsx'
 import { ConnectorAccount, TriggerConnection, SavedConnectionReference } from './connectionSettings.tsx'
+import { presentConnectorInputs } from './connectorInputPresentation.ts'
 import { DecisionSection } from './decisionSection.tsx'
+import { diagnosticMessage } from './diagnostics.ts'
 import { ErrorTriggerSources, ErrorTriggerSourcesEditor } from './errorTriggerSources.tsx'
-import { FeishuTriggerConfig } from './feishuTriggerConfig.tsx'
+import { EventSourceTriggerConfig } from './eventSourceTriggerConfig.tsx'
 import { GeneralSettings } from './generalSettings.tsx'
 import { LeinaBotSelect } from './leinaBotSelect.tsx'
 import { LinearTriggerConfig } from './linearTriggerConfig.tsx'
@@ -46,11 +51,14 @@ import { OpenApiSection } from './openApiSection.tsx'
 import { PortDefinitionEditor } from './portDefinitionEditor.tsx'
 import { presentProviderOutputDescription, presentProviderSourceCandidates, presentProviderTriggerConfig } from './providerTriggerPresentation.ts'
 import { ResolutionDefinition } from './resolutionDefinition.tsx'
+import { TallyTriggerConfig } from './tallyTriggerConfig.tsx'
 import { TriggerConfigEditor } from './triggerConfigEditor.tsx'
 import { TriggerScheduleEditor } from './triggerScheduleEditor.tsx'
 import { TriggerSummary } from './triggerSummary.tsx'
 import { WebhookDeployment } from './webhookDeployment.tsx'
 import { WebhookEditor } from './webhookEditor.tsx'
+import { WebhookResponseEditor } from './webhookResponseEditor.tsx'
+import { WorkflowSection, WorkflowInterfaceAlert, useWorkflowActions } from './workflowSection.tsx'
 
 export function inspectorIcon(node: ResolvedSelection | undefined): IconName {
   if (node?.kind == 'trigger') return 'trigger'
@@ -58,9 +66,11 @@ export function inspectorIcon(node: ResolvedSelection | undefined): IconName {
   if (node?.kind == 'value') return 'value'
   if (node?.kind == 'approval') return 'check'
   if (node?.kind == 'wait') return 'wait'
+  if (node?.kind === 'webhook-response') return 'response'
   if (node?.kind == 'outputs') return 'outputs'
   if (node?.kind == 'task' && node.definition != null && 'executor' in node.definition) {
     if (node.definition.executor.kind == 'decision') return 'decision'
+    if (node.definition.executor.kind == 'workflow') return 'flow'
     if (node.definition.executor.kind == 'openapi') return 'task'
     return node.definition.executor.kind == 'connector' ? 'connection' : 'llm'
   }
@@ -74,6 +84,8 @@ function nodePurposePlaceholder(
   displays?: Readonly<Record<string, TriggerDisplay>>,
 ): string | undefined {
   switch (selection.kind) {
+    case 'webhook-response':
+      return t('addNode.webhookResponseDescription')
     case 'condition':
       return t('addNode.conditionDescription')
     case 'outputs':
@@ -111,6 +123,8 @@ function nodePurposePlaceholder(
           return t('addNode.agentDescription')
         case 'decision':
           return t('decision.description')
+        case 'workflow':
+          return t('workflow.description')
         case 'openapi':
           return t('openapi.description')
         case 'connector':
@@ -150,13 +164,14 @@ function inputUpstreamSources({
             : presentProviderOutputDescription(
                 node,
                 source.output,
-                presentBuiltInOutputDescription(node, source.output, revision.outputDescription(source.nodeId, source.output), t),
+                presentBuiltInOutputDescription(node, source.output, revision.outputDescription(source.nodeId, source.output), t, source),
                 providerDisplay(node),
               ),
         icon: sourceNodeIcons?.[source.nodeId],
         nodeId: source.nodeId,
         nodeName: node?.name,
         output: source.output,
+        system: source.system,
         field: source.field,
         check: undefined,
       }
@@ -177,12 +192,14 @@ function inputUpstreamSources({
       store == null
         ? undefined
         : (source) => {
-            void store.setInputSource(selection.id, handleName, source)
+            void store.nodes.setInputSource(selection.id, handleName, source)
           },
   }
 }
 
 interface Props {
+  readonly onAddResponseNode?: () => void
+  readonly onAddWorkflowOutputs?: () => void
   readonly webhookDeployment?: WebhookDeploymentProps
   readonly readOnly?: boolean
   readonly variables?: InputVariables
@@ -232,6 +249,8 @@ type InspectorProps = Props &
   )
 
 export function NodeInspector({
+  onAddWorkflowOutputs,
+  onAddResponseNode,
   webhookDeployment,
   variables = { enabled: false, loaded: false, loading: false, names: [], onOpen: undefined },
   readOnly = false,
@@ -270,14 +289,49 @@ export function NodeInspector({
   const disabled = readOnly || temporarilyDisabled || store == null
   const t = useTranslate()
   const content = useRef<HTMLDivElement>(null)
+  const outputNodes =
+    selection?.kind === 'trigger' && selection.trigger.kind === 'webhook'
+      ? Object.entries(revision.graph().nodes).filter(([, node]) => node.kind === 'outputs')
+      : []
+  const outputNode = outputNodes.length === 1 ? outputNodes[0] : undefined
+  const responseReachable =
+    selection?.kind === 'trigger' && selection.trigger.kind === 'webhook' ? executionReachableNodes(revision.graph(), selection.id) : undefined
+  const responseNodes =
+    responseReachable == null
+      ? []
+      : Object.entries(revision.graph().nodes).flatMap(([id, node]) =>
+          node.kind === 'webhook-response' ? [{ id, name: node.name ?? t('addNode.webhookResponse'), reachable: responseReachable.has(id) }] : [],
+        )
+  const providerTrigger =
+    selection?.kind === 'trigger' && (selection.trigger.kind === 'integration' || selection.trigger.kind === 'poll') ? selection.trigger : undefined
+  const providerDisplay = providerTrigger == null ? undefined : triggerDisplays?.[providerTrigger.definition.key]
+  const providerConfigInputs =
+    providerTrigger == null
+      ? []
+      : presentProviderTriggerConfig(providerTrigger.definition.configInputs, providerDisplay, { 'Advanced settings': t('valueEditor.advancedSettings') })
   const task = selection?.kind == 'task' ? selection.definition : undefined
   const isAgent = task != null && 'executor' in task && task.executor.kind == 'agent'
   const isDecision = task != null && 'executor' in task && task.executor.kind == 'decision'
   const isOpenApi = task != null && 'executor' in task && task.executor.kind == 'openapi'
+  const unconfiguredWorkflow = task != null && 'executor' in task && task.executor.kind == 'workflow' && !task.executor.flowId
   const unconfiguredOpenApi = task != null && 'executor' in task && task.executor.kind == 'openapi' && !task.executor.path
   const isLlm = task != null && 'executor' in task && task.executor.kind == 'llm'
   const connector = task != null && 'executor' in task && task.executor.kind == 'connector' ? task.executor : undefined
   const nodeId = selection?.kind == 'task' ? selection.id : undefined
+  const workflowSettings =
+    task != null && 'executor' in task && task.executor.kind == 'workflow' && selection != null
+      ? {
+          task,
+          nodeId: selection.id,
+          onCheck: () => store?.check() ?? Promise.resolve(),
+          disabled: disabled || readOnly,
+          load: (flowId: string, signal?: AbortSignal) => store!.loadWorkflowContract(flowId, signal),
+          onSave: (before: typeof task, value: typeof task) =>
+            store?.nodes.saveTaskSettings(selection.id, { kind: 'workflow', name: value.name, before, task: value }) ?? Promise.resolve(false),
+        }
+      : undefined
+  const workflowActions = useWorkflowActions(workflowSettings)
+  const workflowIssue = diagnostics?.find((issue) => issue.code.startsWith('workflow.') && issue.code != 'workflow.target-required')
   const locatedRequest = useRef<number>(undefined)
   useEffect(() => {
     if (focus == null) return
@@ -339,6 +393,16 @@ export function NodeInspector({
             nodeId={nodeId}
           />
         )}
+        {!readOnly && workflowSettings != null && (workflowIssue != null || workflowActions.error != null) && (
+          <WorkflowInterfaceAlert
+            key={`workflow-alert:${selection?.id}`}
+            flowId={workflowSettings.task.executor.kind == 'workflow' ? workflowSettings.task.executor.flowId : ''}
+            actions={workflowActions}
+            disabled={disabled}
+            stale={workflowIssue?.code == 'workflow.revision-stale' || workflowIssue?.code == 'workflow.snapshot-missing'}
+            message={workflowIssue == null ? undefined : diagnosticMessage(workflowIssue, t)}
+          />
+        )}
         {selection != null && (
           <NodeDescription
             key={`description:${selection.id}`}
@@ -346,7 +410,7 @@ export function NodeInspector({
             placeholder={nodePurposePlaceholder(selection, t, connectorAction, triggerDisplays)}
             disabled={disabled}
             onSave={(description) => {
-              void store?.saveNodeDescription(selection.id, description)
+              void store?.nodes.saveNodeDescription(selection.id, description)
             }}
           />
         )}
@@ -369,10 +433,36 @@ export function NodeInspector({
         )}
         {selection?.kind === 'trigger' &&
           (selection.trigger.kind === 'integration' || selection.trigger.kind === 'poll') &&
-          (!readOnly && store != null && ['feishu.on_event', 'feishu_app_bot.on_event'].includes(selection.trigger.definition.key) ? (
-            <FeishuTriggerConfig
-              inputs={presentProviderTriggerConfig(selection.trigger.definition.configInputs, triggerDisplays?.[selection.trigger.definition.key])}
-              fieldLabels={triggerDisplays?.[selection.trigger.definition.key]?.configInputLabels}
+          (!readOnly &&
+          store != null &&
+          [
+            'feishu.on_event',
+            'feishu_app_bot.on_event',
+            'slackbot.on_event',
+            'intercom.on_conversation_event',
+            'sentry.on_issue_alert',
+            'zoom.on_recording_ready',
+            'fireflies.on_meeting_ready',
+            'jira.on_issue_event',
+          ].includes(selection.trigger.definition.key) ? (
+            <EventSourceTriggerConfig
+              provider={
+                selection.trigger.definition.provider === 'slackbot'
+                  ? 'slackbot'
+                  : selection.trigger.definition.provider === 'intercom'
+                    ? 'intercom'
+                    : selection.trigger.definition.provider === 'sentry'
+                      ? 'sentry'
+                      : selection.trigger.definition.provider === 'zoom'
+                        ? 'zoom'
+                        : selection.trigger.definition.provider === 'fireflies'
+                          ? 'fireflies'
+                          : selection.trigger.definition.provider === 'jira'
+                            ? 'jira'
+                            : 'feishu_app_bot'
+              }
+              inputs={providerConfigInputs}
+              fieldLabels={providerDisplay?.configInputLabels}
               config={selection.trigger.config}
               nodeId={selection.id}
               connectionId={selection.trigger.connectionId}
@@ -381,8 +471,18 @@ export function NodeInspector({
             />
           ) : !readOnly && store != null && selection.trigger.definition.key === 'linear.on_issue_changed' ? (
             <LinearTriggerConfig
-              inputs={presentProviderTriggerConfig(selection.trigger.definition.configInputs, triggerDisplays?.[selection.trigger.definition.key])}
-              fieldLabels={triggerDisplays?.[selection.trigger.definition.key]?.configInputLabels}
+              inputs={providerConfigInputs}
+              fieldLabels={providerDisplay?.configInputLabels}
+              config={selection.trigger.config}
+              nodeId={selection.id}
+              connectionId={selection.trigger.connectionId}
+              disabled={disabled}
+              store={store}
+            />
+          ) : !readOnly && store != null && selection.trigger.definition.key === 'tally.on_form_response' ? (
+            <TallyTriggerConfig
+              inputs={providerConfigInputs}
+              fieldLabels={providerDisplay?.configInputLabels}
               config={selection.trigger.config}
               nodeId={selection.id}
               connectionId={selection.trigger.connectionId}
@@ -394,17 +494,17 @@ export function NodeInspector({
               readOnly={readOnly}
               key={`config:${selection.id}`}
               onReset={() => {
-                return store?.resetTriggerConfig(selection.id)
+                return store?.nodes.resetTriggerConfig(selection.id)
               }}
               onResetValue={(name) => {
-                void store?.resetTriggerConfig(selection.id, [name])
+                void store?.nodes.resetTriggerConfig(selection.id, [name])
               }}
-              inputs={presentProviderTriggerConfig(selection.trigger.definition.configInputs, triggerDisplays?.[selection.trigger.definition.key])}
-              fieldLabels={triggerDisplays?.[selection.trigger.definition.key]?.configInputLabels}
+              inputs={providerConfigInputs}
+              fieldLabels={providerDisplay?.configInputLabels}
               config={selection.trigger.config}
               disabled={disabled}
               onChange={(name, value) => {
-                void store?.saveTriggerConfig(selection.id, name, value)
+                void store?.nodes.saveTriggerConfig(selection.id, name, value)
               }}
             />
           ))}
@@ -432,20 +532,50 @@ export function NodeInspector({
               output
               readOnly={readOnly}
               disabled={disabled}
-              values={revision.inputDefs()}
+              values={selection.trigger.inputDefs}
               onChange={(parameters, deletion) => {
-                void store?.saveFlowInputDefs(parameters, deletion)
+                void store?.nodes.saveStartInputDefs(selection.id, parameters, deletion)
               }}
             />
           </section>
         )}
         {selection?.kind === 'trigger' && selection.trigger.kind !== 'webhook' && selection.trigger.kind !== 'start' && (
           <TriggerSummary
-            inputDefs={revision.inputDefs()}
             trigger={selection.trigger}
             display={
               selection.trigger.kind == 'integration' || selection.trigger.kind == 'poll' ? triggerDisplays?.[selection.trigger.definition.key] : undefined
             }
+          />
+        )}
+        {selection?.kind === 'webhook-response' && (
+          <WebhookResponseEditor
+            entries={webhookResponseInputs.map((definition) => {
+              const mapping = selection.node.inputs[definition.handle]
+              const source = mapping?.kind === 'sources' ? mapping.sources.find((item) => item.kind === 'binding') : undefined
+              const binding = source?.kind === 'binding' ? revision.binding(source.bindingId) : undefined
+              return {
+                definition,
+                value: inputValue(mapping, definition.value),
+                connected: mapping?.kind === 'sources' && binding == null,
+                variableName: binding?.target,
+                onReset:
+                  mapping == null
+                    ? undefined
+                    : () => {
+                        void store?.nodes.resetInputs(selection.id, [definition.handle])
+                      },
+              }
+            })}
+            disabled={disabled}
+            readOnly={readOnly}
+            variables={variables}
+            renderSource={(handle) => inputUpstreamSources({ revision, sourceNodeIcons, selection, store, handleName: handle, t, triggerDisplays })}
+            onValue={(handle, value) => {
+              void store?.nodes.setInputValue(selection.id, handle, value)
+            }}
+            onVariable={(handle, name) => {
+              void store?.nodes.setInputVariable(selection.id, handle, name)
+            }}
           />
         )}
         {selection?.kind === 'trigger' && selection.trigger.kind === 'webhook' && (
@@ -455,10 +585,17 @@ export function NodeInspector({
             bodyFields={selection.trigger.bodyFields}
             method={selection.trigger.method}
             options={selection.trigger.options ?? {}}
+            workflowOutputs={
+              outputNode?.[1].kind === 'outputs' ? { ...outputNode[1], icon: sourceNodeIcons?.[outputNode[0]] ?? outputNode[1].icon } : undefined
+            }
+            responseDiagnostics={webhookResponseDiagnostics(revision.graph(), selection.id)}
+            onAddWorkflowOutputs={readOnly ? undefined : onAddWorkflowOutputs}
+            onAddResponseNode={readOnly ? undefined : onAddResponseNode}
+            responseNodes={responseNodes}
             disabled={disabled}
-            outputSection={<TriggerSummary inputDefs={revision.inputDefs()} trigger={selection.trigger} />}
+            outputSection={<TriggerSummary trigger={selection.trigger} />}
             onChange={(settings, deletion) => {
-              void store?.saveWebhook(selection.id, settings, deletion)
+              void store?.nodes.saveWebhook(selection.id, settings, deletion)
             }}
           />
         )}
@@ -469,7 +606,7 @@ export function NodeInspector({
             disabled={disabled}
             collapsible={selection.trigger.kind === 'poll'}
             onChange={(schedule) => {
-              void store?.saveTriggerSchedule(selection.id, schedule)
+              void store?.nodes.saveTriggerSchedule(selection.id, schedule)
             }}
           />
         )}
@@ -479,10 +616,19 @@ export function NodeInspector({
             task={task}
             disabled={disabled}
             onSave={(before, value, deletion) =>
-              store?.saveTaskSettings(selection.id, { kind: 'decision', name: task.name, before, task: value }, deletion) ?? Promise.resolve(false)
+              store?.nodes.saveTaskSettings(selection.id, { kind: 'decision', name: task.name, before, task: value }, deletion) ?? Promise.resolve(false)
             }
           />
         )}
+        {workflowSettings != null && (
+          <WorkflowSection
+            key={`workflow:${selection?.id}`}
+            {...workflowSettings}
+            actions={workflowActions}
+            list={(signal) => store!.listWorkflowTargets(signal)}
+          />
+        )}
+
         {isOpenApi && task != null && 'executor' in task && (
           <OpenApiSection
             key={`openapi:${selection?.id}`}
@@ -530,10 +676,10 @@ export function NodeInspector({
                         })}
                         variables={variables}
                         onValue={(value, deletion) => {
-                          void store?.setInputValue(selection.id, definition.handle, value, deletion)
+                          void store?.nodes.setInputValue(selection.id, definition.handle, value, deletion)
                         }}
                         onVariable={(name) => {
-                          void store?.setInputVariable(selection.id, definition.handle, name)
+                          void store?.nodes.setInputVariable(selection.id, definition.handle, name)
                         }}
                       />
                     </Field>
@@ -543,16 +689,17 @@ export function NodeInspector({
             disabled={disabled}
             load={(url, signal) => store!.loadOpenApiDocument(url, signal)}
             onSave={(before, value) =>
-              store?.saveTaskSettings(selection!.id, { kind: 'openapi', name: task.name, before, task: value }) ?? Promise.resolve(false)
+              store?.nodes.saveTaskSettings(selection!.id, { kind: 'openapi', name: task.name, before, task: value }) ?? Promise.resolve(false)
             }
           />
         )}
         {!unconfiguredOpenApi &&
+          !unconfiguredWorkflow &&
           (selection?.kind === 'outputs' || selection?.kind === 'approval' || selection?.kind === 'wait' || selection?.kind === 'task') &&
           (() => {
             const definitions: (InputPort | Group)[] =
               selection.kind === 'outputs'
-                ? [...revision.outputDefs()]
+                ? [...selection.node.outputDefs]
                 : selection.kind === 'task'
                   ? [...(selection.definition?.inputs ?? [])]
                   : [...selection.node.inputDefinitions]
@@ -561,7 +708,7 @@ export function NodeInspector({
               if (!handles.has(handle) && !(selection.kind === 'task' && selection.node.additionalInputs?.some((port) => port.handle === handle)))
                 definitions.push({ handle, jsonSchema: {}, nullable: true })
             }
-            const entries = definitions
+            const entries = (connector == null ? definitions : presentConnectorInputs(definitions, t))
               .filter((definition) => !isOpenApi || !('handle' in definition) || !definition.handle.startsWith('auth.'))
               .map((definition): Group | NodeInputField => {
                 if ('group' in definition) return definition
@@ -592,12 +739,13 @@ export function NodeInspector({
                         value={inputValue(mapping, definition.value)}
                         disabled={disabled}
                         onChange={(value) => {
-                          void store?.setInputValue(selection.id, definition.handle, value)
+                          void store?.nodes.setInputValue(selection.id, definition.handle, value)
                         }}
                       />
                     ) : undefined,
                   value: inputValue(mapping, definition.value),
-                  onReset: definition.value !== undefined && mapping != null ? () => void store?.resetInputs(selection.id, [definition.handle]) : undefined,
+                  onReset:
+                    definition.value !== undefined && mapping != null ? () => void store?.nodes.resetInputs(selection.id, [definition.handle]) : undefined,
                   connected: mapping?.kind === 'sources' && binding?.kind !== 'variable',
                   variableName: binding?.kind === 'variable' ? binding.target : undefined,
                 }
@@ -612,7 +760,7 @@ export function NodeInspector({
                 entries={entries}
                 fieldLabels={connector?.action == 'leina.send_notification' ? { leinaId: t('leina.robot'), message: t('leina.message') } : undefined}
                 onReset={() => {
-                  return store?.resetInputs(
+                  return store?.nodes.resetInputs(
                     selection.id,
                     entries.flatMap((entry) => ('group' in entry ? [] : [entry.definition.handle])),
                   )
@@ -620,7 +768,7 @@ export function NodeInspector({
                 onDefinitions={
                   selection.kind === 'outputs'
                     ? (outputDefinitions, deletion, values) => {
-                        void store?.saveFlowOutputDefs(
+                        void store?.nodes.saveOutputsDefs(
                           selection.id,
                           outputDefinitions.filter((port): port is InputPort => 'handle' in port),
                           deletion,
@@ -629,11 +777,11 @@ export function NodeInspector({
                       }
                     : selection.kind === 'task' && selection.definition != null && ('moduleId' in selection.node.task || isAgent)
                       ? (inputs, deletion, values) => {
-                          void store?.saveTaskPorts(selection.id, { inputs, outputs: selection.definition!.outputs }, deletion, values)
+                          void store?.nodes.saveTaskPorts(selection.id, { inputs, outputs: selection.definition!.outputs }, deletion, values)
                         }
                       : selection.kind === 'wait' || selection.kind === 'approval'
                         ? (inputs, deletion, values) => {
-                            void store?.saveResolution(
+                            void store?.nodes.saveResolution(
                               selection.id,
                               {
                                 name: selection.node.name,
@@ -650,10 +798,10 @@ export function NodeInspector({
                 variables={variables}
                 disabled={disabled}
                 onValue={(handle, value, deletion) => {
-                  void store?.setInputValue(selection.id, handle, value, deletion)
+                  void store?.nodes.setInputValue(selection.id, handle, value, deletion)
                 }}
                 onVariable={(handle, name) => {
-                  void store?.setInputVariable(selection.id, handle, name)
+                  void store?.nodes.setInputVariable(selection.id, handle, name)
                 }}
               />
             )
@@ -675,7 +823,9 @@ export function NodeInspector({
                           definition,
                           value: inputValue(mapping, definition.value),
                           onReset:
-                            definition.value !== undefined && mapping != null ? () => void store?.resetInputs(selection.id, [definition.handle]) : undefined,
+                            definition.value !== undefined && mapping != null
+                              ? () => void store?.nodes.resetInputs(selection.id, [definition.handle])
+                              : undefined,
                           connected: mapping?.kind === 'sources' && binding?.kind !== 'variable',
                           variableName: binding?.kind === 'variable' ? binding.target : undefined,
                         }
@@ -684,7 +834,7 @@ export function NodeInspector({
                       disabled={disabled}
                       reservedNames={selection.definition.inputs.flatMap((port) => ('handle' in port ? [port.handle] : []))}
                       onDefinitions={(inputs, deletion, values) => {
-                        void store?.saveTaskAdditionalInputs(
+                        void store?.nodes.saveTaskAdditionalInputs(
                           selection.id,
                           inputs.filter((port): port is InputPort => 'handle' in port),
                           deletion,
@@ -692,10 +842,10 @@ export function NodeInspector({
                         )
                       }}
                       onValue={(handle, value, deletion) => {
-                        void store?.setInputValue(selection.id, handle, value, deletion)
+                        void store?.nodes.setInputValue(selection.id, handle, value, deletion)
                       }}
                       onVariable={(handle, name) => {
-                        void store?.setInputVariable(selection.id, handle, name)
+                        void store?.nodes.setInputVariable(selection.id, handle, name)
                       }}
                       renderSource={(handle) => inputUpstreamSources({ revision, sourceNodeIcons, selection, store, handleName: handle, t, triggerDisplays })}
                     />
@@ -715,10 +865,10 @@ export function NodeInspector({
             variableName={(source) => (source.kind === 'binding' ? revision.binding(source.bindingId)?.target : undefined)}
             sourceType={(source) => revision.sourceType(source)}
             onVariable={(handle, name) => {
-              void store?.setInputVariable(selection.id, handle, name)
+              void store?.nodes.setInputVariable(selection.id, handle, name)
             }}
             onChange={(settings, deletion) => {
-              void store?.saveCondition(selection.id, settings, deletion)
+              void store?.nodes.saveCondition(selection.id, settings, deletion)
             }}
           />
         )}
@@ -730,12 +880,12 @@ export function NodeInspector({
               values={selection.node.values}
               disabled={disabled}
               onChange={(values, deletion) => {
-                void store?.saveValue(selection.id, values, deletion)
+                void store?.nodes.saveValue(selection.id, values, deletion)
               }}
             />
           </div>
         )}
-        {!unconfiguredOpenApi && selection?.kind === 'task' && selection.definition != null && (
+        {!unconfiguredOpenApi && !unconfiguredWorkflow && selection?.kind === 'task' && selection.definition != null && (
           <section className="inspector-port-section">
             <PortDefinitionEditor
               readOnly={readOnly}
@@ -746,9 +896,19 @@ export function NodeInspector({
               values={presentDecisionOutputs(selection.definition, t)}
               disabled={disabled || !('moduleId' in selection.node.task || isAgent)}
               onChange={(outputs, deletion) => {
-                void store?.saveTaskPorts(selection.id, { inputs: selection.definition!.inputs, outputs }, deletion)
+                void store?.nodes.saveTaskPorts(selection.id, { inputs: selection.definition!.inputs, outputs }, deletion)
               }}
             />
+            {selection.node.onError == 'error' && (
+              <PortDefinitionEditor
+                readOnly
+                groups
+                output
+                layout="ports"
+                columnHeadings={false}
+                values={[{ group: t('inspector.node.systemOutputs') }, ...presentSystemOutputs(selection.node, t)]}
+              />
+            )}
           </section>
         )}
         {(selection?.kind === 'approval' || selection?.kind === 'wait') && (

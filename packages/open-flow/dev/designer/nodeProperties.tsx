@@ -27,6 +27,19 @@ const taskInputValues = Object.fromEntries(
   taskFields.flatMap((port) => (port.value === undefined ? [] : [[port.handle, { kind: 'value' as const, value: port.value }]])),
 )
 const taskInputDefinitions = taskFields.map(({ value: _value, ...definition }) => definition)
+const providerInputs: readonly InputPort[] = [
+  { ...field('cc'), nullable: true },
+  field('to'),
+  { ...field('replyTo'), nullable: true },
+  field('subject'),
+  field('body'),
+  { ...field('bcc'), nullable: true },
+  { ...field('priority'), nullable: true, value: 'normal', jsonSchema: { type: 'string', enum: ['low', 'normal', 'high'] } },
+  { ...field('trackOpens', 'boolean'), nullable: true, value: false },
+  { ...field('tags', 'array'), nullable: true, jsonSchema: { type: 'array', items: { type: 'string' } } },
+  { ...field('metadata', 'object'), nullable: true, jsonSchema: { type: 'object', properties: { campaign: { type: 'string' } } } },
+  { ...field('scheduledAt'), nullable: true },
+]
 
 type Fixture = {
   id: string
@@ -36,6 +49,125 @@ type Fixture = {
   transport?: Parameters<typeof createInspectorSession>[3]
 }
 const fixtures: readonly Fixture[] = [
+  {
+    id: 'webhook-response',
+    group: 'Webhook Response',
+    node: {
+      kind: 'webhook-response',
+      name: 'Webhook Response',
+      inputs: {
+        body: { kind: 'sources', sources: [{ kind: 'node', nodeId: 'upstream', output: 'message' }] },
+        headers: { kind: 'value', value: { 'X-Result': 'accepted', 'X-Source': 'workflow' } },
+      },
+    },
+    content: {
+      graph: {
+        nodes: {
+          upstream: {
+            kind: 'value',
+            name: 'Prepare response',
+            inputs: {},
+            values: [
+              { handle: 'message', jsonSchema: { type: 'string' }, nullable: false, value: 'Accepted' },
+              {
+                handle: 'headers',
+                jsonSchema: { type: 'object', additionalProperties: { type: ['string', 'number', 'boolean'] } },
+                nullable: false,
+                value: { 'X-Count': 3 },
+              },
+              { handle: 'items', jsonSchema: { type: 'array' }, nullable: false, value: [] },
+              { handle: 'status', jsonSchema: { type: 'number' }, nullable: false, value: 201 },
+            ],
+          },
+        },
+        edges: [{ source: 'upstream', target: 'sample' }],
+      },
+    },
+  },
+
+  {
+    id: 'error-handling',
+    group: 'Task',
+    node: {
+      kind: 'task',
+      name: 'System error outputs',
+      onError: 'error',
+      task: { moduleId: 'module', name: 'Consumer', inputs: [{ handle: 'issue', jsonSchema: {}, nullable: true }], outputs: [field('error')] },
+      inputs: { issue: { kind: 'sources', sources: [{ kind: 'node', nodeId: 'upstream', output: 'error', system: true }] } },
+    },
+    content: {
+      graph: {
+        nodes: {
+          upstream: {
+            kind: 'task',
+            name: 'Upstream task',
+            onError: 'error',
+            inputs: {},
+            task: { moduleId: 'module', name: 'Source', inputs: [], outputs: [field('error')] },
+          },
+        },
+        edges: [{ source: 'upstream', target: 'sample' }],
+      },
+    },
+  },
+
+  {
+    id: 'retry-disabled',
+    group: 'Task',
+    node: { kind: 'task', name: 'Retry disabled', inputs: {}, task: { name: 'Task', inputs: [], outputs: [], executor: { kind: 'llm', mode: 'chat' } } },
+  },
+  {
+    id: 'retry-enabled',
+    group: 'Task',
+    node: {
+      kind: 'task',
+      name: 'Retry enabled',
+      inputs: {},
+      retry: { maxRetries: 2, intervalMs: 2000 },
+      onError: 'error',
+      task: { name: 'Task', inputs: [], outputs: [], executor: { kind: 'llm', mode: 'chat' } },
+    },
+  },
+  {
+    id: 'provider-inputs',
+    group: 'Task',
+    transport: {
+      providers: [{ service: 'mail', displayName: 'Mail', authTypes: ['no_auth'] }],
+      actions: [
+        {
+          actionId: 'mail.send',
+          authenticated: false,
+          description: 'Send email with optional delivery settings.',
+          inputs: Object.fromEntries(providerInputs.map(({ handle, ...definition }) => [handle, definition])),
+          outputs: { messageId: { jsonSchema: { type: 'string' }, nullable: false } },
+          inputSchema: {
+            type: 'object',
+            properties: Object.fromEntries(providerInputs.map(({ handle, jsonSchema }) => [handle, jsonSchema])),
+            required: providerInputs.filter((input) => !input.nullable).map((input) => input.handle),
+          },
+          outputSchema: { type: 'object', properties: { messageId: { type: 'string' } }, required: ['messageId'] },
+          name: 'Send email',
+          serviceId: 'mail',
+          serviceName: 'Mail',
+        },
+      ],
+    },
+    node: {
+      kind: 'task',
+      name: 'Send email',
+      inputs: {
+        to: { kind: 'value', value: 'ada@example.com' },
+        subject: { kind: 'value', value: 'Release notes' },
+        cc: { kind: 'value', value: 'team@example.com' },
+      },
+      task: {
+        name: 'Send email',
+        executor: { kind: 'connector', action: 'mail.send' },
+        inputs: providerInputs,
+        outputs: [field('messageId')],
+      },
+    },
+  },
   {
     id: 'code-actions-loading',
     group: 'Task',
@@ -174,7 +306,11 @@ function contentFor(fixture: Fixture): RevisionContent {
   return {
     modelVersion: currentFlowModelVersion,
     modules: { module: { name: 'Prepare report', imports: [], source: 'export default (inputs) => ({ report: inputs.message, count: inputs.count })' } },
-    document: { bindings: {}, ...fixture.content, inputDefs: [], graph: { nodes: { sample: fixture.node }, edges: [] } },
+    document: {
+      bindings: {},
+      ...fixture.content,
+      graph: { nodes: { ...fixture.content?.graph?.nodes, sample: fixture.node }, edges: fixture.content?.graph?.edges ?? [] },
+    },
   }
 }
 
@@ -210,6 +346,7 @@ function PropertySample({
     if (reload > 0) void session?.start().then(() => session.store.selectNodes(['sample']))
   }, [reload, session])
   const revision = useVal(session?.store.$.revision)
+  const action = useVal(session?.connectors.$.selectedAction)
   const selection = revision?.selection('sample')
   if (!session || !revision) return null
   return (
@@ -217,36 +354,42 @@ function PropertySample({
       <section className="node-properties-case" aria-label={disabled ? 'Read only' : 'Editable'}>
         <h3>{disabled ? 'Read only' : 'Editable'}</h3>
         <InspectorSamplePanel disabled={disabled} revision={revision} selection={selection} store={session.store} theme={dark ? 'dark' : 'light'}>
-          <NodeInspector
-            key={mount}
-            variables={{ enabled: true, names: ['API_TOKEN', 'TEAM_NAME'], loaded: true, loading: false, onOpen: () => {} }}
-            connectorAuthorizationPending={false}
-            connectorLoading={false}
-            connectors={session.connectors}
-            disabled={disabled}
-            diagnostics={
-              showCodeIssue && fixture.id == 'task'
-                ? [
-                    {
-                      code: 'module.syntax',
-                      column: 1,
-                      line: 2,
-                      message: 'CodeModule "module" contains invalid JavaScript syntax.',
-                      path: '/modules/module/source',
-                      values: { moduleId: 'module' },
-                    },
-                  ]
-                : undefined
-            }
-            revision={revision}
-            selection={selection}
-            store={session.store}
-            theme={dark ? 'dark' : 'light'}
+          {fixture.id === 'webhook-response' && disabled ? (
+            <NodeInspector readOnly disabled revision={revision} selection={selection} theme={dark ? 'dark' : 'light'} />
+          ) : (
+            <NodeInspector
+              key={mount}
+              connectorAction={action}
+              activeConnectorConnections={[]}
+              variables={{ enabled: true, names: ['API_TOKEN', 'TEAM_NAME'], loaded: true, loading: false, onOpen: () => {} }}
+              connectorAuthorizationPending={false}
+              connectorLoading={false}
+              connectors={session.connectors}
+              disabled={disabled}
+              diagnostics={
+                showCodeIssue && fixture.id == 'task'
+                  ? [
+                      {
+                        code: 'module.syntax',
+                        column: 1,
+                        line: 2,
+                        message: 'CodeModule "module" contains invalid JavaScript syntax.',
+                        path: '/modules/module/source',
+                        values: { moduleId: 'module' },
+                      },
+                    ]
+                  : undefined
+              }
+              revision={revision}
+              selection={selection}
+              store={session.store}
+              theme={dark ? 'dark' : 'light'}
 
-            triggerAuthorizationPending={false}
-            triggerConnectionLoading={false}
-            triggers={session.triggers}
-          />
+              triggerAuthorizationPending={false}
+              triggerConnectionLoading={false}
+              triggers={session.triggers}
+            />
+          )}
         </InspectorSamplePanel>
       </section>
     </I18nProvider>
@@ -287,17 +430,34 @@ function PropertiesStory({ fixture, dark, language, log }: { fixture: Fixture; d
 export const nodePropertiesStories: readonly FrontendStory[] = fixtures.map((fixture) => ({
   group: `Node ${fixture.group}`,
   id: `node-${fixture.id}-properties`,
-  title: fixture.id == 'code-actions-loading' ? 'Code · Slow actions' : fixture.id == 'execution-limit' ? 'Execution limit' : 'Properties',
+  title:
+    fixture.id == 'error-handling'
+      ? 'Error handling'
+      : fixture.id.startsWith('retry-')
+        ? fixture.node.name!
+        : fixture.id == 'provider-inputs'
+          ? 'Provider inputs'
+          : fixture.id == 'code-actions-loading'
+            ? 'Code · Slow actions'
+            : fixture.id == 'execution-limit'
+              ? 'Execution limit'
+              : 'Properties',
   standalone: true,
   description:
-    fixture.id == 'code-actions-loading'
-      ? 'Opening the editor makes no shared Action requests. Trigger completion with Ctrl+Space; Actions take four seconds to load while editing remains available. Reset samples to repeat.'
-      : fixture.id == 'execution-limit'
-        ? 'Per-run node execution limits. Change the limit, test invalid values, or clear it to restore the default of 1000; reload verifies persistence.'
-        : fixture.id === 'value'
-          ? 'Editable and read-only properties, including typed dates, calendar selection, and time editing with timezone preservation. Use Sort to reorder fields and nested object properties; Done sorting restores disclosure arrows. Samples save independently.'
-          : fixture.id === 'task'
-            ? 'Editable and read-only task properties. Toggle the code issue to inspect its attached error above Node settings.'
-            : 'Editable, read-only and fixed-type value panels. Inspector samples save independently; reload verifies saved values.',
+    fixture.id == 'error-handling'
+      ? 'Compare the ordinary error field with the quiet system-output group. Expand error and hover each field name to inspect localized help. Open the input source menu to inspect the separate system section, switch failure handling off and on, and reload saved data. Canvas connections are unchanged.'
+      : fixture.id.startsWith('retry-')
+        ? 'Open Node settings to configure retries. Choose No retries or a retry count, edit the interval, test invalid intervals and the help beside Retry on error, and reload to verify persistence. Compare editable and read-only samples in either theme.'
+        : fixture.id == 'provider-inputs'
+          ? 'Provider inputs group required fields before optional fields. Optional starts collapsed, including configured values. Expand it, edit values and sources, then reload saved data; reopening panels restores the default expansion.'
+          : fixture.id == 'code-actions-loading'
+            ? 'Opening the editor makes no shared Action requests. Trigger completion with Ctrl+Space; Actions take four seconds to load while editing remains available. Reset samples to repeat.'
+            : fixture.id == 'execution-limit'
+              ? 'Per-run node execution limits. Change the limit, test invalid values, or clear it to restore the default of 1000; reload verifies persistence.'
+              : fixture.id === 'value'
+                ? 'Editable and read-only properties, including typed dates, calendar selection, and time editing with timezone preservation. Use Sort to reorder fields and nested object properties; Done sorting restores disclosure arrows. Samples save independently.'
+                : fixture.id === 'task'
+                  ? 'Editable and read-only task properties. Toggle the code issue to inspect its attached error above Node settings.'
+                  : 'Editable, read-only and fixed-type value panels. Inspector samples save independently; reload verifies saved values.',
   render: (log, dark, language) => <PropertiesStory fixture={fixture} dark={dark} language={language} log={log} />,
 }))

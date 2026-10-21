@@ -69,6 +69,7 @@ export function clearNodeConnections(graph: FlowDocument['graph'], connectionId?
         if ('executor' in node.task) {
           const executor = node.task.executor
           const clear = <T extends { readonly connectionId?: string }>(value: T): T => {
+            if (value.connectionId === '') return value
             if (connectionId != null && value.connectionId != connectionId) return value
             const { connectionId: _, ...rest } = value
             return rest as T
@@ -115,6 +116,7 @@ export function clearNodeConnections(graph: FlowDocument['graph'], connectionId?
           return {
             ...capability,
             actions: capability.actions.map((action) => {
+              if (action.connectionId === '') return action
               if (connectionId != null && action.connectionId != connectionId) return action
               const { connectionId: _, ...remaining } = action
               return remaining

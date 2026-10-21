@@ -28,6 +28,12 @@ function sample(schema: JsonValue): JsonValue {
 
 const configExamples: Readonly<Record<string, Readonly<Record<string, JsonValue>>>> = {
   feishu_app_bot: { sourceId: 'source_11111111111111111111111111111111', eventTypes: ['im.message.receive_v1'], chatIds: ['oc_demo'] },
+  slackbot: { sourceId: 'source_11111111111111111111111111111111', eventTypes: ['app_mention'] },
+  intercom: { sourceId: 'source_11111111111111111111111111111111', eventTypes: ['conversation.user.created'] },
+  sentry: { sourceId: 'source_11111111111111111111111111111111', eventTypes: ['issue.alert'] },
+  zoom: { sourceId: 'source_11111111111111111111111111111111', eventTypes: ['recording.completed'] },
+  fireflies: { sourceId: 'source_11111111111111111111111111111111', eventTypes: ['meeting.transcribed'] },
+  jira: { sourceId: 'source_11111111111111111111111111111111', eventTypes: ['jira:issue_created'] },
   airtable: { baseId: 'app12345678901234', tableIdOrName: 'Orders', triggerField: 'Last modified' },
   gmail: { sender: 'orders@example.com', readStatus: 'Unread' },
   github: { owner: 'oomol-lab', repo: 'open-flow', events: ['issues', 'push'] },
@@ -43,13 +49,21 @@ const configExamples: Readonly<Record<string, Readonly<Record<string, JsonValue>
   slack: { channelId: 'C0122KQ70S7E', textContains: 'release' },
   stripe: { events: ['payment_intent.succeeded'] },
   telegram: { updates: ['message'] },
+  tally: { formId: 'lead-form' },
+  typeform: { formId: 'customer-survey' },
+  calendly: { scope: 'user', eventTypes: ['invitee.created', 'invitee.canceled'] },
+  pipedrive: { eventType: 'deal.stage_changed' },
+  clickup: { workspaceId: '123456', listId: '789012', eventTypes: ['taskStatusUpdated'] },
+  resend: { eventTypes: ['email.received'] },
+  pandadoc: { completedOnly: true },
+  asana: { projectId: '123456', eventTypes: ['task.added', 'task.completed'] },
+  vercel: { teamId: 'team_example', projectId: 'prj_example', environment: 'production' },
   woocommerce: { events: ['order.created'] },
   zendesk: { events: ['zen:event-type:ticket.created'] },
 }
 
 export interface TriggerFixture {
   readonly id: string
-  readonly inputDefs?: readonly import('../../src/flow/common/change.ts').Port[]
   readonly trigger: TriggerNode
   readonly outputs: Readonly<Record<string, JsonValue>>
 }
@@ -62,10 +76,7 @@ export const startInputDefs: readonly import('../../src/flow/common/change.ts').
 
 const builtins: readonly TriggerNode[] = [
   { kind: 'error', name: 'Flow Error' },
-  {
-    kind: 'start',
-    name: 'Start',
-  },
+  { inputDefs: startInputDefs, kind: 'start', name: 'Start' },
   {
     kind: 'cron',
     name: 'Schedule',
@@ -90,14 +101,13 @@ export const triggerFixtures: readonly TriggerFixture[] = [
   ...builtins.map(
     (trigger): TriggerFixture => ({
       id: trigger.kind,
-      inputDefs: trigger.kind === 'start' ? startInputDefs : [],
       trigger,
       outputs:
         trigger.kind === 'start'
           ? { orderId: 'order_123', note: 'Review delivery instructions', options: { dryRun: false } }
           : trigger.kind === 'webhook'
             ? { headers: {}, query: {}, body: { event: 'order.created', orderId: 'order_123' }, webhookUrl: 'https://example.com/webhook' }
-            : Object.fromEntries(triggerOutputDefinitions(trigger, []).map((port) => [port.handle, sample(port.jsonSchema)])),
+            : Object.fromEntries(triggerOutputDefinitions(trigger).map((port) => [port.handle, sample(port.jsonSchema)])),
     }),
   ),
   ...snapshots.map((definition): TriggerFixture => {
@@ -116,17 +126,29 @@ export const triggerFixtures: readonly TriggerFixture[] = [
     return {
       id: definition.key.replaceAll('.', '-').replaceAll('_', '-'),
       trigger,
-      outputs: Object.fromEntries(triggerOutputDefinitions(trigger, []).map((port) => [port.handle, sample(port.jsonSchema)])),
+      outputs:
+        definition.key === 'tally.on_form_response'
+          ? {
+              response: {
+                eventId: 'event-1',
+                createdAt: '2026-10-20T00:00:00Z',
+                formId: 'lead-form',
+                submissionId: 'submission-1',
+                responseId: 'response-1',
+                fields: [
+                  { key: 'name', type: 'INPUT_TEXT', label: 'Name', value: '李明' },
+                  { key: 'quantity', type: 'INPUT_NUMBER', label: 'Quantity', value: 3 },
+                  { key: 'notes', type: 'TEXTAREA', label: 'Notes', value: null },
+                ],
+              },
+            }
+          : Object.fromEntries(triggerOutputDefinitions(trigger).map((port) => [port.handle, sample(port.jsonSchema)])),
     }
   }),
 ]
 
 const timestamp = '2026-09-10T00:00:00.000Z'
-export function triggerDraft(
-  trigger: TriggerNode,
-  downstream = false,
-  inputDefs: readonly import('../../src/flow/common/change.ts').Port[] = [],
-): { flow: Flow; draft: Draft } {
+export function triggerDraft(trigger: TriggerNode, downstream = false): { flow: Flow; draft: Draft } {
   const flow: Flow = {
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -153,7 +175,6 @@ export function triggerDraft(
       modelVersion: currentFlowModelVersion,
       modules: {},
       document: {
-        inputDefs,
         bindings: {},
 
         graph: {

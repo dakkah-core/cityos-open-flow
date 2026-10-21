@@ -4,10 +4,11 @@ import type { ProjectedRunEvent } from '@oomol-lab/open-flow/run-events'
 import type { RuntimeCapabilityCall, RuntimeCapabilityResponse } from '@oomol-lab/open-flow/runtime-contract'
 import type { FlowRunOutcome, FlowRunResult, RunLaunch, TaskInvocation } from '@oomol-lab/open-flow/scheduler'
 import type { Logger } from 'pino'
-import type { ConnectorAccessContext, ConnectorHost } from '../deployment/connector.ts'
+import type { ConnectorAccessContext, ConnectorHost } from '../deployment/connector-contract.ts'
 import type { LlmHost } from '../deployment/llm.ts'
 import type { StoredRun } from '../storage/run-store.ts'
 import type { Store } from '../storage/store.ts'
+import type { RunControl } from './run-control.ts'
 
 import { normalizeConnectorRuntimeInputs } from '@oomol-lab/open-flow/connector-action'
 import { controlErrorCode } from '@oomol-lab/open-flow/control-api'
@@ -18,10 +19,11 @@ import { resolveAction } from '@oomol-lab/open-flow/runtime-contract'
 import * as Effect from 'effect/Effect'
 import { executeCode } from '../deployment/agent-code.ts'
 import { executeAgent } from '../deployment/agent.ts'
-import { checkCodeActions, checkCodePermissions, ConnectorTaskError } from '../deployment/connector.ts'
-import { executeOpenApi } from '../deployment/openapi.ts'
+import { assertConnectionNotDeferred, ConnectorTaskError } from '../deployment/connector-contract.ts'
+import { OpenApiTaskError, executeOpenApi } from '../deployment/openapi.ts'
 import { errorKind } from '../logger.ts'
-import { isolatedVmEngineDigest, IsolatedVmHost } from '../runtime/isolated-vm.ts'
+import { supportsIsolatedVmEngine, IsolatedVmHost } from '../runtime/isolated-vm.ts'
+import { checkCodeActions, checkCodePermissions } from './connector-capabilities.ts'
 
 const encoder = new TextEncoder()
 const nodeFailureCodes: ReadonlySet<string> = new Set([
@@ -29,6 +31,7 @@ const nodeFailureCodes: ReadonlySet<string> = new Set([
   'capability.invalid',
   'connector.access-invalid',
   'connector.access-required',
+  'connector.action-not-found',
   'connector.connection-required',
   'connector.input-invalid',
   'connector.indeterminate',
@@ -37,6 +40,15 @@ const nodeFailureCodes: ReadonlySet<string> = new Set([
   'llm.output-invalid',
   'llm.unavailable',
   'node.failed',
+  'node.input-invalid',
+  'webhook.response-status-invalid',
+  'webhook.response-headers-invalid',
+  'node.output-invalid',
+  'openapi.input-invalid',
+  'openapi.response-invalid',
+  'openapi.http-failed',
+  'openapi.indeterminate',
+  'openapi.limit-exceeded',
 ])
 
 type TaskErrorCode = 'capability.denied' | 'capability.invalid' | 'llm.output-invalid' | 'llm.unavailable'
@@ -44,10 +56,14 @@ type TaskErrorCode = 'capability.denied' | 'capability.invalid' | 'llm.output-in
 class TaskHostError extends Error {
   readonly code: TaskErrorCode
 
-  constructor(code: TaskErrorCode, message: string) {
+  readonly catchable: boolean
+  readonly retryable: boolean
+  constructor(code: TaskErrorCode, message: string, retryable = false, catchable = false) {
     super(message)
     this.code = code
     this.name = 'TaskHostError'
+    this.retryable = retryable
+    this.catchable = catchable
   }
 }
 
@@ -61,6 +77,7 @@ export class RunExecutor {
   readonly #logger: Logger
   readonly #runChanged: (flowId: string, runId: string) => void
   readonly #wakeMaintenance: () => void
+  readonly #invokeWorkflow: RunControl['invokeWorkflow']
 
   constructor(
     store: Store,
@@ -72,7 +89,9 @@ export class RunExecutor {
     logger: Logger,
     runChanged: (flowId: string, runId: string) => void,
     wakeMaintenance: () => void,
+    invokeWorkflow: RunControl['invokeWorkflow'],
   ) {
+    this.#invokeWorkflow = invokeWorkflow
     this.#store = store
     this.#isolatedVm = isolatedVm
     this.#resolveConnector = resolveConnector
@@ -104,7 +123,7 @@ export class RunExecutor {
     unknown
   > {
     return Effect.gen({ self: this }, function* () {
-      if (run.engineDigest != isolatedVmEngineDigest) {
+      if (!supportsIsolatedVmEngine(run.engineContract, run.engineDigest)) {
         return yield* Effect.fail(new Error('Fixed Run Engine implementation is not available.'))
       }
       const revisionDigest = yield* Effect.tryPromise({
@@ -241,7 +260,7 @@ export class RunExecutor {
           emit: async (event) => {
             if (event.type == 'run.started' && event.runId == run.runId) return
             const projected = await projectEvent(event)
-            if (projected != null) this.#store.runs.append(run.runId, projected)
+            if (projected != null && this.#store.runs.append(run.runId, projected)) this.#runChanged(run.flowId, run.runId)
           },
           flowId: run.flowId,
           ...launch,
@@ -282,14 +301,12 @@ export class RunExecutor {
                 message: JSON.stringify(data),
               })
               if (event != null) this.#store.runs.append(run.runId, event)
-            }).catch((error: unknown) => {
-              if (error instanceof ConnectorTaskError && error.code == 'connector.indeterminate') indeterminate = true
-              throw error
             })
           },
           projectFailure: (error) => {
-            if (error instanceof ConnectorTaskError) return { code: error.code, message: error.message }
-            if (error instanceof TaskHostError) return { code: error.code, message: error.message }
+            if (error instanceof ConnectorTaskError || error instanceof OpenApiTaskError) indeterminate ||= error.indeterminate
+            if (error instanceof ConnectorTaskError || error instanceof TaskHostError || error instanceof OpenApiTaskError)
+              return { code: error.code, message: error.message, retryable: error.retryable, catchable: error.catchable }
             return { code: 'node.failed', message: error instanceof Error ? error.message : String(error) }
           },
           runId: run.runId,
@@ -362,6 +379,8 @@ export class RunExecutor {
     const task = node.task
     const executor = task.executor
     switch (executor.kind) {
+      case 'workflow':
+        return this.#invokeWorkflow(run, invocation.nodeId, invocation.jobId, invocation.input, node, invocation.workflowRunId)
       case 'openapi':
         return executeOpenApi(executor, invocation.input, invocation.signal)
       case 'agent': {
@@ -402,6 +421,7 @@ export class RunExecutor {
         )
       }
       case 'connector':
+        assertConnectionNotDeferred(executor.connectionId)
         const connector = this.#resolveConnector()
         if (connector == null) throw new ConnectorTaskError('connector.unconfigured', 'Connector is not configured for this deployment.')
         return await connector.execute(
@@ -429,9 +449,9 @@ export class RunExecutor {
           })
         } catch {
           if (invocation.signal.aborted) throw invocation.signal.reason
-          throw new TaskHostError('llm.unavailable', 'The AI Decision request could not be completed.')
+          throw new TaskHostError('llm.unavailable', 'The AI Decision request could not be completed.', true, true)
         }
-        if (result.kind == 'failed') throw new TaskHostError(result.code, result.message)
+        if (result.kind == 'failed') throw new TaskHostError(result.code, result.message, result.retryable !== false, true)
         return result.value
       }
       case 'llm':
@@ -448,9 +468,9 @@ export class RunExecutor {
           })
         } catch {
           if (invocation.signal.aborted) throw invocation.signal.reason
-          throw new TaskHostError('llm.unavailable', 'The LLM request could not be completed.')
+          throw new TaskHostError('llm.unavailable', 'The LLM request could not be completed.', true, true)
         }
-        if (result.kind == 'failed') throw new TaskHostError(result.code, result.message)
+        if (result.kind == 'failed') throw new TaskHostError(result.code, result.message, result.retryable !== false, true)
         return result.value
     }
   }
@@ -469,6 +489,7 @@ export class RunExecutor {
       if (failure.code == 'capability.denied' || failure.code == 'capability.invalid') throw new TaskHostError(failure.code, failure.message)
       throw new ConnectorTaskError('connector.connection-required', failure.message)
     }
+    assertConnectionNotDeferred(payload.connectionId)
     const connector = this.#resolveConnector()
     if (connector == null) throw new ConnectorTaskError('connector.unconfigured', 'Connector is not configured for this deployment.')
     access = capabilities.some((capability) => 'mode' in capability && capability.mode == 'independent')

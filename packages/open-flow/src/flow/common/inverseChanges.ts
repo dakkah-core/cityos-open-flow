@@ -70,7 +70,7 @@ export function inverseFlowChanges(content: RevisionContent, operations: readonl
         const beforeNode = beforeGraph.nodes[operation.nodeId]!
         const afterNode = afterGraph.nodes[operation.nodeId]!
         if (beforeNode.kind === 'outputs') {
-          restore.push({ kind: 'flow.output-mappings.set', before: after.document.outputMappings, value: current.document.outputMappings })
+          restore.push({ kind: 'graph.node.replace', nodeId: operation.nodeId, before: afterNode, node: beforeNode })
         } else if (beforeNode.kind === 'condition' && afterNode.kind === 'condition') {
           restore.push({
             kind: 'graph.node.condition.set',
@@ -84,15 +84,6 @@ export function inverseFlowChanges(content: RevisionContent, operations: readonl
       case 'graph.trigger.sources.set':
         restore.push({ ...operation, before: operation.value, value: operation.before })
         break
-      case 'flow.output-defs.set':
-        restore.push({ ...operation, before: operation.value, value: operation.before })
-        break
-      case 'flow.output-mappings.set':
-        restore.push({ ...operation, before: operation.value, value: operation.before })
-        break
-      case 'flow.input-defs.set':
-        restore.push({ ...operation, before: operation.value, value: operation.before })
-        break
       case 'binding.target.set':
         restore.push({ ...operation, before: operation.value, value: operation.before })
         break
@@ -103,6 +94,10 @@ export function inverseFlowChanges(content: RevisionContent, operations: readonl
         restore.push({ ...operation, before: operation.value, value: operation.before })
         break
       case 'graph.node.field.set':
+        if (operation.field == 'retry') {
+          restore.push({ ...operation, before: operation.value, value: operation.before })
+          break
+        }
         restore.push({ ...operation, before: operation.value, value: operation.before })
         break
       case 'graph.node.task.ports.set':

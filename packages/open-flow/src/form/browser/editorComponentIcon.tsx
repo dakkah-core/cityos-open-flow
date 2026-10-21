@@ -16,8 +16,9 @@ export const editorComponentIcons = {
   array: 'i-lucide-light:brackets',
   json: 'i-lucide-light:file-json',
   null: 'i-lucide-light:circle-dashed',
-} as const satisfies Record<EditorComponent, string>
+  literal: 'i-lucide-light:equal',
+} as const satisfies Record<EditorComponent | 'literal', string>
 
-export function EditorComponentIcon({ component }: { component: EditorComponent }) {
+export function EditorComponentIcon({ component }: { component: EditorComponent | 'literal' }) {
   return <i aria-hidden="true" className={`${editorComponentIcons[component]} inline-block shrink-0 text-base`} />
 }

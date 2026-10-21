@@ -64,7 +64,7 @@ describe('WorkspaceStore', () => {
       },
     } as const
     const request = vi.fn(async (path: string) => {
-      if (path == '/v1/flows?limit=50&includeTotal=true') return Response.json({ flows: [flow], total: 1, version: 1 })
+      if (path == '/v1/flows?limit=50&includeTotal=true') return Response.json({ flows: [{ ...flow, referenceCount: 0 }], total: 1, version: 1 })
       if (path == `/v1/flows/${flow.flowId}/editor`) return Response.json({ ...editor, draft: sourceDraft })
       throw new Error(`Unexpected request: ${path}`)
     })
@@ -104,7 +104,7 @@ describe('WorkspaceStore', () => {
     } as const
     let operations: readonly unknown[] = []
     const request = vi.fn(async (path: string, init?: RequestInit) => {
-      if (path == '/v1/flows?limit=50&includeTotal=true') return Response.json({ flows: [flow], total: 1, version: 1 })
+      if (path == '/v1/flows?limit=50&includeTotal=true') return Response.json({ flows: [{ ...flow, referenceCount: 0 }], total: 1, version: 1 })
       if (path == `/v1/flows/${flow.flowId}/editor`) return Response.json({ ...editor, draft: sourceDraft })
       if (path == `/v1/flows/${flow.flowId}/draft/changes`) {
         operations = (JSON.parse(String(init?.body)) as { readonly operations: readonly unknown[] }).operations
@@ -126,7 +126,7 @@ describe('WorkspaceStore', () => {
         return Response.json({
           closureDigest: 'closure-1',
           diagnostics: [],
-          engineContract: 'open-flow-engine/v5',
+          engineContract: 'open-flow-engine/v6',
           flowId: flow.flowId,
           modelVersion: currentFlowModelVersion,
           revisionDigest: 'digest-2',
@@ -196,7 +196,9 @@ describe('WorkspaceStore', () => {
     const repairedFlow = { ...flow, draftRevisionId: 'revision-2' }
     const repairedDraft = { ...draft, parentRevisionId: draft.revisionId, revisionId: 'revision-2' }
     const request = vi.fn(async (path: string) => {
-      if (path == '/v1/flows?limit=50&includeTotal=true') return Response.json({ flows: [repaired ? repairedFlow : flow], total: 1, version: 1 })
+      if (path == '/v1/flows?limit=50&includeTotal=true')
+        return Response.json({ flows: [{ ...(repaired ? repairedFlow : flow), referenceCount: 0 }], total: 1, version: 1 })
+      if (path == `/v1/flows/${flow.flowId}`) return Response.json(repaired ? repairedFlow : flow)
       if (path == `/v1/flows/${flow.flowId}/editor`) {
         return repaired
           ? Response.json({ ...editor, flow: repairedFlow, draft: repairedDraft })
@@ -218,6 +220,7 @@ describe('WorkspaceStore', () => {
 
       expect(store.$.draft.value?.revisionId).toBe('revision-2')
       expect(store.$.workspaceLoadProblem.value).toBeUndefined()
+      expect(request.mock.calls.some(([path]) => path.startsWith('/v1/flows?'))).toBe(false)
     } finally {
       store.dispose()
     }
@@ -229,7 +232,8 @@ describe('WorkspaceStore', () => {
     const repairedFlow = { ...flow, draftRevisionId: 'revision-2' }
     const repairedDraft = { ...draft, parentRevisionId: draft.revisionId, revisionId: 'revision-2' }
     const request = vi.fn(async (path: string, init?: RequestInit) => {
-      if (path == '/v1/flows?limit=50&includeTotal=true') return Response.json({ flows: [flow], total: 1, version: 1 })
+      if (path == '/v1/flows?limit=50&includeTotal=true') return Response.json({ flows: [{ ...flow, referenceCount: 0 }], total: 1, version: 1 })
+      if (path == `/v1/flows/${flow.flowId}`) return Response.json(flow)
       if (path == `/v1/flows/${flow.flowId}/editor`) {
         return repaired
           ? Response.json({ ...editor, flow: repairedFlow, draft: repairedDraft })
@@ -266,8 +270,9 @@ describe('WorkspaceStore', () => {
     let repairRequests = 0
     const request = vi.fn(async (path: string, init?: RequestInit) => {
       if (path == '/v1/flows?limit=50&includeTotal=true') {
-        return Response.json({ flows: [committed ? repairedFlow : flow], total: 1, version: 1 })
+        return Response.json({ flows: [{ ...(committed ? repairedFlow : flow), referenceCount: 0 }], total: 1, version: 1 })
       }
+      if (path == `/v1/flows/${flow.flowId}`) return Response.json(committed ? repairedFlow : flow)
       if (path == `/v1/flows/${flow.flowId}/editor`) {
         return committed
           ? Response.json({ ...editor, flow: repairedFlow, draft: repairedDraft })
@@ -299,6 +304,35 @@ describe('WorkspaceStore', () => {
     }
   })
 
+  it.each(['resolved', 'failed'] as const)('ignores a %s repair lookup after leaving the Flow', async (result) => {
+    const client = new WorkbenchClient(vi.fn())
+    const lookup = Promise.withResolvers<Awaited<ReturnType<WorkbenchClient['getFlow']>>>()
+    const getFlow = vi.spyOn(client, 'getFlow').mockReturnValue(lookup.promise)
+    const repair = vi.spyOn(client, 'repairDraft')
+    vi.spyOn(client, 'getEditor').mockRejectedValue(new ApiError(409, 'flow.repair-required', 'Repair required.'))
+    vi.spyOn(client, 'listFlows').mockResolvedValue({ flows: [], version: 1 })
+    const notice = vi.fn()
+    const store = new WorkspaceStore(client, notice)
+    try {
+      await store.start(flow.flowId)
+      const repairing = store.repairWorkspace()
+      await vi.waitFor(() => expect(getFlow).toHaveBeenCalledExactlyOnceWith(flow.flowId))
+      await store.selectFlow(undefined)
+      if (result == 'resolved') lookup.resolve(flow)
+      else lookup.reject(new Error('Lookup failed.'))
+      await repairing
+
+      expect(repair).not.toHaveBeenCalled()
+      expect(store.$.flowId.value).toBeUndefined()
+      expect(store.$.workspaceRepairing.value).toBe(false)
+      expect(store.$.workspaceLoadProblem.value).toBeUndefined()
+      expect(notice).not.toHaveBeenCalled()
+    } finally {
+      lookup.resolve(flow)
+      store.dispose()
+    }
+  })
+
   it('keeps the loaded Flow catalog visible while a notification refreshes it', async () => {
     const refreshed = Promise.withResolvers<Response>()
     const refreshRequested = Promise.withResolvers<void>()
@@ -307,7 +341,7 @@ describe('WorkspaceStore', () => {
     const request = vi.fn(async (path: string) => {
       if (path != '/v1/flows?limit=50&includeTotal=true') throw new Error(`Unexpected request: ${path}`)
       flowLists += 1
-      if (flowLists == 1) return Response.json({ flows: [flow], nextCursor: 'old', total: 1, version: 1 })
+      if (flowLists == 1) return Response.json({ flows: [{ ...flow, referenceCount: 0 }], nextCursor: 'old', total: 1, version: 1 })
       refreshRequested.resolve()
       return await refreshed.promise
     })
@@ -328,7 +362,7 @@ describe('WorkspaceStore', () => {
 
       expect(store.$.flowLoading.value).toBe(false)
       expect(store.$.flowRefreshing.value).toBe(true)
-      expect(store.$.flows.value).toEqual([flow])
+      expect(store.$.flows.value).toEqual([{ ...flow, referenceCount: 0 }])
       await store.loadMoreFlows()
       expect(request).toHaveBeenCalledTimes(2)
 
@@ -349,7 +383,11 @@ describe('WorkspaceStore', () => {
     const request = vi.fn(async (path: string) => {
       if (path == '/v1/flows?limit=50&includeTotal=true') {
         const refreshing = request.mock.calls.length > 1
-        return Response.json(refreshing ? { flows: [refreshedFlow], total: 1, version: 1 } : { flows: [flow], nextCursor: 'old', total: 2, version: 1 })
+        return Response.json(
+          refreshing
+            ? { flows: [{ ...refreshedFlow, referenceCount: 0 }], total: 1, version: 1 }
+            : { flows: [{ ...flow, referenceCount: 0 }], nextCursor: 'old', total: 2, version: 1 },
+        )
       }
       if (path == '/v1/flows?cursor=old&limit=50') {
         pageRequested.resolve()
@@ -372,11 +410,11 @@ describe('WorkspaceStore', () => {
       const loadingMore = store.loadMoreFlows()
       await pageRequested.promise
       catalogListener?.()
-      await vi.waitFor(() => expect(store.$.flows.value).toEqual([refreshedFlow]))
+      await vi.waitFor(() => expect(store.$.flows.value).toEqual([{ ...refreshedFlow, referenceCount: 0 }]))
 
-      page.resolve(Response.json({ flows: [staleFlow], total: 2, version: 1 }))
+      page.resolve(Response.json({ flows: [{ ...staleFlow, referenceCount: 0 }], total: 2, version: 1 }))
       await loadingMore
-      expect(store.$.flows.value).toEqual([refreshedFlow])
+      expect(store.$.flows.value).toEqual([{ ...refreshedFlow, referenceCount: 0 }])
       expect(store.$.flowLoadingMore.value).toBe(false)
     } finally {
       store.dispose()
@@ -390,7 +428,7 @@ describe('WorkspaceStore', () => {
     const request = vi.fn(async (path: string, init?: RequestInit) => {
       if (path == '/v1/flows?limit=50&includeTotal=true') {
         flowLists += 1
-        return Response.json(flowLists == 1 ? { flows: [], total: 0, version: 1 } : { flows: [flow], total: 1, version: 1 })
+        return Response.json(flowLists == 1 ? { flows: [], total: 0, version: 1 } : { flows: [{ ...flow, referenceCount: 0 }], total: 1, version: 1 })
       }
       if (path == '/v1/flows' && init?.method == 'POST') return await created.promise
       throw new Error(`Unexpected request: ${path}`)
@@ -411,11 +449,11 @@ describe('WorkspaceStore', () => {
       await vi.waitFor(() => expect(request).toHaveBeenCalledWith('/v1/flows', expect.objectContaining({ method: 'POST' })))
 
       catalogListener?.()
-      await vi.waitFor(() => expect(store.$.flows.value).toEqual([flow]))
+      await vi.waitFor(() => expect(store.$.flows.value).toEqual([{ ...flow, referenceCount: 0 }]))
       created.resolve(Response.json(flow, { status: 201 }))
       await expect(creating).resolves.toEqual(flow)
 
-      expect(store.$.flows.value).toEqual([flow])
+      expect(store.$.flows.value).toEqual([{ ...flow, referenceCount: 0 }])
       expect(store.$.flowTotal.value).toBe(1)
     } finally {
       store.dispose()
@@ -445,7 +483,7 @@ describe('WorkspaceStore', () => {
     } as const
     let changeBody: { readonly operations: readonly unknown[] } | undefined
     const request = vi.fn(async (path: string, init?: RequestInit) => {
-      if (path == '/v1/flows?limit=50&includeTotal=true') return Response.json({ flows: [flow], total: 1, version: 1 })
+      if (path == '/v1/flows?limit=50&includeTotal=true') return Response.json({ flows: [{ ...flow, referenceCount: 0 }], total: 1, version: 1 })
       if (path == `/v1/flows/${flow.flowId}/editor`) return Response.json({ ...editor, draft: sourceDraft })
       if (path == `/v1/flows/${flow.flowId}/presentation`) {
         if (init?.method == 'PUT') return Response.json({ revision: 2, updatedAt: timestamp, value: {}, version: 1 })
@@ -471,7 +509,7 @@ describe('WorkspaceStore', () => {
         return Response.json({
           closureDigest: 'closure-1',
           diagnostics: [],
-          engineContract: 'open-flow-engine/v5',
+          engineContract: 'open-flow-engine/v6',
           flowId: flow.flowId,
           modelVersion: currentFlowModelVersion,
           revisionDigest: path.includes('revision-2') ? 'digest-2' : sourceDraft.digest,
@@ -546,7 +584,7 @@ describe('WorkspaceStore', () => {
     let presentationRevision = 1
     let presentation: Readonly<Record<string, unknown>> | undefined
     const request = vi.fn(async (path: string, init?: RequestInit) => {
-      if (path == '/v1/flows?limit=50&includeTotal=true') return Response.json({ flows: [flow], total: 1, version: 1 })
+      if (path == '/v1/flows?limit=50&includeTotal=true') return Response.json({ flows: [{ ...flow, referenceCount: 0 }], total: 1, version: 1 })
       if (path == `/v1/flows/${flow.flowId}/editor`) return Response.json({ ...editor, draft: sourceDraft })
       if (path == `/v1/flows/${flow.flowId}/draft/changes`) {
         changes += 1
@@ -575,7 +613,7 @@ describe('WorkspaceStore', () => {
         return Response.json({
           closureDigest: 'closure-1',
           diagnostics: [],
-          engineContract: 'open-flow-engine/v5',
+          engineContract: 'open-flow-engine/v6',
           flowId: flow.flowId,
           modelVersion: currentFlowModelVersion,
           revisionDigest: revisionId.replace('revision', 'digest'),
@@ -617,7 +655,7 @@ describe('WorkspaceStore', () => {
       actorId: 'actor-1',
       closureDigest: 'closure-1',
       createdAt: timestamp,
-      engineContract: 'open-flow-engine/v5',
+      engineContract: 'open-flow-engine/v6',
       flowId: flow.flowId,
       modelVersion: currentFlowModelVersion,
       operation: 'publish',
@@ -628,7 +666,7 @@ describe('WorkspaceStore', () => {
       version: 1,
     } as const
     const request = vi.fn(async (path: string, init?: RequestInit) => {
-      if (path == '/v1/flows?limit=50&includeTotal=true') return Response.json({ flows: [flow], total: 1, version: 1 })
+      if (path == '/v1/flows?limit=50&includeTotal=true') return Response.json({ flows: [{ ...flow, referenceCount: 0 }], total: 1, version: 1 })
       if (path == `/v1/flows/${flow.flowId}/editor`)
         return Response.json({ ...editor, live: { ...editor.live, hasUnpublishedChanges: false, publication, revision: 1, status: 'runnable' } })
       if (path == `/v1/flows/${flow.flowId}/live`) {
@@ -743,7 +781,7 @@ describe('WorkspaceStore', () => {
       if (path == '/v1/flows?limit=50&includeTotal=true') {
         flowLists += 1
         if (flowLists == 2) catalogReloaded.resolve()
-        return Response.json({ flows: [flow], total: 1, version: 1 })
+        return Response.json({ flows: [{ ...flow, referenceCount: 0 }], total: 1, version: 1 })
       }
       if (path == `/v1/flows/${flow.flowId}/editor`) {
         draftRequested.resolve()
@@ -753,7 +791,7 @@ describe('WorkspaceStore', () => {
         return Response.json({
           closureDigest: 'closure-1',
           diagnostics: [],
-          engineContract: 'open-flow-engine/v5',
+          engineContract: 'open-flow-engine/v6',
           flowId: flow.flowId,
           modelVersion: currentFlowModelVersion,
           revisionDigest: draft.digest,
@@ -775,7 +813,8 @@ describe('WorkspaceStore', () => {
     const store = new WorkspaceStore(client, vi.fn())
 
     try {
-      const started = store.start(flow.flowId)
+      await store.start()
+      const started = store.selectFlow(flow.flowId)
       await draftRequested.promise
       catalogListener?.()
       await catalogReloaded.promise
@@ -796,7 +835,7 @@ function checked(revisionId: string): Response {
   return Response.json({
     closureDigest: `closure-${revisionId}`,
     diagnostics: [],
-    engineContract: 'open-flow-engine/v5',
+    engineContract: 'open-flow-engine/v6',
     flowId: flow.flowId,
     modelVersion: currentFlowModelVersion,
     revisionDigest: `digest-${revisionId}`,
@@ -806,15 +845,102 @@ function checked(revisionId: string): Response {
   })
 }
 
-it('loads the catalog before its subscription settles while the editor waits for its own subscription', async () => {
+it('shows a 300 ms editor response without waiting for a 5 second Flow subscription', async () => {
+  vi.useFakeTimers()
+  const ready = Promise.withResolvers<void>()
+  const next = { ...draft, revisionId: 'revision-2', digest: 'digest-2' }
+  const request = vi.fn(async (path: string) => {
+    if (path.endsWith('/editor')) {
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      return Response.json(editor)
+    }
+    if (path.endsWith('/draft/sync')) return Response.json({ draft: next, kind: 'snapshot', version: 1 })
+    if (path.endsWith('/check')) return checked(path.includes('revision-2') ? next.revisionId : draft.revisionId)
+    throw new Error(path)
+  })
+  const store = new WorkspaceStore(new WorkbenchClient(request, () => ({ ready: ready.promise, stop: () => ready.resolve() })), vi.fn())
+  try {
+    setTimeout(() => ready.resolve(), 5_000)
+    const loading = store.selectFlow(flow.flowId)
+    await vi.advanceTimersByTimeAsync(300)
+    expect(store.$.workspaceLoading.value).toBe(false)
+    expect(store.$.draft.value).toEqual(draft)
+    await expect(loading).resolves.toBe(true)
+    expect(request.mock.calls.filter(([path]) => path.endsWith('/draft/sync'))).toHaveLength(0)
+
+    await vi.advanceTimersByTimeAsync(4_700)
+    expect(store.$.draft.value).toEqual(next)
+    expect(store.$.workspaceLoading.value).toBe(false)
+    expect(request.mock.calls.filter(([path]) => path.endsWith('/draft/sync'))).toHaveLength(1)
+  } finally {
+    store.dispose()
+    await vi.runAllTimersAsync()
+    vi.useRealTimers()
+  }
+})
+
+it('catches up when the Flow subscription becomes ready during the initial read', async () => {
+  const ready = Promise.withResolvers<void>()
+  const response = Promise.withResolvers<Response>()
+  const next = { ...draft, revisionId: 'revision-2', digest: 'digest-2' }
+  const request = vi.fn(async (path: string) => {
+    if (path.endsWith('/editor')) return response.promise
+    if (path.endsWith('/draft/sync')) return Response.json({ draft: next, kind: 'snapshot', version: 1 })
+    if (path.endsWith('/check')) return checked(path.includes('revision-2') ? next.revisionId : draft.revisionId)
+    throw new Error(path)
+  })
+  const store = new WorkspaceStore(new WorkbenchClient(request, () => ({ ready: ready.promise, stop: () => ready.resolve() })), vi.fn())
+  try {
+    const loading = store.selectFlow(flow.flowId)
+    await vi.waitFor(() => expect(request).toHaveBeenCalledOnce())
+    ready.resolve()
+    await ready.promise
+    expect(request).toHaveBeenCalledOnce()
+    response.resolve(Response.json(editor))
+    await loading
+    await vi.waitFor(() => expect(store.$.draft.value).toEqual(next))
+    expect(store.$.workspaceLoading.value).toBe(false)
+    expect(request.mock.calls.filter(([path]) => path.endsWith('/draft/sync'))).toHaveLength(1)
+  } finally {
+    ready.resolve()
+    response.resolve(Response.json(editor))
+    store.dispose()
+  }
+})
+
+it('keeps a readable editor and reports a failed initial subscription', async () => {
+  const ready = Promise.withResolvers<void>()
+  const stop = vi.fn()
+  const notice = vi.fn()
+  const request = vi.fn(async (path: string) => {
+    if (path.endsWith('/editor')) return Response.json(editor)
+    if (path.endsWith('/check')) return checked(draft.revisionId)
+    throw new Error(path)
+  })
+  const store = new WorkspaceStore(new WorkbenchClient(request, () => ({ ready: ready.promise, stop })), notice)
+  try {
+    await store.selectFlow(flow.flowId)
+    ready.reject(new Error('Subscription failed'))
+    await vi.waitFor(() => expect(notice).toHaveBeenCalledWith(expect.objectContaining({ kind: 'error' })))
+    expect(store.$.draft.value).toEqual(draft)
+    expect(store.$.workspaceLoading.value).toBe(false)
+    expect(store.$.workspaceLoadFailed.value).toBe(false)
+    expect(stop).toHaveBeenCalledOnce()
+  } finally {
+    store.dispose()
+  }
+})
+
+it('opens a Flow from the catalog without waiting for either subscription', async () => {
   const catalogReady = Promise.withResolvers<void>()
   const flowReady = Promise.withResolvers<void>()
   const stopFlow = vi.fn()
   const stopCatalog = vi.fn()
   const request = vi.fn(async (path: string) => {
     if (path == `/v1/flows/${flow.flowId}/editor`) return Response.json(editor)
+    if (path.endsWith('/draft/sync')) return Response.json({ draft, kind: 'snapshot', version: 1 })
     if (path.endsWith('/check')) return checked(draft.revisionId)
-    if (path == '/v1/flows?limit=50&includeTotal=true') return Response.json({ flows: [flow], version: 1 })
+    if (path == '/v1/flows?limit=50&includeTotal=true') return Response.json({ flows: [{ ...flow, referenceCount: 0 }], version: 1 })
     throw new Error(path)
   })
   const store = new WorkspaceStore(
@@ -826,20 +952,20 @@ it('loads the catalog before its subscription settles while the editor waits for
     vi.fn(),
   )
   try {
-    const loading = store.start(flow.flowId)
-    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1))
-    expect(request.mock.calls[0]?.[0]).toBe('/v1/flows?limit=50&includeTotal=true')
-    flowReady.resolve()
+    await store.start()
+    const loading = store.selectFlow(flow.flowId)
     await loading
     expect(store.$.draft.value).toEqual(draft)
+    expect(store.$.workspaceLoading.value).toBe(false)
     expect(request.mock.calls.map(([path]) => path)).toEqual([
       '/v1/flows?limit=50&includeTotal=true',
       `/v1/flows/${flow.flowId}/editor`,
       `/v1/flows/${flow.flowId}/revisions/${draft.revisionId}/check`,
     ])
+    flowReady.resolve()
+    await vi.waitFor(() => expect(request.mock.calls.filter(([path]) => path.endsWith('/draft/sync'))).toHaveLength(1))
     catalogReady.resolve()
-    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(4))
-    expect(request.mock.calls[3]?.[0]).toBe('/v1/flows?limit=50&includeTotal=true')
+    await vi.waitFor(() => expect(request.mock.calls.filter(([path]) => path.startsWith('/v1/flows?'))).toHaveLength(2))
   } finally {
     catalogReady.resolve()
     flowReady.resolve()
@@ -859,14 +985,14 @@ it.each(['connection', 'initial read'])('does not refresh a disposed workspace t
     const started = store.start()
     await vi.waitFor(() => expect(request).toHaveBeenCalledOnce())
     if (phase == 'connection') {
-      page.resolve(Response.json({ flows: [flow], version: 1 }))
+      page.resolve(Response.json({ flows: [{ ...flow, referenceCount: 0 }], version: 1 }))
       await started
     } else {
       ready.resolve()
       await ready.promise
     }
     store.dispose()
-    page.resolve(Response.json({ flows: [flow], version: 1 }))
+    page.resolve(Response.json({ flows: [{ ...flow, referenceCount: 0 }], version: 1 }))
     await started
     await ready.promise
     expect(request).toHaveBeenCalledOnce()
@@ -885,7 +1011,7 @@ it('keeps a notification refresh when an older initial catalog response arrives 
   const updated = { ...flow, name: 'Updated' }
   const request = vi.fn(async () => {
     if (request.mock.calls.length == 1) return initial.promise
-    return Response.json({ flows: [updated], version: 1 })
+    return Response.json({ flows: [{ ...updated, referenceCount: 0 }], version: 1 })
   })
   const store = new WorkspaceStore(
     new WorkbenchClient(request, undefined, (listener) => {
@@ -899,12 +1025,12 @@ it('keeps a notification refresh when an older initial catalog response arrives 
     await vi.waitFor(() => expect(request).toHaveBeenCalledOnce())
     ready.resolve()
     changed?.()
-    await vi.waitFor(() => expect(store.$.flows.value).toEqual([updated]))
+    await vi.waitFor(() => expect(store.$.flows.value).toEqual([{ ...updated, referenceCount: 0 }]))
 
-    initial.resolve(Response.json({ flows: [flow], version: 1 }))
+    initial.resolve(Response.json({ flows: [{ ...flow, referenceCount: 0 }], version: 1 }))
     await started
     await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(3))
-    expect(store.$.flows.value).toEqual([updated])
+    expect(store.$.flows.value).toEqual([{ ...updated, referenceCount: 0 }])
     expect(store.$.flowLoading.value).toBe(false)
   } finally {
     ready.resolve()
@@ -951,7 +1077,7 @@ it.each(['subscription', 'snapshot'])('discards a Flow left while awaiting its %
   const response = Promise.withResolvers<Response>()
   let listener: ((event?: FlowChangeEvent) => void) | undefined
   const stop = vi.fn(() => ready.resolve())
-  const request = vi.fn(async () => response.promise)
+  const request = vi.fn(async (path: string) => (path.startsWith('/v1/flows?') ? Response.json({ flows: [], version: 1 }) : response.promise))
   const store = new WorkspaceStore(
     new WorkbenchClient(request, (_id, changed) => {
       listener = changed
@@ -961,10 +1087,8 @@ it.each(['subscription', 'snapshot'])('discards a Flow left while awaiting its %
   )
   try {
     const loading = store.selectFlow(flow.flowId)
-    if (phase == 'snapshot') {
-      ready.resolve()
-      await vi.waitFor(() => expect(request).toHaveBeenCalledOnce())
-    }
+    if (phase == 'snapshot') ready.resolve()
+    await vi.waitFor(() => expect(request).toHaveBeenCalledOnce())
     await store.selectFlow(undefined)
     response.resolve(Response.json(editor))
     await expect(loading).resolves.toBe(false)
@@ -972,7 +1096,7 @@ it.each(['subscription', 'snapshot'])('discards a Flow left while awaiting its %
     expect(stop).toHaveBeenCalledOnce()
     expect(store.$.draft.value).toBeUndefined()
     expect(store.$.flowId.value).toBeUndefined()
-    expect(request).toHaveBeenCalledTimes(phase == 'snapshot' ? 1 : 0)
+    expect(request.mock.calls.filter(([path]) => path.endsWith('/editor'))).toHaveLength(1)
   } finally {
     store.dispose()
   }
@@ -1012,7 +1136,7 @@ it('saves queued positions and viewport through a catalog refresh and restores t
   const store = new WorkspaceStore(client, vi.fn())
   let saved = editor.presentation as import('../api.ts').Presentation
   vi.spyOn(client, 'getEditor').mockImplementation(async () => ({ ...editor, presentation: saved }))
-  vi.spyOn(client, 'listFlows').mockResolvedValue({ flows: [flow], version: 1 })
+  vi.spyOn(client, 'listFlows').mockResolvedValue({ flows: [{ ...flow, referenceCount: 0 }], version: 1 })
   const first = Promise.withResolvers<void>()
   const started = Promise.withResolvers<void>()
   const update = vi.spyOn(client, 'updatePresentation').mockImplementation(async (_flowId, expected, value) => {
@@ -1059,7 +1183,7 @@ it.each(['unchanged', 'resolved', 'failed'] as const)('retains diagnostics throu
   const check = (revisionId: string, diagnostics = [diagnostic]) => ({
     closureDigest: `closure-${revisionId}`,
     diagnostics,
-    engineContract: 'open-flow-engine/v5',
+    engineContract: 'open-flow-engine/v6',
     flowId: flow.flowId,
     modelVersion: currentFlowModelVersion,
     revisionDigest: `digest-${revisionId}`,
@@ -1079,7 +1203,7 @@ it.each(['unchanged', 'resolved', 'failed'] as const)('retains diagnostics throu
     await store.selectFlow(flow.flowId)
     await vi.waitFor(() => expect(store.$.diagnostics.value?.diagnostics).toEqual([diagnostic]))
     const previous = store.$.diagnostics.value
-    const changing = store.saveNodeTitle('value', 'Renamed input')
+    const changing = store.nodes.saveNodeTitle('value', 'Renamed input')
     expect(store.$.diagnostics.value).toBe(previous)
     saved.resolve(Response.json({ revision: { ...draft, revisionId: 'revision-2', parentRevisionId: 'revision-1' }, version: 1 }))
     await changing
@@ -1142,14 +1266,14 @@ it('repairs the persisted title of an already upgraded Start when opening in Chi
     ...draft,
     content: {
       ...draft.content,
-      document: { inputDefs: parameters, bindings: {}, graph: { nodes: { start: { kind: 'start', name: 'Manual trigger' } }, edges: [] } },
+      document: { bindings: {}, graph: { nodes: { start: { kind: 'start', name: 'Manual trigger', inputDefs: parameters } }, edges: [] } },
     },
   } as import('../api.ts').Draft
   const original = structuredClone(head)
   const entered = Promise.withResolvers<void>()
   const release = Promise.withResolvers<void>()
   const client = new WorkbenchClient(vi.fn())
-  vi.spyOn(client, 'listFlows').mockResolvedValue({ flows: [flow], total: 1, version: 1 })
+  vi.spyOn(client, 'listFlows').mockResolvedValue({ flows: [{ ...flow, referenceCount: 0 }], total: 1, version: 1 })
   vi.spyOn(client, 'getEditor').mockImplementation(async () => ({ ...editor, flow: { ...flow, draftRevisionId: head.revisionId }, draft: head }))
   const upgrades = vi.spyOn(client, 'upgradeDraft')
   const writes = vi.spyOn(client, 'changeDraft').mockImplementation(async (_flowId, expectedRevisionId, operations) => {
@@ -1168,7 +1292,7 @@ it('repairs the persisted title of an already upgraded Start when opening in Chi
   vi.spyOn(client, 'checkFlow').mockResolvedValue({
     closureDigest: 'digest',
     diagnostics: [],
-    engineContract: 'open-flow-engine/v5',
+    engineContract: 'open-flow-engine/v6',
     flowId: flow.flowId,
     modelVersion: currentFlowModelVersion,
     revisionDigest: 'digest',
@@ -1187,7 +1311,7 @@ it('repairs the persisted title of an already upgraded Start when opening in Chi
     expect(store.$.workspaceLoading.value).toBe(false)
     expect(upgrades).not.toHaveBeenCalled()
     expect(writes).toHaveBeenCalledTimes(1)
-    expect(head.content.document.graph.nodes.start).toEqual({ kind: 'start', name: '开始' })
+    expect(head.content.document.graph.nodes.start).toEqual({ ...original.content.document.graph.nodes.start, name: '开始' })
     expect(original.content.document.graph.nodes.start?.name).toBe('Manual trigger')
     const displayed = designerGraph(store.$.draft.value, {}, [], {}, {}, i18n.t)
     expect(displayed.nodes.find((node) => node.id == 'start')?.title).toBe('开始')
@@ -1218,7 +1342,7 @@ it('upgrades legacy manual nodes before editing and rereads a conflicting Draft 
   const release = Promise.withResolvers<void>()
   const expectedHeads: string[] = []
   const client = new WorkbenchClient(vi.fn())
-  vi.spyOn(client, 'listFlows').mockResolvedValue({ flows: [flow], total: 1, version: 1 })
+  vi.spyOn(client, 'listFlows').mockResolvedValue({ flows: [{ ...flow, referenceCount: 0 }], total: 1, version: 1 })
   vi.spyOn(client, 'getEditor').mockImplementation(async () => ({ ...editor, flow: { ...flow, draftRevisionId: head.revisionId }, draft: head }))
   vi.spyOn(client, 'upgradeDraft').mockImplementation(async (_flowId, expectedRevisionId) => {
     expectedHeads.push(expectedRevisionId)
@@ -1252,7 +1376,7 @@ it('upgrades legacy manual nodes before editing and rereads a conflicting Draft 
         ...head.content,
         document: {
           ...head.content.document,
-          graph: { ...head.content.document.graph, nodes: { ...head.content.document.graph.nodes, legacy: { kind: 'start', name: 'Start' } } },
+          graph: { ...head.content.document.graph, nodes: { ...head.content.document.graph.nodes, legacy: { inputDefs: [], kind: 'start', name: 'Start' } } },
         },
       },
     }
@@ -1262,7 +1386,7 @@ it('upgrades legacy manual nodes before editing and rereads a conflicting Draft 
   vi.spyOn(client, 'checkFlow').mockResolvedValue({
     closureDigest: 'digest',
     diagnostics: [],
-    engineContract: 'open-flow-engine/v5',
+    engineContract: 'open-flow-engine/v6',
     flowId: flow.flowId,
     modelVersion: currentFlowModelVersion,
     revisionDigest: 'digest',
@@ -1280,11 +1404,40 @@ it('upgrades legacy manual nodes before editing and rereads a conflicting Draft 
     await opening
     expect(expectedHeads).toEqual(['revision-1', 'revision-concurrent'])
     expect(store.$.draft.value?.revisionId).toBe('revision-upgraded')
-    expect(store.$.draft.value?.content.document.graph.nodes.legacy).toEqual({ kind: 'start', name: 'Start' })
+    expect(store.$.draft.value?.content.document.graph.nodes.legacy).toEqual({ inputDefs: [], kind: 'start', name: 'Start' })
     expect(store.$.draft.value?.content.document.graph.nodes.value).toMatchObject({ values: [{ handle: 'message', value: 'concurrent' }] })
     expect(store.$.workspaceLoading.value).toBe(false)
   } finally {
     release.resolve()
+    store.dispose()
+  }
+})
+
+it('lists other workflow targets across pages using only list metadata', async () => {
+  const client = new WorkbenchClient(vi.fn())
+  const store = new WorkspaceStore(client, vi.fn())
+  vi.spyOn(client, 'getEditor').mockResolvedValue(editor)
+  const list = vi
+    .spyOn(client, 'listFlows')
+    .mockResolvedValueOnce({ version: 1, flows: [{ ...flow, referenceCount: 0 }], nextCursor: 'next' })
+    .mockResolvedValueOnce({
+      version: 1,
+      flows: [
+        { ...flow, referenceCount: 0, flowId: 'disabled', live: { hasStart: true, enabled: false, publicationId: 'p1', revisionId: 'r1' } },
+        { ...flow, referenceCount: 0, flowId: 'ready', live: { hasStart: true, enabled: true, publicationId: 'p2', revisionId: 'r2' } },
+      ],
+    })
+  const contract = vi.spyOn(client, 'getWorkflowContract')
+  try {
+    await store.selectFlow(flow.flowId)
+    expect(await store.listWorkflowTargets()).toEqual([
+      { flowId: 'disabled', name: flow.name, problem: 'disabled' },
+      { flowId: 'ready', name: flow.name, problem: null },
+    ])
+    expect(list).toHaveBeenCalledTimes(2)
+    expect(list).toHaveBeenLastCalledWith({ cursor: 'next', limit: 100, signal: undefined })
+    expect(contract).not.toHaveBeenCalled()
+  } finally {
     store.dispose()
   }
 })

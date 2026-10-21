@@ -1,3 +1,4 @@
+import type { EventSource } from '../../../../control/common/api.ts'
 import type { AgentInput, AgentTool, ManagedTaskDefinition } from '../../../../flow/common/change.ts'
 import type {
   ChangeOperation,
@@ -16,13 +17,15 @@ import type { ConnectorActionView } from '../connectionCatalog.ts'
 import type { RevisionView } from '../revisionView.ts'
 
 import { dequal } from 'dequal/lite'
+import { isJsonObject } from '../../../../base/common/json.ts'
 import { connectorOutputMode } from '../../../../connector/common/actionSchema.ts'
-import { nextNodeName, normalizeNodeName, applyFlowChanges as reduceFlowChanges } from '../../../../flow/common/change.ts'
+import catalog from '../../../../event-source/common/catalog.generated.json' with { type: 'json' }
+import { isTriggerNode, nextNodeName, normalizeNodeName, applyFlowChanges as reduceFlowChanges } from '../../../../flow/common/change.ts'
 import { otherwiseOutput } from '../../../../flow/common/condition.ts'
-import { fixedInputValue } from '../../../../flow/common/inputValue.ts'
+import { fixedInputValue, inputValue } from '../../../../flow/common/inputValue.ts'
 import {
   cleanVariableBindings,
-  updateFlowOutputDefs,
+  updateOutputsDefs,
   renameFlowOutputSources,
   createApproval,
   createAgentTask,
@@ -40,15 +43,69 @@ import {
   updateSettings,
   setInputValue as setGraphInputValue,
   setInputVariable as setGraphInputVariable,
+  setTriggerConnection as changeTriggerConnection,
+  updateTriggerConfig as changeTriggerConfig,
 } from '../../../../flow/common/nodeChanges.ts'
 import { remapInputMappings, renamedPort, renameOutputMapping } from '../../../../flow/common/portChanges.ts'
 import { renamePromptInput } from '../../../../flow/common/promptTemplate.ts'
 import { valueForEditor } from '../../../../form/common/editorComponent.ts'
+import { withWorkflowTask } from '../../../../workflow/common/workflow.ts'
+import { feishuResourceKind, supportsFeishuChatFilter } from './feishuEventConfig.ts'
 
 export type FlowChanges = readonly ChangeOperation[]
 
 export function applyFlowChanges(draft: Draft, changes: FlowChanges): Draft {
   return { ...draft, content: reduceFlowChanges(draft.content, changes) }
+}
+
+export function setTriggerEventSource(revision: RevisionView, triggerId: string, source: EventSource): FlowChanges | undefined {
+  const trigger = revision.graph().nodes[triggerId]
+  if (trigger?.kind != 'integration' || !catalog.some((entry) => entry.key === trigger.definition.key) || source.provider != trigger.definition.provider) return
+  const content = revision.revision.content
+  const changes = changeTriggerConnection(content, triggerId, source.connectionId)
+  if (changes == null) return
+  const changed = inputValue(trigger.config.sourceId, undefined) != source.sourceId
+  return [
+    ...changes,
+    ...(changeTriggerConfig(content, triggerId, 'sourceId', source.sourceId) ?? []),
+    ...['eventTypes', 'resource', 'chatIds', 'channelIds'].flatMap((handle): readonly ChangeOperation[] => {
+      if (trigger.definition.configInputs.some((input) => 'handle' in input && input.handle === handle))
+        return changed ? (changeTriggerConfig(content, triggerId, handle, undefined) ?? []) : []
+      return Object.hasOwn(trigger.config, handle)
+        ? [{ kind: 'graph.trigger.config.set', nodeId: triggerId, name: handle, before: trigger.config[handle], value: undefined }]
+        : []
+    }),
+  ]
+}
+
+export function updateTriggerConfig(revision: RevisionView, triggerId: string, name: string, value: JsonValue | undefined): FlowChanges | undefined {
+  const content = revision.revision.content
+  let changes = changeTriggerConfig(content, triggerId, name, value)
+  if (changes == null) return
+  const trigger = revision.graph().nodes[triggerId]
+  if (changes.length > 0 && trigger?.kind == 'integration' && trigger.definition.key == 'feishu_app_bot.on_event' && name == 'eventTypes') {
+    const events = Array.isArray(value) ? value.filter((item): item is string => typeof item == 'string') : []
+    if (!supportsFeishuChatFilter(events)) changes = [...changes, ...(changeTriggerConfig(content, triggerId, 'chatIds', undefined) ?? [])]
+    const resource = inputValue(trigger.config.resource, undefined)
+    if (isJsonObject(resource) && resource.kind != feishuResourceKind(events)) {
+      changes = [...changes, ...(changeTriggerConfig(content, triggerId, 'resource', undefined) ?? [])]
+    }
+  }
+  if (changes.length > 0 && trigger?.kind == 'poll' && trigger.definition.key == 'linear.on_issue_changed' && name == 'teamId') {
+    return [...changes, ...(changeTriggerConfig(content, triggerId, 'stateIds', undefined) ?? [])]
+  }
+  return changes
+}
+
+export function setTriggerConnection(revision: RevisionView, triggerId: string, connectionId: string | undefined): FlowChanges | undefined {
+  const content = revision.revision.content
+  const changes = changeTriggerConnection(content, triggerId, connectionId)
+  if (changes == null) return
+  const trigger = revision.graph().nodes[triggerId]
+  if (changes.length > 0 && trigger?.kind == 'poll' && trigger.definition.key == 'linear.on_issue_changed') {
+    return [...changes, ...['teamId', 'stateIds'].flatMap((field) => changeTriggerConfig(content, triggerId, field, undefined) ?? [])]
+  }
+  return changes
 }
 
 export interface WebhookSettings {
@@ -72,6 +129,7 @@ interface TaskSettingsBase {
 }
 
 export type TaskSettings =
+  | (TaskSettingsBase & { readonly kind: 'workflow'; readonly before: ManagedTaskDefinition; readonly task: ManagedTaskDefinition })
   | (TaskSettingsBase & { readonly kind: 'decision'; readonly before: ManagedTaskDefinition; readonly task: ManagedTaskDefinition })
   | (TaskSettingsBase & { readonly kind: 'openapi'; readonly before: ManagedTaskDefinition; readonly task: ManagedTaskDefinition })
   | (TaskSettingsBase & { readonly kind: 'agent'; readonly before: ManagedTaskDefinition; readonly task: ManagedTaskDefinition })
@@ -82,9 +140,11 @@ export type TaskSettings =
 export type TaskPorts = Pick<TaskDefinition, 'inputs' | 'outputs'>
 
 export type AddNodeIntent =
+  | { readonly kind: 'webhook-response'; readonly name: string }
   | { readonly kind: 'outputs'; readonly name: string }
   | { readonly kind: 'decision'; readonly name: string }
   | { readonly kind: 'openapi'; readonly name: string }
+  | { readonly kind: 'workflow'; readonly name: string }
   | { readonly kind: 'agent'; readonly name: string; readonly prompt?: string; readonly outputDescription?: string }
   | { readonly kind: 'approval'; readonly name: string }
   | { readonly kind: 'code'; readonly name: string; readonly ports?: TaskPorts }
@@ -144,6 +204,9 @@ export function nameCreatedNodes(revision: RevisionView, changes: FlowChanges): 
 export function addNode(revision: RevisionView, nodeId: string, intent: AddNodeIntent): FlowChanges | undefined {
   let changes: FlowChanges | undefined
   switch (intent.kind) {
+    case 'workflow':
+      changes = createManagedTask({ nodeId }, { name: intent.name, inputs: [], outputs: [], executor: { kind: 'workflow', flowId: '', revisionId: '' } })
+      break
     case 'decision':
       changes = createDecisionTask({ nodeId }, intent.name)
       break
@@ -179,8 +242,11 @@ export function addNode(revision: RevisionView, nodeId: string, intent: AddNodeI
     case 'value':
       changes = createValue(nodeId, intent.name)
       break
+    case 'webhook-response':
+      changes = [{ kind: 'graph.node.create', nodeId, node: { kind: 'webhook-response', name: intent.name, inputs: {} } }]
+      break
     case 'outputs':
-      changes = [{ kind: 'graph.node.create', nodeId, node: { kind: 'outputs', name: intent.name } }]
+      changes = [{ kind: 'graph.node.create', nodeId, node: { outputDefs: [], outputMappings: {}, kind: 'outputs', name: intent.name } }]
       break
     case 'wait':
       changes = createWait(nodeId, intent.name)
@@ -189,7 +255,7 @@ export function addNode(revision: RevisionView, nodeId: string, intent: AddNodeI
       changes = createBuiltinTrigger(nodeId, { kind: 'error', name: intent.name })
       break
     case 'start':
-      changes = createBuiltinTrigger(nodeId, { kind: 'start', name: intent.name })
+      changes = createBuiltinTrigger(nodeId, { inputDefs: [], kind: 'start', name: intent.name })
       break
     case 'webhook':
       changes = createBuiltinTrigger(nodeId, { bodyFields: [], kind: 'webhook', method: 'POST', name: intent.name })
@@ -324,6 +390,27 @@ export function updateTask(revision: RevisionView, nodeId: string, settings: Tas
   const node = revision.graph()?.nodes[nodeId]
   if (node?.kind != 'task') return
   switch (settings.kind) {
+    case 'workflow': {
+      if (!dequal(node.task, settings.before)) return
+      const next = withWorkflowTask(node, settings.task)
+      if ('executor' in node.task && node.task.executor.kind == 'workflow' && (!node.task.executor.flowId || node.name == node.task.name)) {
+        return [
+          {
+            kind: 'graph.node.replace',
+            nodeId,
+            before: node,
+            node: {
+              ...next,
+              name: nextNodeName(
+                settings.task.name,
+                new Set(Object.entries(revision.graph()!.nodes).flatMap(([id, item]) => (id != nodeId && item.name != null ? [item.name] : []))),
+              ),
+            },
+          },
+        ]
+      }
+      return [{ kind: 'graph.node.replace', nodeId, before: node, node: next }]
+    }
     case 'decision':
     case 'openapi':
     case 'agent': {
@@ -405,6 +492,24 @@ export function updateWebhook(revision: RevisionView, triggerId: string, setting
   return [{ before, kind: 'graph.node.webhook.set', nodeId: triggerId, value }]
 }
 
+/** Choosing a response node deactivates only workflow-output references. */
+export function selectWebhookResponse(revision: RevisionView, triggerId: string, nodeId: string): FlowChanges | undefined {
+  const trigger = revision.trigger(triggerId)
+  if (trigger?.kind !== 'webhook') return
+  const options = {
+    ...trigger.options,
+    responseBody: {
+      kind: 'webhook-response' as const,
+      nodeId,
+      ...(trigger.options?.responseBody?.timeoutMs == null ? {} : { timeoutMs: trigger.options.responseBody.timeoutMs }),
+    },
+  }
+  delete options.responseStatusCodeOutput
+  delete options.responseHeadersSource
+  delete options.responseHeaderOutputs
+  return updateWebhook(revision, triggerId, { bodyFields: trigger.bodyFields, method: trigger.method, options })
+}
+
 function updatedInputMappings(
   mappings: Readonly<Record<string, InputMapping>>,
   previous: TaskDefinition['inputs'],
@@ -469,7 +574,7 @@ function replaceTaskPorts(
   const outputRename = renamedPort(previous.outputs, task.outputs)
   const inputNames = new Set(task.inputs.flatMap((port) => ('handle' in port ? [port.handle] : [])))
   const outputNames = new Set(task.outputs.flatMap((port) => ('handle' in port ? [port.handle] : [])))
-  const changes: ChangeOperation[] = [...renameFlowOutputSources(revision.revision.content, instances, previous.outputs, task.outputs)]
+  const changes: ChangeOperation[] = []
   for (const edge of graph.edges) {
     if (!instances.has(edge.source) || edge.sourceHandle == null) continue
     const renamed = outputRename != null && edge.sourceHandle == outputRename[0] ? outputRename[1] : edge.sourceHandle
@@ -479,7 +584,7 @@ function replaceTaskPorts(
   }
 
   for (const [currentNodeId, node] of Object.entries(graph.nodes)) {
-    if (!('inputs' in node)) continue
+    if (isTriggerNode(node)) continue
     const inputs =
       currentNodeId == nodeId
         ? updatedInputMappings(revision.inputMappings(node), previous.inputs, task.inputs, inputRename, values)
@@ -532,25 +637,22 @@ function replaceTaskPorts(
 }
 import type { Settings as NodeSettings } from '../../../../flow/common/nodeChanges.ts'
 
-/** Share the input editor's type conversion while persisting only workflow-owned output configuration. */
+/** Share the input editor's type conversion while persisting only Outputs node configuration. */
 export function updateOutputPorts(
   revision: RevisionView,
+  nodeId: string,
   definitions: readonly InputPort[],
   values?: Readonly<Record<string, JsonValue | undefined>>,
 ): FlowChanges {
   const content = revision.revision.content
+  const node = content.document.graph.nodes[nodeId]
+  if (node?.kind != 'outputs') return []
   const ports = definitions.map(({ handle, jsonSchema, nullable, description }) => ({
     handle,
     jsonSchema,
     nullable,
     ...(description == null ? {} : { description }),
   }))
-  const next = updatedInputMappings(
-    content.document.outputMappings ?? {},
-    content.document.outputDefs ?? [],
-    ports,
-    renamedPort(content.document.outputDefs ?? [], ports),
-    values,
-  )
-  return updateFlowOutputDefs(content, ports, next)
+  const next = updatedInputMappings(node.outputMappings, node.outputDefs, ports, renamedPort(node.outputDefs, ports), values)
+  return updateOutputsDefs(content, nodeId, ports, next)
 }

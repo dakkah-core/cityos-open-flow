@@ -1,6 +1,6 @@
-import type { ErrorListener, Flow, FlowPage, FlowResources, Variable, VariableReferences } from './api.ts'
+import type { ErrorListener, Flow, FlowListItem, FlowPage, FlowResources, Variable, VariableListItem, VariableReferences } from './api.ts'
 
-import { exact, integer, invalidResponse, record, string } from './decoding.ts'
+import { requiredFields, integer, invalidResponse, record, string } from './decoding.ts'
 
 function strings(value: unknown): readonly string[] {
   return Array.isArray(value) ? value.map(string) : invalidResponse()
@@ -19,6 +19,7 @@ function resourceReferences(input: unknown): FlowResources {
       draft == null
         ? null
         : {
+            ...(draft.calledFlowIds === undefined ? {} : { calledFlowIds: strings(draft.calledFlowIds) }),
             variableNames: strings(draft.variableNames),
             errorSourceFlowIds: strings(draft.errorSourceFlowIds),
             connections: (draft.connections as unknown[]).map((value) => {
@@ -47,11 +48,18 @@ export function flow(value: unknown): Flow {
   if (source.version != 1) return invalidResponse()
   if (status != 'active' && status != 'retiring') return invalidResponse()
   const target = source.live == null ? undefined : record(source.live)
-  if (target != null && typeof target.enabled != 'boolean') return invalidResponse()
+  if (target != null && (typeof target.enabled != 'boolean' || typeof target.hasStart != 'boolean')) return invalidResponse()
   return {
     ...(target == null
       ? {}
-      : { live: { enabled: target.enabled as boolean, publicationId: string(target.publicationId), revisionId: string(target.revisionId) } }),
+      : {
+          live: {
+            enabled: target.enabled as boolean,
+            hasStart: target.hasStart as boolean,
+            publicationId: string(target.publicationId),
+            revisionId: string(target.revisionId),
+          },
+        }),
     createdAt: string(source.createdAt),
     ...(source.connectorTeamId == null ? {} : { connectorTeamId: string(source.connectorTeamId) }),
     draftRevisionId: string(source.draftRevisionId),
@@ -64,6 +72,13 @@ export function flow(value: unknown): Flow {
   }
 }
 
+export function flowListItem(value: unknown): FlowListItem {
+  const source = record(value)
+  const referenceCount = integer(source.referenceCount)
+  if (referenceCount < 0) return invalidResponse()
+  return { ...flow(source), referenceCount }
+}
+
 export function flowPage(value: unknown): FlowPage {
   const source = record(value)
   if (source.version != 1 || !Array.isArray(source.flows)) return invalidResponse()
@@ -73,7 +88,7 @@ export function flowPage(value: unknown): FlowPage {
   if (total != null && !Number.isSafeInteger(total)) return invalidResponse()
   return {
     ...(nextCursor == null ? {} : { nextCursor }),
-    flows: source.flows.map(flow),
+    flows: source.flows.map(flowListItem),
     ...(total == null ? {} : { total: total as number }),
     version: 1,
   }
@@ -81,7 +96,7 @@ export function flowPage(value: unknown): FlowPage {
 
 export function variable(value: unknown): Variable {
   const source = record(value)
-  exact(source, ['name', 'updatedAt', 'value', 'version'])
+  requiredFields(source, ['name', 'updatedAt', 'value', 'version'])
   if (source.version != 1 || typeof source.value != 'string') return invalidResponse()
   const updatedAt = string(source.updatedAt)
   try {
@@ -90,6 +105,14 @@ export function variable(value: unknown): Variable {
     return invalidResponse()
   }
   return { name: string(source.name), updatedAt, value: source.value, version: 1 }
+}
+
+export function variableListItem(value: unknown): VariableListItem {
+  const source = record(value)
+  const { referenceCount, ...fields } = source
+  const count = integer(referenceCount)
+  if (count < 0) return invalidResponse()
+  return { ...variable(fields), referenceCount: count }
 }
 
 export function errorListener(value: unknown): ErrorListener {
@@ -106,17 +129,17 @@ export function errorListener(value: unknown): ErrorListener {
 
 export function variableReferences(input: unknown): VariableReferences {
   const source = record(input)
-  exact(source, ['version', 'references', 'unknown'])
-  if (source.version != 1 || !Array.isArray(source.references) || !Array.isArray(source.unknown)) return invalidResponse()
+  requiredFields(source, ['version', 'references'])
+  if (source.version != 1 || !Array.isArray(source.references)) return invalidResponse()
   return {
     version: 1,
     references: source.references.map((value) => {
       const item = record(value)
-      exact(item, ['flowId', 'flowName', 'draft', 'live'])
+      requiredFields(item, ['flowId', 'flowName', 'draft', 'live'])
       if (typeof item.draft != 'boolean') return invalidResponse()
       const live = item.live === null ? null : record(item.live)
       if (live != null) {
-        exact(live, ['publicationId', 'enabled'])
+        requiredFields(live, ['publicationId', 'enabled'])
         if (typeof live.enabled != 'boolean') return invalidResponse()
       }
       return {
@@ -125,12 +148,6 @@ export function variableReferences(input: unknown): VariableReferences {
         draft: item.draft,
         live: live == null ? null : { publicationId: string(live.publicationId), enabled: live.enabled as boolean },
       }
-    }),
-    unknown: source.unknown.map((value) => {
-      const item = record(value)
-      exact(item, ['flowId', 'flowName', 'scope'])
-      if (item.scope !== 'draft' && item.scope !== 'live') return invalidResponse()
-      return { flowId: string(item.flowId), flowName: string(item.flowName), scope: item.scope }
     }),
   }
 }

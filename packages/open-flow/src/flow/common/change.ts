@@ -2,13 +2,20 @@ import type { JsonValue, Port, PortDefinition } from '../../types/index.ts'
 
 import { assertOpenApiAuthBindings } from '../../openapi/common/authBindings.ts'
 export { fixedInputValue, inputValue, inputValues } from './inputValue.ts'
+import type { RetryConfiguration } from './retry.ts'
 import type { WebhookMethod } from './webhookMethod.ts'
 
 import { dequal } from 'dequal/lite'
 import { currentFlowModelVersion, decodeRevisionContent } from './changeSchema.ts'
 import { nodeInputMappings, setConditionInput } from './condition.ts'
+import { supportsNodeErrorHandling } from './errorHandling.ts'
+import { supportsNodeRetry } from './retry.ts'
 
 export { changeOperationsSchema, currentFlowModelVersion, decodeChangeOperations } from './changeSchema.ts'
+export type { RetryConfiguration } from './retry.ts'
+export { supportsNodeRetry } from './retry.ts'
+export { nodeSystemOutputPorts, supportsNodeErrorHandling, nodeErrorSchema } from './errorHandling.ts'
+export type { NodeErrorData } from './errorHandling.ts'
 export type { WebhookMethod }
 
 export type { JsonValue, Port, PortDefinition } from '../../types/index.ts'
@@ -102,6 +109,7 @@ export function portsByHandle<Value extends Port>(ports: readonly (Value | Group
 }
 
 export interface NodeSource {
+  readonly system?: true
   readonly field?: string
   readonly kind: 'node'
   readonly nodeId: string
@@ -125,6 +133,8 @@ interface GraphNodeBase {
   readonly name?: string
   readonly maxExecutions?: number
   readonly timeoutMs?: number
+  readonly retry?: RetryConfiguration
+  readonly onError?: 'stop' | 'error'
 }
 
 export interface ValueNode extends GraphNodeBase {
@@ -201,6 +211,7 @@ export interface ConditionNode extends GraphNodeBase {
 }
 
 export type ManagedTaskExecutor =
+  | import('../../workflow/common/workflow.ts').WorkflowExecutor
   | import('../../decision/common/decision.ts').DecisionExecutor
   | import('../../openapi/common/openapi.ts').OpenApiExecutor
   | { readonly kind: 'connector'; readonly action: string; readonly connectionId?: string; readonly outputMode?: 'value' }
@@ -281,7 +292,7 @@ export function decodeConnectorCapabilities(value: unknown): readonly ConnectorC
         Object.keys(action).some((key) => !['action', 'connectionId'].includes(key)) ||
         typeof action.action != 'string' ||
         !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_.-]+$/.test(action.action) ||
-        (Object.hasOwn(action, 'connectionId') && (typeof action.connectionId != 'string' || action.connectionId.length == 0))
+        (Object.hasOwn(action, 'connectionId') && typeof action.connectionId != 'string')
       )
         throw new TypeError('Invalid Connector Action permission.')
       return action.connectionId == null ? { action: action.action } : { action: action.action, connectionId: action.connectionId as string }
@@ -444,12 +455,22 @@ export interface WebhookBodyField extends InputPort {}
 
 export interface WebhookOptions {
   readonly allowedOrigins?: readonly string[]
+  readonly responseBody?:
+    | { readonly kind: 'workflow-outputs'; readonly output?: string; readonly timeoutMs?: number }
+    | { readonly kind: 'webhook-response'; readonly nodeId?: string; readonly timeoutMs?: number }
   readonly responseData?: string
   readonly responseHeaders?: Readonly<Record<string, string>>
+  readonly responseHeadersSource?: {
+    readonly kind: 'workflow-outputs'
+    readonly output?: string
+  }
+  readonly responseHeaderOutputs?: Readonly<Record<string, string>>
   readonly responseStatusCode?: number
+  readonly responseStatusCodeOutput?: string
 }
 
 interface TriggerNodeBase {
+  readonly onError?: never
   readonly description?: string
   readonly icon?: string
   readonly name: string
@@ -457,7 +478,7 @@ interface TriggerNodeBase {
 
 export type TriggerNode =
   | (TriggerNodeBase & { readonly kind: 'manual' })
-  | (TriggerNodeBase & { readonly kind: 'start' })
+  | (TriggerNodeBase & { readonly kind: 'start'; readonly inputDefs: readonly Port[] })
   | (TriggerNodeBase & { readonly kind: 'error'; readonly sourceFlowIds?: readonly string[] })
   | (TriggerNodeBase & {
       readonly bodyFields: readonly WebhookBodyField[]
@@ -482,18 +503,23 @@ export type TriggerNode =
 
 export interface OutputsNode extends Omit<GraphNodeBase, 'inputs'> {
   readonly kind: 'outputs'
+  readonly outputDefs: readonly Port[]
+  readonly outputMappings: Readonly<Record<string, InputMapping>>
 }
 
 export function isTriggerNode(node: GraphNode): node is TriggerNode {
   return ['manual', 'start', 'error', 'webhook', 'cron', 'poll', 'integration'].includes(node.kind)
 }
 
-export type GraphNode = OutputsNode | ApprovalNode | ConditionNode | TaskNode | TriggerNode | ValueNode | WaitNode
+export interface WebhookResponseNode extends GraphNodeBase {
+  readonly kind: 'webhook-response'
+  readonly retry?: never
+  readonly onError?: never
+}
+
+export type GraphNode = WebhookResponseNode | OutputsNode | ApprovalNode | ConditionNode | TaskNode | TriggerNode | ValueNode | WaitNode
 
 export interface FlowDocument {
-  readonly inputDefs?: readonly Port[]
-  readonly outputDefs?: readonly Port[]
-  readonly outputMappings?: Readonly<Record<string, InputMapping>>
   readonly bindings: Readonly<Record<string, { readonly kind: 'variable'; readonly target: string }>>
   readonly graph: Graph
 }
@@ -506,7 +532,7 @@ export interface CodeModule {
 
 export interface RevisionContent {
   readonly document: FlowDocument
-  readonly modelVersion: 2 | 4 | 5 | 6 | 7 | typeof currentFlowModelVersion
+  readonly modelVersion: 2 | 4 | 5 | 6 | 7 | 8 | 9 | typeof currentFlowModelVersion
   readonly modules: Readonly<Record<string, CodeModule>>
 }
 
@@ -537,7 +563,7 @@ function upgradeDecodedRevisionContent(content: RevisionContent): RevisionConten
 }
 
 export function upgradeManualTrigger(node: GraphNode): GraphNode {
-  return node.kind == 'manual' ? { ...node, kind: 'start' } : node
+  return node.kind == 'manual' ? { ...node, kind: 'start', inputDefs: [] } : node
 }
 
 export function normalizeNodeName(value: string): string {
@@ -566,13 +592,6 @@ export function nodeNameIssue(graph: Graph, nodeId: string, value: string): 'dup
 }
 
 export type ChangeOperation =
-  | { readonly kind: 'flow.output-defs.set'; readonly before?: readonly Port[]; readonly value?: readonly Port[] }
-  | {
-      readonly kind: 'flow.output-mappings.set'
-      readonly before?: Readonly<Record<string, InputMapping>>
-      readonly value?: Readonly<Record<string, InputMapping>>
-    }
-  | { readonly kind: 'flow.input-defs.set'; readonly before: readonly Port[]; readonly value: readonly Port[] }
   | { readonly kind: 'graph.node.replace'; readonly nodeId: string; readonly before: GraphNode; readonly node: GraphNode }
   | {
       readonly before?: readonly ConnectorCapability[]
@@ -605,11 +624,18 @@ export type ChangeOperation =
   | { readonly kind: 'graph.node.delete'; readonly nodeId: string }
   | {
       readonly before?: number | string
-      readonly field: 'connectionId' | 'description' | 'icon' | 'maxExecutions' | 'name' | 'timeoutMs'
+      readonly field: 'connectionId' | 'description' | 'icon' | 'maxExecutions' | 'name' | 'timeoutMs' | 'onError'
       readonly kind: 'graph.node.field.set'
       readonly nodeId: string
 
       readonly value?: number | string
+    }
+  | {
+      readonly before?: RetryConfiguration
+      readonly field: 'retry'
+      readonly kind: 'graph.node.field.set'
+      readonly nodeId: string
+      readonly value?: RetryConfiguration
     }
   | {
       readonly before?: InputMapping
@@ -706,18 +732,6 @@ export function applyFlowChanges(content: RevisionContent, operations: readonly 
   const modules = { ...source.modules }
   for (const operation of operations) {
     switch (operation.kind) {
-      case 'flow.output-defs.set':
-      case 'flow.output-mappings.set': {
-        const field = operation.kind == 'flow.output-defs.set' ? 'outputDefs' : 'outputMappings'
-        if (!dequal(document[field], operation.before)) invalid('The workflow output configuration changed before this operation was applied.')
-        if (operation.value === undefined) Reflect.deleteProperty(document, field)
-        else Object.assign(document, { [field]: operation.value })
-        break
-      }
-      case 'flow.input-defs.set':
-        if (!dequal(document.inputDefs ?? [], operation.before)) invalid('The workflow input definitions changed before this operation was applied.')
-        document.inputDefs = operation.value
-        break
       case 'graph.trigger.sources.set': {
         const graph = document.graph
         const node = graph.nodes[operation.nodeId]
@@ -839,6 +853,13 @@ export function applyFlowChanges(content: RevisionContent, operations: readonly 
         const graph = document.graph
         const node = graph.nodes[operation.nodeId]
         if (node == null) invalid('The Node does not exist in the target graph.')
+        if (
+          operation.field == 'onError' &&
+          operation.value != null &&
+          (!supportsNodeErrorHandling(node) || !['stop', 'error'].includes(String(operation.value)))
+        )
+          invalid('This node does not support this error handling setting.')
+        if (operation.field == 'retry' && operation.value != null && !supportsNodeRetry(node)) invalid('This node does not support retries.')
         if (operation.field == 'connectionId' && node.kind != 'poll' && node.kind != 'integration') invalid('Only provider Triggers select a node Connection.')
         if (!dequal(Reflect.get(node, operation.field), operation.before)) invalid('The Node field changed before this operation was applied.')
         const updated = { ...node }
@@ -858,12 +879,12 @@ export function applyFlowChanges(content: RevisionContent, operations: readonly 
         const graph = document.graph
         const node = graph.nodes[operation.nodeId]
         if (node == null || isTriggerNode(node)) invalid('The Node does not accept inputs.')
-        if (!dequal(nodeInputMappings(node, document)[operation.handle], operation.before)) invalid('The Node input changed before this operation was applied.')
-        const inputs = { ...nodeInputMappings(node, document) }
+        if (!dequal(nodeInputMappings(node)[operation.handle], operation.before)) invalid('The Node input changed before this operation was applied.')
+        const inputs = { ...nodeInputMappings(node) }
         if (operation.value == null) delete inputs[operation.handle]
         else inputs[operation.handle] = operation.value
         if (node.kind == 'outputs') {
-          document.outputMappings = inputs
+          document.graph = { ...graph, nodes: { ...graph.nodes, [operation.nodeId]: { ...node, outputMappings: inputs } } }
           break
         }
         Object.assign(document, {

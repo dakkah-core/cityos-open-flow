@@ -53,6 +53,7 @@ import { variablesStory } from './variables.tsx'
 import { executionLogsStory, runHistoryStory, runStatusIslandStory, waitRunsStory } from './waitRuns.tsx'
 import { webhookStory } from './webhook.tsx'
 import { workflowStories } from './workflow.tsx'
+import { workflowCallStories } from './workflowCalls.tsx'
 import { workspaceRecoveryStory } from './workspaceRecovery.tsx'
 
 const codeEditorTyping = `/**
@@ -118,6 +119,7 @@ export const labStories: readonly FrontendStory[] = [
   llmStory,
   decisionStory,
   ...openApiStories,
+  ...workflowCallStories,
   metadataStory,
   inspectorPanelStory,
   inspectorPortsStory,

@@ -154,7 +154,7 @@ function createSession(language: UiLanguage, log: LogAction) {
         throw new Error('Simulated catalog request failure')
       }
     }
-    if (url.pathname === '/v1/flows') return Response.json({ flows: [flow], total: 1, version: 1 })
+    if (url.pathname === '/v1/flows') return Response.json({ flows: [{ ...flow, referenceCount: 0 }], total: 1, version: 1 })
     if (url.pathname.endsWith('/editor'))
       return Response.json({
         flow: { ...flow, draftRevisionId: `revision-${sequence}` },
@@ -178,7 +178,7 @@ function createSession(language: UiLanguage, log: LogAction) {
       return Response.json({
         closureDigest: 'lab',
         diagnostics: [],
-        engineContract: 'open-flow-engine/v5',
+        engineContract: 'open-flow-engine/v6',
         flowId: flow.flowId,
         modelVersion: currentFlowModelVersion,
         revisionDigest: revision().digest,
@@ -300,7 +300,7 @@ function AgentSession({ session, dark, code }: { session: ReturnType<typeof crea
   const selection = revision?.node(code ? 'code' : 'agent')
   const setPrompt = (prompt: string) => {
     if (task == null || !('executor' in task) || task.executor.kind != 'agent') return
-    void session.workspace.saveTaskSettings('agent', {
+    void session.workspace.nodes.saveTaskSettings('agent', {
       kind: 'agent',
       name: task.name,
       before: task,
@@ -378,7 +378,7 @@ function AgentSession({ session, dark, code }: { session: ReturnType<typeof crea
 
 export const agentStory: FrontendStory = {
   description:
-    'Edit the Prompt after Purpose, insert {{request}}, and save with blur or Cmd/Ctrl+S. Compare empty and referenced prompts, read-only and save retry. Expand Advanced settings to review model, computation, rounds and node limits. Browse services, check actions without removing them from the list, and choose accounts in the selected rows. Select Hosted tools to check the localized OOMOL Built-in account name and verification icon. Use slow preparation and failure controls to check immediate selection, independent row loading, removal and retry. Arm a request failure before selecting a tool, then click Retry immediately and check connector.request logs for a fresh read. Save a selected account, enable slow preparation and reopen the dialog: the cached account name stays visible while preparation finishes. Open a tool’s settings gear to edit its name, description and parameters, or remove it. Unset parameters are filled by the Agent. Check text, numbers, booleans, choices and collections; clear values and switch sources. Close and reopen settings with an invalid draft, then compare Save, Cancel and retry.',
+    'Edit the Prompt after Purpose, insert {{request}}, and save with blur or Cmd/Ctrl+S. Compare empty and referenced prompts, read-only and save retry. Fail next save reports failure in the action log and keeps a Retry save button without inline error text; retry preserves the edited value. Expand Advanced settings to review model, computation, rounds and node limits. Browse services, check actions without removing them from the list, and choose accounts in the selected rows. Select Hosted tools to check the localized OOMOL Built-in account name and verification icon. Use slow preparation and failure controls to check immediate selection, independent row loading, removal and retry. Arm a request failure before selecting a tool, then click Retry immediately and check connector.request logs for a fresh read. Save a selected account, enable slow preparation and reopen the dialog: the cached account name stays visible while preparation finishes. Open a tool’s settings gear to edit its name, description and parameters, or remove it. Unset parameters are filled by the Agent. Check text, numbers, booleans, choices and collections; clear values and switch sources. Close and reopen settings with an invalid draft, then compare Save, Cancel and retry.',
   group: 'Node Agent',
   id: 'agent-tools',
   propertyPanel: false,

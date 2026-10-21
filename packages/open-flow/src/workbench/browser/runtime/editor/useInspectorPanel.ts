@@ -60,9 +60,13 @@ export function useInspectorPanel({
     select(ids)
     if (!selecting.current && open) showSelection(ids)
   }
-  const openInspector = (): void => {
-    changeOpen(true)
+  const revealInspector = (): void => {
+    setOpen(true)
     setPage('properties')
+  }
+  const openInspector = (): void => {
+    revealInspector()
+    writeInspectorOpen(preferences, true)
   }
 
   return {
@@ -74,6 +78,7 @@ export function useInspectorPanel({
     activate,
     back: () => setPage('outline'),
     openInspector,
+    revealInspector,
     close: () => changeOpen(false),
     startSelection: () => {
       selecting.current = true

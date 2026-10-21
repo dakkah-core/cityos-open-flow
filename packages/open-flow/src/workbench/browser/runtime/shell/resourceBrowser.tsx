@@ -1,12 +1,13 @@
 import type { ComponentProps, FormEvent, ReactElement } from 'react'
 import type { WorkflowFile } from '../../../../flow/common/workflowFile.ts'
-import type { ErrorListener, Flow } from '../api.ts'
+import type { Flow } from '../api.ts'
 import type { OpenFlowWorkbenchHandle, WorkbenchImportInput, WorkbenchLanguage, WorkbenchView } from '../contract.ts'
 import type { OpenFlowWorkbenchProps } from '../openFlowWorkbench.tsx'
+import type { FlowCatalogItem } from '../stores/flowCatalog.ts'
 import type { WorkbenchStore } from '../stores/workbenchStore.ts'
 import type { WorkspaceBusy } from '../stores/workspaceModel.ts'
 
-import { forwardRef, lazy, Suspense, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
+import { forwardRef, lazy, Suspense, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
 import { useVal } from 'use-value-enhancer'
 import { useLang, useTranslate } from 'val-i18n-react'
 import { val } from 'value-enhancer'
@@ -16,7 +17,6 @@ import { parseWorkflowFile, workflowNameFromFile } from '../../../../flow/common
 import { importedWorkflowName } from '../../../../localization/common/languages.ts'
 import { Badge } from '../../../../ui/browser/badge.tsx'
 import { Button } from '../../../../ui/browser/button.tsx'
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../../../ui/browser/dialog.tsx'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../../../../ui/browser/dropdown-menu.tsx'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../../../../ui/browser/empty.tsx'
 import { Field, FieldError, FieldLabel } from '../../../../ui/browser/field.tsx'
@@ -28,6 +28,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../../../../ui/browser/
 import { cn } from '../../../../ui/browser/utils.ts'
 import { Icon } from '../icons.tsx'
 import { followWorkbenchLink } from '../navigationLink.ts'
+import { FlowDeletionDialog } from './flowDeletionDialog.tsx'
+import { FlowReferencesButton } from './flowReferences.tsx'
 import { IdTooltip } from './idTooltip.tsx'
 import { WorkflowExportMenuItem } from './workflowExportMenuItem.tsx'
 
@@ -42,12 +44,11 @@ interface LanguageSelectProps {
 }
 
 interface FlowItemProps {
-  readonly showTeam: boolean
-  readonly badge?: string | undefined
   readonly busy: WorkspaceBusy | undefined
-  readonly flow: Flow
+  readonly flow: FlowCatalogItem
   readonly href: string
-  readonly onSelect: (flow: Flow, view?: WorkbenchView) => void
+  readonly hrefForFlow: FlowBrowserProps['hrefForFlow']
+  readonly onSelect: (flow: Pick<Flow, 'flowId'>, view?: WorkbenchView) => void
   readonly store: WorkbenchStore
 }
 
@@ -67,81 +68,16 @@ function formatUpdatedAt(updatedAt: string, locale: string): string {
   })
 }
 
-export function FlowDeletionImpact({
-  listeners,
-  failed,
-  onRetry,
-}: {
-  readonly listeners: readonly ErrorListener[] | undefined
-  readonly failed: boolean
-  readonly onRetry: () => void
-}) {
-  const t = useTranslate()
-  if (failed)
-    return (
-      <div className="space-y-2">
-        <p role="alert" className="text-sm text-destructive">
-          {t('sidebar.listenersFailed')}
-        </p>
-        <Button variant="outline" size="sm" onClick={onRetry}>
-          {t('errorWorkflow.retry')}
-        </Button>
-      </div>
-    )
-  if (listeners == null)
-    return (
-      <p role="status" className="text-sm text-muted-foreground">
-        {t('sidebar.listenersLoading')}
-      </p>
-    )
-  if (listeners.length == 0) return null
-  return (
-    <div className="min-w-0 space-y-3 text-sm">
-      <p>{t('sidebar.listenersTitle')}</p>
-      <ul className="m-0 max-h-48 list-none space-y-2 overflow-y-auto p-0">
-        {listeners.map((listener) => (
-          <li key={`${listener.flowId}/${listener.nodeId}`} className="break-words">
-            <span className="font-medium">{listener.flowName}</span> / {listener.nodeName}
-            {!listener.enabled && <span className="ml-2 text-muted-foreground">{t('sidebar.listenerDisabled')}</span>}
-          </li>
-        ))}
-      </ul>
-      <p className="text-muted-foreground">{t('sidebar.listenersImpact')}</p>
-    </div>
-  )
-}
-
-function FlowItem({ showTeam, badge, busy, flow, href, onSelect, store }: FlowItemProps): ReactElement {
+function FlowItem({ busy, flow, href, hrefForFlow, onSelect, store }: FlowItemProps): ReactElement {
   const [root, setRoot] = useState<HTMLDivElement | null>(null)
   const renameAnchor = useRef<HTMLSpanElement>(null)
   const actionsButton = useRef<HTMLButtonElement>(null)
   const nameInput = useRef<HTMLInputElement>(null)
-  const cancelDelete = useRef<HTMLButtonElement>(null)
   const locale = useLang()
   const t = useTranslate()
   const [mode, setMode] = useState<'delete' | 'idle' | 'rename'>('idle')
   const [name, setName] = useState(flow.name)
-  const [listeners, setListeners] = useState<readonly ErrorListener[]>()
-  const [listenersFailed, setListenersFailed] = useState(false)
-  const [listenersRetry, setListenersRetry] = useState(0)
-  useEffect(() => {
-    if (mode != 'delete') return
-    const controller = new AbortController()
-    setListeners(undefined)
-    setListenersFailed(false)
-    void store.workspace.getErrorListeners(flow.flowId, controller.signal).then(
-      (value) => {
-        if (!controller.signal.aborted) setListeners(value)
-      },
-      () => {
-        if (!controller.signal.aborted) setListenersFailed(true)
-      },
-    )
-    return () => controller.abort()
-  }, [mode, flow.flowId, store, listenersRetry])
-
   const [pending, setPending] = useState<'publish' | 'enabled' | undefined>()
-  const hasTeam = showTeam && Boolean(badge?.trim())
   const changed = flow.live != null && flow.live.revisionId != flow.draftRevisionId
   const publicationStatus =
     flow.status == 'retiring'
@@ -176,7 +112,7 @@ function FlowItem({ showTeam, badge, busy, flow, href, onSelect, store }: FlowIt
 
   return (
     <div className="resource-item-row" ref={setRoot}>
-      <div className="resource-list-row flow-columns" data-has-team={hasTeam}>
+      <div className="resource-list-row flow-columns">
         <span className="resource-primary-cell">
           <span aria-hidden="true" className="resource-flow-icon">
             <i className="i-lucide-light:workflow" />
@@ -276,11 +212,6 @@ function FlowItem({ showTeam, badge, busy, flow, href, onSelect, store }: FlowIt
             alignOffset={flowIdTooltipAlignOffset}
           />
         </span>
-        {showTeam && (
-          <span className="resource-team-cell" title={badge}>
-            {hasTeam ? badge : '—'}
-          </span>
-        )}
         <Tooltip>
           <TooltipTrigger render={<time className="resource-updated-at" dateTime={flow.updatedAt} tabIndex={0} />}>
             {formatUpdatedAt(flow.updatedAt, locale)}
@@ -298,6 +229,7 @@ function FlowItem({ showTeam, badge, busy, flow, href, onSelect, store }: FlowIt
         </span>
       </div>
       <div className="resource-live-controls" aria-busy={pending != null}>
+        <FlowReferencesButton flow={flow} workspace={store.workspace} container={root} hrefForFlow={hrefForFlow} onSelectFlow={onSelect} />
         <DropdownMenu>
           <Tooltip>
             <TooltipTrigger
@@ -362,34 +294,27 @@ function FlowItem({ showTeam, badge, busy, flow, href, onSelect, store }: FlowIt
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <Dialog
-        open={mode == 'delete'}
-        onOpenChange={(open) => {
-          if (!open) setMode('idle')
-        }}
-      >
-        <DialogContent container={root} initialFocus={cancelDelete} finalFocus={actionsButton} showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>{t('sidebar.deleteFlowConfirm', { name: flow.name })}</DialogTitle>
-            <DialogDescription>{t('resource.deleteDescription')}</DialogDescription>
-          </DialogHeader>
-          <FlowDeletionImpact listeners={listeners} failed={listenersFailed} onRetry={() => setListenersRetry((value) => value + 1)} />
-          <DialogFooter>
-            <DialogClose render={<Button ref={cancelDelete} variant="outline" />}>{t('common.cancel')}</DialogClose>
-            <Button disabled={busy != null || (listeners == null && !listenersFailed)} onClick={() => void remove()} variant="destructive">
-              {t(busy == 'flow' ? 'common.deleting' : 'common.delete')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {mode == 'delete' && (
+        <FlowDeletionDialog
+          flow={flow}
+          workspace={store.workspace}
+          container={root}
+          busy={busy}
+          finalFocus={() => actionsButton.current}
+          onClose={() => setMode('idle')}
+          onDelete={() => void remove()}
+          hrefForFlow={hrefForFlow}
+          onSelectFlow={onSelect}
+        />
+      )}
     </div>
   )
 }
 
-function FlowSkeleton({ showTeam }: { readonly showTeam: boolean }): ReactElement {
+function FlowSkeleton(): ReactElement {
   return (
     <div aria-hidden="true" className="resource-item-row">
-      <div className="resource-list-row flow-columns" data-has-team={showTeam}>
+      <div className="resource-list-row flow-columns">
         <span className="resource-primary-cell">
           <Skeleton className="resource-flow-icon" />
           <span className="resource-primary-copy">
@@ -397,7 +322,6 @@ function FlowSkeleton({ showTeam }: { readonly showTeam: boolean }): ReactElemen
           </span>
         </span>
         <Skeleton className="resource-flow-id-cell h-3 w-36 max-w-full" />
-        {showTeam && <Skeleton className="resource-team-cell h-3 w-24 max-w-full" />}
         <Skeleton className="resource-updated-at h-3 w-28 max-w-full" />
         <Skeleton className="resource-publication-status h-3 w-16" />
         <Skeleton className="resource-status h-3 w-16" />
@@ -415,12 +339,11 @@ interface FlowBrowserProps extends LanguageSelectProps {
   readonly catalogWidth?: OpenFlowWorkbenchProps['catalogWidth']
   readonly createFlowDisabled?: boolean | undefined
   readonly createFlowField?: ComponentProps<typeof CreateResourceDialog>['field']
-  readonly flowBadges?: Readonly<Record<string, string>> | undefined
-  readonly hrefForFlow: (flow: Flow) => string
+  readonly hrefForFlow: (flow: Pick<Flow, 'flowId'>, view?: WorkbenchView) => string
   readonly initializing?: boolean
   readonly onImportFlow?: (file: WorkflowFile, name: string, key: string) => Promise<boolean>
   readonly onCreateFlow: (name: string) => Promise<boolean>
-  readonly onSelectFlow: (flow: Flow, view?: WorkbenchView) => void
+  readonly onSelectFlow: (flow: Pick<Flow, 'flowId'>, view?: WorkbenchView) => void
   readonly store: WorkbenchStore
 }
 
@@ -429,7 +352,6 @@ export const FlowBrowser = forwardRef<OpenFlowWorkbenchHandle, FlowBrowserProps>
     catalogWidth,
     createFlowDisabled,
     createFlowField,
-    flowBadges,
     hrefForFlow,
     initializing = false,
     onCreateFlow,
@@ -454,11 +376,9 @@ export const FlowBrowser = forwardRef<OpenFlowWorkbenchHandle, FlowBrowserProps>
   // The command and React read the same state, including calls before React rerenders.
   const [creation$] = useState(() => val<FlowCreation | undefined>(undefined))
   const creation = useVal(creation$)
-  const [importError, setImportError] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const [filter, setFilter] = useState('')
   const [name, setName] = useState('')
-  const showTeam = flows.some((flow) => (flowBadges?.[flow.flowId]?.trim().length ?? 0) > 0)
   const normalized = filter.trim().toLocaleLowerCase()
   const visible = flows.filter((flow) => flow.name.toLocaleLowerCase().includes(normalized))
 
@@ -473,12 +393,11 @@ export const FlowBrowser = forwardRef<OpenFlowWorkbenchHandle, FlowBrowserProps>
 
   function openImport(input: WorkbenchImportInput): ReturnType<OpenFlowWorkbenchHandle['openImport']> {
     if (initializing || store.workspace.$.busy.value != null || creation$.value != null || onImportFlow == null) return 'unavailable'
-    setImportError(false)
     let file: WorkflowFile
     try {
       file = parseWorkflowFile(input.text)
     } catch {
-      setImportError(true)
+      store.workspace.notify({ kind: 'error', message: t('resource.importInvalid') })
       return 'invalid-file'
     }
     setName(file.name ?? (input.fileName == null ? importedWorkflowName(language) : workflowNameFromFile(input.fileName)))
@@ -544,13 +463,12 @@ export const FlowBrowser = forwardRef<OpenFlowWorkbenchHandle, FlowBrowserProps>
                       const file = event.target.files?.[0]
                       event.target.value = ''
                       if (file == null) return
-                      setImportError(false)
                       void file
                         .text()
                         .then((text) => {
                           command.current?.({ text, fileName: file.name })
                         })
-                        .catch(() => setImportError(true))
+                        .catch(() => store.workspace.notify({ kind: 'error', message: t('resource.importInvalid') }))
                     }}
                   />
                   <Button variant="outline" disabled={initializing || busy != null || createFlowDisabled} onClick={() => fileInput.current?.click()}>
@@ -565,14 +483,12 @@ export const FlowBrowser = forwardRef<OpenFlowWorkbenchHandle, FlowBrowserProps>
               </Button>
             </div>
           </div>
-          {importError && <p role="alert">{t('resource.importInvalid')}</p>}
           <div className="resource-table-scroll">
-            <div className={cn('resource-table', showTeam && 'resource-table-with-teams')}>
+            <div className="resource-table">
               <div aria-hidden="true" className="resource-list-columns-shell">
                 <div className="resource-list-columns flow-columns">
                   <span>{t('resource.name')}</span>
                   <span className="resource-flow-id-heading">{t('resource.flowId')}</span>
-                  {showTeam && <span className="resource-team-heading">{t('resource.team')}</span>}
                   <span className="resource-updated-heading">{t('resource.updated')}</span>
                   <span>{t('resource.publicationStatus')}</span>
                   <span>{t('resource.runtimeStatus')}</span>
@@ -581,7 +497,7 @@ export const FlowBrowser = forwardRef<OpenFlowWorkbenchHandle, FlowBrowserProps>
               </div>
               <div className="resource-list">
                 {loading ? (
-                  Array.from({ length: 5 }, (_, index) => <FlowSkeleton key={index} showTeam={showTeam} />)
+                  Array.from({ length: 5 }, (_, index) => <FlowSkeleton key={index} />)
                 ) : loadFailed ? (
                   <Empty className="min-h-64" role="alert">
                     <EmptyHeader>
@@ -618,11 +534,10 @@ export const FlowBrowser = forwardRef<OpenFlowWorkbenchHandle, FlowBrowserProps>
                 ) : (
                   visible.map((flow) => (
                     <FlowItem
-                      showTeam={showTeam}
-                      badge={flowBadges?.[flow.flowId]}
                       busy={busy}
                       flow={flow}
                       href={hrefForFlow(flow)}
+                      hrefForFlow={hrefForFlow}
                       key={flow.flowId}
                       onSelect={onSelectFlow}
                       store={store}

@@ -68,6 +68,6 @@ export interface WorkbenchImportInput {
 }
 
 export interface OpenFlowWorkbenchHandle {
-  /** Opens confirmation on an idle, initialized Flow list. Does not create a Flow. */
+  /** Opens confirmation on an idle, initialized Flow list. Invalid files notify the host. Does not create a Flow. */
   openImport(input: WorkbenchImportInput): 'opened' | 'unavailable' | 'invalid-file'
 }

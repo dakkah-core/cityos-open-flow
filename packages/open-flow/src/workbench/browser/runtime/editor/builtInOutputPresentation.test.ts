@@ -3,6 +3,7 @@ import type { InputSourceCandidate } from '../../../../flow/common/graph.ts'
 
 import { describe, expect, it } from 'vitest'
 import { decisionTask } from '../../../../decision/common/decision.ts'
+import { nodeSystemOutputPorts } from '../../../../flow/common/errorHandling.ts'
 import { resolutionOutputPorts } from '../../../../flow/common/graph.ts'
 import { objectValue } from '../../../../form/common/value.ts'
 import { uiLanguages } from '../../../../localization/common/languages.ts'
@@ -14,6 +15,7 @@ import {
   presentBuiltInTriggerOutputs,
   presentDecisionOutputs,
   presentResolutionOutputs,
+  presentSystemOutputs,
 } from './builtInOutputPresentation.ts'
 
 const resolution = (kind: ResolutionNode['kind']): ResolutionNode => ({
@@ -59,6 +61,46 @@ describe('built-in output presentation', () => {
     expect(task).toEqual(before)
   })
 
+  it.each(uiLanguages)('localizes system error fields and source help for %s without changing business outputs', (language) => {
+    const node: GraphNode = {
+      kind: 'task',
+      name: 'Code',
+      onError: 'error',
+      inputs: {},
+      task: { moduleId: 'code', name: 'Code', inputs: [], outputs: [{ handle: 'error', jsonSchema: { type: 'string' }, nullable: false }] },
+    }
+    const runtime = nodeSystemOutputPorts(node)
+    const t = createI18n(language).t
+    const [port] = presentSystemOutputs(node, t)
+    expect(port).toBeDefined()
+    const { description, jsonSchema, handle, ...rest } = port!
+    expect(handle).toBe('error')
+    expect(description).toBeTruthy()
+    expect(description).not.toContain('inspector.')
+    expect({ ...rest, jsonSchema: withoutHelp({ ...objectValue(jsonSchema), description }) }).toEqual(runtime.error)
+    const fields = Object.keys(objectValue(objectValue(jsonSchema)!.properties)!).map((field) => ({
+      field,
+      output: 'error',
+      system: true as const,
+      check: { kind: 'available' as const },
+    }))
+    const candidates: readonly InputSourceCandidate[] = [
+      { output: 'error', description: 'Business error', check: { kind: 'available' } },
+      { output: 'error', system: true, fields, check: { kind: 'available' } },
+    ]
+    const presented = presentBuiltInSourceCandidates(node, candidates, t)
+    expect(presented[0]).toBe(candidates[0])
+    expect(presented[1]?.description).toBe(description)
+    for (const field of presented[1]!.fields!) {
+      expect(field.description).toBeTruthy()
+      expect(field.description).not.toContain('inspector.')
+      expect(presentBuiltInOutputDescription(node, 'error', undefined, t, field)).toBe(field.description)
+    }
+    expect(candidates[1]!.fields!.every((field) => field.description == null)).toBe(true)
+    expect(nodeSystemOutputPorts(node)).toEqual(runtime)
+    if (language != 'en') expect(port).not.toEqual(presentSystemOutputs(node, createI18n('en').t)[0])
+  })
+
   it('preserves non-Decision task outputs', () => {
     const task = { name: 'Code', moduleId: 'code', inputs: [], outputs: [{ handle: 'result', jsonSchema: { type: 'string' }, nullable: false }] }
     expect(presentDecisionOutputs(task, createI18n('zh-CN').t)).toBe(task.outputs)
@@ -66,8 +108,8 @@ describe('built-in output presentation', () => {
 
   it.each(uiLanguages)('localizes scheduledAt for %s without adding copy to its runtime definition', (language) => {
     const trigger: TriggerNode = { kind: 'cron', name: 'Schedule', cronTimes: [] }
-    const runtime = triggerOutputDefinitions(trigger, [])
-    const presented = presentBuiltInTriggerOutputs(trigger, createI18n(language).t, [])
+    const runtime = triggerOutputDefinitions(trigger)
+    const presented = presentBuiltInTriggerOutputs(trigger, createI18n(language).t)
 
     expect(runtime[0]?.description).toBeUndefined()
     expect(presented[0]?.description).toBeTruthy()
@@ -76,8 +118,8 @@ describe('built-in output presentation', () => {
 
   it.each(uiLanguages)('localizes Webhook outputs for %s without adding copy to their runtime definitions', (language) => {
     const trigger: TriggerNode = { kind: 'webhook', method: 'POST', name: 'Webhook', bodyFields: [] }
-    const runtime = triggerOutputDefinitions(trigger, [])
-    const presented = presentBuiltInTriggerOutputs(trigger, createI18n(language).t, [])
+    const runtime = triggerOutputDefinitions(trigger)
+    const presented = presentBuiltInTriggerOutputs(trigger, createI18n(language).t)
 
     expect(runtime.every((port) => port.description == null)).toBe(true)
     expect(presented.map((port) => port.handle)).toEqual(['headers', 'query', 'body', 'webhookUrl'])
@@ -86,7 +128,7 @@ describe('built-in output presentation', () => {
 
   it('keeps body and its description out of GET Webhook outputs', () => {
     const trigger: TriggerNode = { kind: 'webhook', method: 'GET', name: 'Webhook', bodyFields: [] }
-    const presented = presentBuiltInTriggerOutputs(trigger, createI18n('zh-CN').t, [])
+    const presented = presentBuiltInTriggerOutputs(trigger, createI18n('zh-CN').t)
 
     expect(presented.map((port) => port.handle)).toEqual(['headers', 'query', 'webhookUrl'])
     expect(presented.every((port) => port.description != null)).toBe(true)

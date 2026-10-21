@@ -1,13 +1,18 @@
+import { twemojiCollectionPlugin } from '@oomol-lab/open-flow/designer-twemoji-plugin'
 import { providerIconsPlugin } from '@oomol-lab/open-flow/provider-icons-plugin'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
-  plugins: [providerIconsPlugin({ iconUrls: {} })],
+  plugins: [providerIconsPlugin({ iconUrls: {} }), twemojiCollectionPlugin()],
   test: {
     expect: { poll: { timeout: 5_000 } },
     coverage: {
       include: [
         'node/deployment/connector.ts',
+        'node/deployment/connector-contract.ts',
+        'node/deployment/connector-response.ts',
+        'node/deployment/connector-transport.ts',
+        'node/application/connector-capabilities.ts',
         'node/application/control-service.ts',
         'node/application/cron-driver.ts',
         'node/application/flow-validation.ts',

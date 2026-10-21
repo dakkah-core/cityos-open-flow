@@ -8,6 +8,7 @@ import type {
   RevisionContent,
   TriggerKeySnapshot,
 } from '../../flow/common/change.ts'
+import type { WorkflowContract, WorkflowCandidate } from '../../workflow/common/workflow.ts'
 import type { ConnectorAction, Diagnostic } from './api.ts'
 import type { AuthoringConditionConfiguration, AuthoringConditionSource } from './authoringCondition.ts'
 import type { AuthoringOpenApiConfig } from './authoringOpenApi.ts'
@@ -17,9 +18,10 @@ import type { AuthoringAgentTool } from './authoringTools.ts'
 import { dequal } from 'dequal/lite'
 import { connectorOutputMode } from '../../connector/common/actionSchema.ts'
 import { decisionTask } from '../../decision/common/decision.ts'
-import { isTriggerNode, applyFlowChanges, decodeChangeOperations, upgradeRevisionContent } from '../../flow/common/change.ts'
+import { supportsNodeRetry, isTriggerNode, applyFlowChanges, decodeChangeOperations, upgradeRevisionContent } from '../../flow/common/change.ts'
 import { nodeInputMappings } from '../../flow/common/condition.ts'
 import { connect, disconnect } from '../../flow/common/edgeChanges.ts'
+import { nodeSystemOutputPorts, supportsNodeErrorHandling } from '../../flow/common/errorHandling.ts'
 import { nodeInputPorts, nodeOutputPorts } from '../../flow/common/graph.ts'
 import { imports as moduleImports } from '../../flow/common/moduleChanges.ts'
 import {
@@ -35,23 +37,18 @@ import {
   createWait,
   createApproval,
   cleanVariableBindings,
-  updateFlowInputDefs,
-  updateFlowOutputDefs,
+  updateStartInputDefs,
+  updateOutputsDefs,
   renameFlowOutputSources,
 } from '../../flow/common/nodeChanges.ts'
+import { retryConfigurationSchema } from '../../flow/common/retry.ts'
+import { withWorkflowTask, workflowTask, workflowSelectionTask } from '../../workflow/common/workflow.ts'
 import { conditionConfigurationView, prepareConditionConfiguration } from './authoringCondition.ts'
 import { authoringDiagnosticField } from './authoringDiagnosticFields.ts'
-import { fieldsView, fieldsToPorts, flowInputDefinitions } from './authoringFields.ts'
+import { fieldsView, fieldsToPorts } from './authoringFields.ts'
 import { llmConfigurationView, prepareLlmConfiguration, initialAuthoringLlmTask } from './authoringLlm.ts'
 import { AuthoringOpenApiAuthenticationError, openApiConfigView, openApiAuthenticationChoices, prepareOpenApiTask } from './authoringOpenApi.ts'
-import {
-  flowInputFields,
-  flowOutputFields,
-  authoringConfigurations,
-  authoringReadSchema,
-  authoringRequestSchema,
-  authoringSearchSchema,
-} from './authoringSchema.ts'
+import { authoringConfigurations, authoringReadSchema, authoringRequestSchema, authoringSearchSchema } from './authoringSchema.ts'
 import { AuthoringToolInputError, outwardAgentTools, prepareAgentTools } from './authoringTools.ts'
 import { triggerConfiguration } from './authoringTriggers.ts'
 export * from './authoringSchema.ts'
@@ -82,14 +79,14 @@ function taskAt(node: GraphNode) {
   return node.kind == 'task' ? node.task : undefined
 }
 const llmReservedInputs = ['model', 'template', 'messages']
-function inputDefinitions(node: GraphNode, content: RevisionContent) {
+function inputDefinitions(node: GraphNode) {
   if (node.kind == 'condition') return {}
   if (node.kind == 'poll' || node.kind == 'integration')
     return Object.fromEntries(node.definition.configInputs.flatMap((port) => ('handle' in port ? [[port.handle, port]] : [])))
-  return nodeInputPorts(node, content.document)
+  return nodeInputPorts(node)
 }
-function inputMappings(node: GraphNode, content: RevisionContent) {
-  return node.kind == 'condition' ? {} : node.kind == 'poll' || node.kind == 'integration' ? node.config : nodeInputMappings(node, content.document)
+function inputMappings(node: GraphNode) {
+  return node.kind == 'condition' ? {} : node.kind == 'poll' || node.kind == 'integration' ? node.config : nodeInputMappings(node)
 }
 function typeOf(node: GraphNode): AuthoringType {
   const task = taskAt(node)
@@ -100,7 +97,7 @@ function outwardSource(content: RevisionContent, value: unknown): unknown {
   if (value == null || typeof value != 'object') return value
   const v = record(value)
   if (v.kind == 'node' && typeof v.nodeId == 'string' && typeof v.output == 'string')
-    return { kind: 'output', node: v.nodeId, port: v.output, ...(v.field == null ? {} : { field: v.field }) }
+    return { kind: v.system === true ? 'system' : 'output', node: v.nodeId, port: v.output, ...(v.field == null ? {} : { field: v.field }) }
   if (v.kind == 'binding' && typeof v.bindingId == 'string')
     return { kind: 'variable', name: content.document.bindings[v.bindingId]?.target ?? '[missing variable]' }
   // Literal JSON is user data, including objects that resemble references.
@@ -147,6 +144,7 @@ export function authoringNode(content: RevisionContent, ref: string) {
           ),
         ),
       }
+    else if (task.executor.kind == 'workflow') config = { flowId: task.executor.flowId }
     else if (task.executor.kind == 'openapi') {
       config = { ...openApiConfigView(task.executor) }
     }
@@ -159,6 +157,9 @@ export function authoringNode(content: RevisionContent, ref: string) {
     texts.code = content.modules[node.task.moduleId]?.source ?? ''
   } else {
     switch (node.kind) {
+      case 'outputs':
+        config = { outputDefs: fieldsView(node.outputDefs) }
+        break
       case 'condition':
         config = { ...conditionConfigurationView(node, (value) => outwardSource(content, value) as AuthoringConditionSource) }
         break
@@ -173,6 +174,7 @@ export function authoringNode(content: RevisionContent, ref: string) {
         config = { inputs: fieldsView(node.inputDefinitions) }
         texts.prompt = node.prompt
         break
+      case 'webhook-response':
       case 'manual':
         config = {}
         break
@@ -196,13 +198,16 @@ export function authoringNode(content: RevisionContent, ref: string) {
     ...(node.icon == null ? {} : { icon: node.icon }),
     ...('timeoutMs' in node && node.timeoutMs != null ? { timeoutMs: node.timeoutMs } : {}),
     ...('maxExecutions' in node && node.maxExecutions != null ? { maxExecutions: node.maxExecutions } : {}),
+    ...(node.onError == null ? {} : { onError: node.onError }),
+    ...('retry' in node && node.retry != null ? { retry: node.retry } : {}),
     config: json(config),
     texts: Object.fromEntries(Object.entries(texts).map(([field, text]) => [field, { lines: text.split('\n').length, characters: text.length }])),
-    inputs: outwardSource(content, inputMappings(node, content)),
-    inputPorts: fieldsView(Object.entries(inputDefinitions(node, content)).map(([handle, port]) => Object.assign({}, port, { handle }))),
-    outputPorts: fieldsView(
-      Object.entries(nodeOutputPorts(node, content.document.inputDefs ?? [])).map(([handle, port]) => Object.assign({}, port, { handle })),
-    ),
+    inputs: outwardSource(content, inputMappings(node)),
+    inputPorts: fieldsView(Object.entries(inputDefinitions(node)).map(([handle, port]) => Object.assign({}, port, { handle }))),
+    ...(Object.keys(nodeSystemOutputPorts(node)).length == 0
+      ? {}
+      : { systemOutputs: fieldsView(Object.entries(nodeSystemOutputPorts(node)).map(([handle, port]) => Object.assign({ handle }, port))) }),
+    outputPorts: fieldsView(Object.entries(nodeOutputPorts(node)).map(([handle, port]) => Object.assign({}, port, { handle }))),
     ...(task != null && 'executor' in task && task.executor.kind == 'openapi' ? { authenticationChoices: openApiAuthenticationChoices(task.executor) } : {}),
     incoming: edges.filter((e) => e.target == ref),
     outgoing: edges.filter((e) => e.source == ref),
@@ -246,9 +251,6 @@ export function readAuthoring(content: RevisionContent, query: AuthoringRead = {
   }
   if (q.nodes != null) return { nodes: q.nodes.map((ref) => authoringNode(content, ref)) }
   return {
-    inputDefs: flowInputDefinitions(content),
-    outputDefs: fieldsView(content.document.outputDefs ?? []),
-    outputMappings: outwardSource(content, content.document.outputMappings ?? {}),
     nodes: Object.keys(content.document.graph.nodes).map((ref) => {
       const node = authoringNode(content, ref)
       return {
@@ -285,31 +287,14 @@ export function searchAuthoring(content: RevisionContent, query: AuthoringSearch
   const q = authoringSearchSchema.parse(query),
     needle = q.query.toLowerCase()
   const matches: { node?: string; field: string; line?: number; excerpt: string }[] = []
-  if (q.type == null) {
-    for (const [name, definition] of Object.entries(flowInputDefinitions(content))) {
-      const text = JSON.stringify({ [name]: definition })
-      const at = text.toLowerCase().indexOf(needle)
-      if (at >= 0) matches.push({ field: `inputDefs.${name}`, excerpt: text.slice(Math.max(0, at - 100), at + Math.max(needle.length, 100)) })
-    }
-  }
-  if (q.type == null) {
-    for (const [field, values] of Object.entries({
-      outputDefs: fieldsView(content.document.outputDefs ?? []),
-      outputMappings: outwardSource(content, content.document.outputMappings ?? {}),
-    })) {
-      for (const [name, value] of Object.entries(record(values))) {
-        const text = JSON.stringify({ [name]: value })
-        const at = text.toLowerCase().indexOf(needle)
-        if (at >= 0) matches.push({ field: `${field}.${name}`, excerpt: text.slice(Math.max(0, at - 100), at + Math.max(needle.length, 100)) })
-      }
-    }
-  }
   for (const [ref, node] of Object.entries(content.document.graph.nodes)) {
     const view = authoringNode(content, ref)
     if (q.type != null && q.type != view.type) continue
     const fields = {
       name: view.name,
       description: view.description ?? '',
+      onError: view.onError ?? '',
+      retry: JSON.stringify(view.retry ?? {}),
       inputs: JSON.stringify(view.inputs),
       config: JSON.stringify(view.config),
       ...Object.fromEntries(Object.keys(view.texts).map((field) => [field, textAt(content, node, field as 'code' | 'prompt')])),
@@ -326,6 +311,7 @@ export function searchAuthoring(content: RevisionContent, query: AuthoringSearch
 }
 
 export interface AuthoringHost {
+  workflow?(flowId: string): Promise<WorkflowContract | WorkflowCandidate>
   id(label: string): string
   action(id: string): Promise<ConnectorAction>
   trigger(key: string): TriggerKeySnapshot
@@ -377,12 +363,18 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
   function source(
     value: Exclude<AuthoringSource, { kind: 'value' | 'default' | 'unset' | 'sources' }>,
   ): Extract<InputMapping, { kind: 'sources' }>['sources'][number] {
-    if (value.kind == 'output') {
+    if (value.kind == 'output' || value.kind == 'system') {
       const ref = resolve(value.node)
-      const choices = Object.keys(nodeOutputPorts(nodeAt(content, ref), content.document.inputDefs ?? []))
+      const choices = Object.keys(nodeOutputPorts(nodeAt(content, ref)))
       const port = value.port ?? (choices.length == 1 ? choices[0] : undefined)
       if (port == null) fail('source.port-required', 'Choose an output name; this node does not have exactly one output.', { node: ref, choices })
-      return { kind: 'node', nodeId: ref, output: port, ...(value.field == null ? {} : { field: value.field }) }
+      return {
+        kind: 'node',
+        ...(value.kind == 'system' ? { system: true as const } : {}),
+        nodeId: ref,
+        output: port,
+        ...(value.field == null ? {} : { field: value.field }),
+      }
     }
     const existing = Object.entries(content.document.bindings).find(([, binding]) => binding.target == value.name)
     const bindingId = existing?.[0] ?? fresh('binding')
@@ -394,7 +386,12 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
     if (!dequal(before, node)) {
       const previous = before.kind == 'task' ? before.task.outputs : before.kind == 'value' ? before.values : []
       const next = node.kind == 'task' ? node.task.outputs : node.kind == 'value' ? node.values : []
-      apply([{ kind: 'graph.node.replace', nodeId: ref, before, node }, ...renameFlowOutputSources(content, new Set([ref]), previous, next)])
+      apply([
+        { kind: 'graph.node.replace', nodeId: ref, before, node },
+        ...(node.kind == 'task' && 'executor' in node.task && node.task.executor.kind == 'workflow'
+          ? []
+          : renameFlowOutputSources(content, new Set([ref]), previous, next)),
+      ])
     }
   }
   function taskNode(ref: string, task: ManagedTaskDefinition) {
@@ -417,6 +414,11 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
       outputs: Object.entries(action.outputs).map(([handle, port]) => Object.assign({ handle }, port)),
     }
   }
+  async function resolveWorkflow(flowId: string, name: string, previous?: ManagedTaskDefinition) {
+    if (host.workflow == null) fail('workflow.unavailable', 'Workflow calls are unavailable.')
+    const target = await host.workflow(flowId)
+    return 'inputs' in target ? workflowTask(target, name) : workflowSelectionTask({ ...target, name }, undefined, previous)
+  }
   async function configure(ref: string, patch: Record<string, unknown> = {}, clear: readonly (readonly string[])[] = []) {
     const node = nodeAt(content, ref),
       view = authoringNode(content, ref),
@@ -427,6 +429,8 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
       ...(view.icon == null ? {} : { icon: view.icon }),
       ...(view.timeoutMs == null ? {} : { timeoutMs: view.timeoutMs }),
       ...(view.maxExecutions == null ? {} : { maxExecutions: view.maxExecutions }),
+      ...(view.onError == null ? {} : { onError: view.onError }),
+      ...(view.retry == null ? {} : { retry: view.retry }),
       config: view.config,
     }
     const update = record(merge(original, patch))
@@ -435,15 +439,29 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
     for (const path of clear) clearPath(update, path)
     if (typeof update.name != 'string') fail('node.name-required', 'Node name cannot be cleared.')
     const config = authoringConfigurations[type].parse(update.config) as Record<string, unknown>
+    if (Object.hasOwn(update, 'retry')) update.retry = retryConfigurationSchema.parse(update.retry)
     const { config: _, ...metadata } = update
     const { name: _name, description: _description, icon: _icon, ...rest } = node
     let next = { ...rest, ...metadata } as GraphNode
     if (!isTriggerNode(node)) {
       const clean = { ...next } as Record<string, unknown>
+      if (!Object.hasOwn(update, 'onError')) delete clean.onError
+      if (!Object.hasOwn(update, 'retry')) delete clean.retry
       if (!Object.hasOwn(update, 'timeoutMs')) delete clean.timeoutMs
       if (!Object.hasOwn(update, 'maxExecutions')) delete clean.maxExecutions
       next = clean as unknown as GraphNode
     } else if (update.timeoutMs != null || update.maxExecutions != null) fail('node.invalid-field', 'Trigger nodes do not have execution limits.')
+    if (update.onError != null && (!supportsNodeErrorHandling(next) || !['stop', 'error'].includes(String(update.onError))))
+      fail('node.invalid-field', 'This node does not support this error handling setting.')
+    if (update.retry != null && !supportsNodeRetry(next)) fail('node.invalid-field', 'This node does not support retries.')
+    if (node.kind == 'start' || node.kind == 'outputs') {
+      replace(ref, next)
+      const fields = node.kind == 'start' ? config.inputDefs : config.outputDefs
+      const ports = fieldsToPorts(fields, node.kind == 'start' ? node.inputDefs : node.outputDefs).filter((port): port is InputPort => 'handle' in port)
+      const changes = node.kind == 'start' ? updateStartInputDefs(content, ref, ports) : updateOutputsDefs(content, ref, ports)
+      if (changes.length > 0) apply(changes)
+      return
+    }
     function taskInputs(task: ManagedTaskDefinition | NonNullable<Extract<GraphNode, { kind: 'task' }>['task']>, reserved: readonly string[] = []) {
       if (node.kind != 'task') throw new Error('Expected a task.')
       const fields = record(config.inputs)
@@ -476,7 +494,13 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
     } else if (node.kind == 'task' && 'executor' in node.task) {
       const before = node.task
       let task: ManagedTaskDefinition
-      if (type == 'connector') {
+      if (type == 'workflow') {
+        task =
+          before.executor.kind == 'workflow' && before.executor.flowId == config.flowId
+            ? { ...before, name: String(update.name) }
+            : await resolveWorkflow(String(config.flowId), String(update.name))
+        next = withWorkflowTask({ ...node, ...metadata } as typeof node, task)
+      } else if (type == 'connector') {
         if (before.executor.kind == 'connector' && config.action == before.executor.action) {
           const { connectionId: _connectionId, ...executor } = before.executor
           task = { ...before, name: String(update.name), executor: { ...executor, ...config } } as ManagedTaskDefinition
@@ -554,11 +578,12 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
         case 'approval':
           next = { ...next, inputDefinitions: fieldsToPorts(config.inputs, node.inputDefinitions) } as GraphNode
           break
-        case 'outputs':
-        case 'start':
-          break
         case 'webhook': {
           const { body, ...settings } = config
+          const responseOptions = record(settings.options)
+          const responsePolicy = record(responseOptions.responseBody)
+          if (responsePolicy.kind === 'webhook-response' && typeof responsePolicy.nodeId === 'string')
+            settings.options = { ...responseOptions, responseBody: { ...responsePolicy, nodeId: resolve(responsePolicy.nodeId) } }
           const { options: _options, ...withoutOptions } = next as Extract<GraphNode, { kind: 'webhook' }>
           next = { ...withoutOptions, ...settings, bodyFields: fieldsToPorts(body, node.bodyFields) } as GraphNode
           break
@@ -612,8 +637,8 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
     if (node.kind == 'condition')
       fail('input.unsupported', 'Edit the branch condition operands through config.branches.', { node: ref, field: 'config.branches' })
     if (node.kind == 'poll' || node.kind == 'integration') {
-      if (!Object.hasOwn(inputDefinitions(node, content), input))
-        fail('input.not-found', `Unknown input ${input}.`, { node: ref, input, choices: Object.keys(inputDefinitions(node, content)) })
+      if (!Object.hasOwn(inputDefinitions(node), input))
+        fail('input.not-found', `Unknown input ${input}.`, { node: ref, input, choices: Object.keys(inputDefinitions(node)) })
       if (value.kind != 'value' && value.kind != 'unset' && value.kind != 'default')
         fail('input.source-unsupported', 'Trigger parameters accept only value, unset or default; they cannot depend on execution outputs or variables.', {
           node: ref,
@@ -626,12 +651,12 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
       replace(ref, { ...node, config })
       return
     }
-    if (!Object.hasOwn(inputDefinitions(node, content), input)) {
+    if (!Object.hasOwn(inputDefinitions(node), input)) {
       const type = typeOf(node)
       if (!['agent', 'code', 'llm', 'wait', 'approval'].includes(type))
-        fail('input.not-found', `Unknown input ${input}.`, { node: ref, input, choices: Object.keys(inputDefinitions(node, content)) })
+        fail('input.not-found', `Unknown input ${input}.`, { node: ref, input, choices: Object.keys(inputDefinitions(node)) })
       if (type == 'llm' && llmReservedInputs.includes(input))
-        fail('input.not-found', `Missing built-in LLM input ${input}.`, { node: ref, input, choices: Object.keys(inputDefinitions(node, content)) })
+        fail('input.not-found', `Missing built-in LLM input ${input}.`, { node: ref, input, choices: Object.keys(inputDefinitions(node)) })
       await configure(ref, { config: { inputs: { [input]: {} } } })
     }
     const mapping: InputMapping | undefined =
@@ -640,27 +665,19 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
         : value.kind == 'value' || value.kind == 'unset'
           ? value
           : { kind: 'sources', sources: (value.kind == 'sources' ? value.sources : [value]).map(source) }
-    const before = nodeInputMappings(nodeAt(content, ref), content.document)[input]
+    const before = nodeInputMappings(nodeAt(content, ref))[input]
     if (!dequal(before, mapping)) apply([{ kind: 'graph.node.input.set', nodeId: ref, handle: input, before, ...(mapping == null ? {} : { value: mapping }) }])
   }
   for (const edit of parsed.edits) {
     try {
       switch (edit.op) {
-        case 'flow.update': {
-          const merged = record(merge({ inputDefs: flowInputDefinitions(content), outputDefs: fieldsView(content.document.outputDefs ?? []) }, edit.set ?? {}))
-          for (const path of edit.clear ?? []) {
-            if (path[0] != 'inputDefs' && path[0] != 'outputDefs') fail('edit.invalid-field', `Cannot clear ${path.join('.')}.`)
-            clearPath(merged, path)
-          }
-          const fields = flowInputFields.parse(merged.inputDefs ?? {})
-          const ports = fieldsToPorts(fields, content.document.inputDefs ?? []).filter((port): port is InputPort => 'handle' in port)
-          const changes = updateFlowInputDefs(content, ports)
-          if (changes.length > 0) apply(changes)
-          const outputPorts = fieldsToPorts(flowOutputFields.parse(merged.outputDefs ?? {}), content.document.outputDefs ?? []).filter(
-            (port): port is InputPort => 'handle' in port,
-          )
-          const outputChanges = updateFlowOutputDefs(content, outputPorts)
-          if (outputChanges.length > 0) apply(outputChanges)
+        case 'node.refresh': {
+          const ref = resolve(edit.node)
+          const node = nodeAt(content, ref)
+          if (node.kind != 'task' || !('executor' in node.task) || node.task.executor.kind != 'workflow')
+            fail('node.invalid-type', 'Only workflow call nodes support refresh.')
+          const task = await resolveWorkflow(node.task.executor.flowId, node.name ?? node.task.name, node.task)
+          apply([{ kind: 'graph.node.replace', nodeId: ref, before: node, node: withWorkflowTask(node, task) }])
           break
         }
         case 'node.add': {
@@ -672,8 +689,14 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
           const config = edit.config ?? {}
           let changes: readonly ChangeOperation[]
           switch (edit.type) {
+            case 'workflow':
+              changes = createManagedTask(identity, await resolveWorkflow(String(authoringConfigurations.workflow.parse(config).flowId), name))
+              break
+            case 'webhook-response':
+              changes = [{ kind: 'graph.node.create', nodeId, node: { kind: 'webhook-response', name, inputs: {} } }]
+              break
             case 'outputs':
-              changes = [{ kind: 'graph.node.create', nodeId, node: { kind: 'outputs', name } }]
+              changes = [{ kind: 'graph.node.create', nodeId, node: { outputDefs: [], outputMappings: {}, kind: 'outputs', name } }]
               break
             case 'code':
               changes = createCodeTask(identity, name, undefined, {
@@ -730,6 +753,7 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
                   node: {
                     kind: edit.type,
                     name,
+                    ...(edit.type == 'start' ? { inputDefs: [] } : {}),
                     ...(edit.type == 'cron' ? { cronTimes: [{ type: 'every', unit: 'hour', value: 1 }] } : {}),
                     ...(edit.type == 'webhook' ? { method: 'POST', bodyFields: [] } : {}),
                   } as GraphNode,
@@ -737,7 +761,7 @@ export async function compileAuthoring(base: RevisionContent, request: Authoring
               ]
           }
           apply(changes)
-          await configure(nodeId, { config })
+          await configure(nodeId, { config, ...(edit.onError == null ? {} : { onError: edit.onError }), ...(edit.retry == null ? {} : { retry: edit.retry }) })
           const added = nodeAt(content, nodeId)
           if (added.kind == 'task') replace(nodeId, { ...added, inputs: {} })
           if (edit.code != null) await setText(nodeId, 'code', edit.code)
@@ -815,7 +839,6 @@ export function authoringDiagnostics(content: RevisionContent, diagnostics: read
   return diagnostics.map((diagnostic) => {
     const affected = nodes.filter(([id, node]) => {
       const roots = [`/document/graph/nodes/${escapePointer(id)}`]
-      if (node.kind == 'outputs') roots.push('/document/outputDefs', '/document/outputMappings')
       if (node.kind == 'task' && 'moduleId' in node.task) roots.push(`/modules/${escapePointer(node.task.moduleId)}`)
       return roots.some((root) => diagnostic.path == root || diagnostic.path.startsWith(`${root}/`))
     })
@@ -836,7 +859,7 @@ export function authoringDiagnostics(content: RevisionContent, diagnostics: read
       code: diagnostic.code,
       message,
       nodes: affected.map(([id]) => id),
-      field: authoringDiagnosticField(content, affected[0]?.[1], parts),
+      field: authoringDiagnosticField(affected[0]?.[1], parts),
       ...(diagnostic.line ? { line: diagnostic.line, column: diagnostic.column } : {}),
     }
   })

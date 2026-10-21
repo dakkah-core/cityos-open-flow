@@ -38,6 +38,7 @@ CREATE TABLE flow_presentations (
 ) STRICT;
 
 CREATE TABLE publications (
+  interface_json TEXT NOT NULL CHECK (json_valid(interface_json) AND json_type(interface_json) = 'object'),
   publication_id TEXT PRIMARY KEY,
   flow_id TEXT NOT NULL,
   revision_id TEXT NOT NULL,

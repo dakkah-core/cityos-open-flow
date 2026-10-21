@@ -1,7 +1,8 @@
-import type { ErrorDispatch } from '@oomol-lab/open-flow/control-api'
+import type { ErrorDispatch, RunInitiator } from '@oomol-lab/open-flow/control-api'
 import type { RunEventKind } from '@oomol-lab/open-flow/control-api'
 import type { JsonValue, WaitAction } from '@oomol-lab/open-flow/flow-change'
 import type { RunStatus } from '@oomol-lab/open-flow/run-lifecycle'
+import type { WebhookResponseSnapshot } from '@oomol-lab/open-flow/webhook-trigger'
 import type { DatabaseSync } from 'node:sqlite'
 
 export interface RunEvent {
@@ -26,6 +27,7 @@ export interface StoredRunRequest {
 }
 
 export interface StoredControlRun {
+  readonly initiator?: RunInitiator
   readonly closureDigest: string
   readonly createdAt: number
   readonly engineContract: string
@@ -75,6 +77,13 @@ export class RunViewStore {
       runId: row.runId,
       status: row.status,
     }
+  }
+
+  webhookResponse(runId: string, nodeId: string): WebhookResponseSnapshot | undefined {
+    const row = this.#database.prepare('SELECT response FROM webhook_responses WHERE run_id = ? AND node_id = ?').get(runId, nodeId) as
+      | { response: string }
+      | undefined
+    return row == null ? undefined : (JSON.parse(row.response) as WebhookResponseSnapshot)
   }
 
   request(idempotencyKey: string): StoredRunRequest | undefined {
@@ -282,7 +291,7 @@ export class RunViewStore {
   #controlRuns(condition: string, parameters: readonly (number | string)[], suffix: string): readonly StoredControlRun[] {
     const rows = this.#database
       .prepare(
-        `SELECT runs.closure_digest AS closureDigest,
+        `SELECT runs.initiator_actor_id AS actorId, runs.initiator_channel AS channel, runs.closure_digest AS closureDigest,
                 runs.created_at AS createdAt, runs.engine_contract AS engineContract,
                 runs.engine_digest AS engineDigest, runs.events_expires_at AS eventsExpiresAt,
                 runs.events_truncated AS eventsTruncated,
@@ -297,13 +306,20 @@ export class RunViewStore {
          WHERE ${condition}
          ${suffix}`,
       )
-      .all(...parameters) as unknown as readonly (Omit<StoredControlRun, 'eventsTruncated' | 'result'> & {
+      .all(...parameters) as unknown as readonly (Omit<StoredControlRun, 'eventsTruncated' | 'initiator' | 'result'> & {
+      readonly actorId: string | null
+      readonly channel: RunInitiator['channel'] | null
       readonly eventsTruncated: number
       readonly result: string | null
     })[]
     const runs: StoredControlRun[] = []
-    for (const { eventsTruncated, result, ...row } of rows) {
-      runs.push({ ...row, eventsTruncated: eventsTruncated == 1, ...(result == null ? {} : { result: JSON.parse(result) as unknown }) })
+    for (const { actorId, channel, eventsTruncated, result, ...row } of rows) {
+      runs.push({
+        ...row,
+        ...(channel == null ? {} : { initiator: { channel, ...(actorId == null ? {} : { actorId }) } }),
+        eventsTruncated: eventsTruncated == 1,
+        ...(result == null ? {} : { result: JSON.parse(result) as unknown }),
+      })
     }
     return runs
   }

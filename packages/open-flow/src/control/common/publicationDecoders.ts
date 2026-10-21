@@ -1,6 +1,6 @@
 import type { Live, Publication, PublicationPage, PublishOperation } from './api.ts'
 
-import { exact, integer, invalidResponse, record, string } from './decoding.ts'
+import { requiredFields, integer, invalidResponse, record, string } from './decoding.ts'
 
 export function publication(value: unknown): Publication {
   const source = record(value)
@@ -43,16 +43,16 @@ export function publishOperation(value: unknown): PublishOperation {
   if (source.version != 1) return invalidResponse()
   switch (status) {
     case 'pending':
-      exact(source, ['createdAt', 'flowId', 'operationId', 'revisionId', 'status', 'updatedAt', 'version'])
+      requiredFields(source, ['createdAt', 'flowId', 'operationId', 'revisionId', 'status', 'updatedAt', 'version'])
       return { ...common, status }
     case 'succeeded':
-      exact(source, ['createdAt', 'flowId', 'operationId', 'publicationId', 'revisionId', 'status', 'updatedAt', 'version'])
+      requiredFields(source, ['createdAt', 'flowId', 'operationId', 'publicationId', 'revisionId', 'status', 'updatedAt', 'version'])
       return { ...common, publicationId: string(source.publicationId), status }
     case 'failed': {
-      exact(source, ['createdAt', 'flowId', 'issue', 'operationId', 'revisionId', 'status', 'updatedAt', 'version'])
+      requiredFields(source, ['createdAt', 'flowId', 'issue', 'operationId', 'revisionId', 'status', 'updatedAt', 'version'])
       const issue = record(source.issue)
       const nodeId = issue.nodeId
-      exact(issue, ['code', 'message', ...(nodeId == null ? [] : ['nodeId'])])
+      requiredFields(issue, ['code', 'message', ...(nodeId == null ? [] : ['nodeId'])])
       return {
         ...common,
         issue: { code: string(issue.code), message: string(issue.message), ...(nodeId == null ? {} : { nodeId: string(nodeId) }) },

@@ -151,8 +151,11 @@ function createServer(service: ServerService, actorId: string, logger: Logger, e
   register('flow_run', mcpTools.flow_run, async (args) => {
     return (
       args.source == 'draft'
-        ? await control.runs.createDraftRun(args.flowId, args.revisionId, currentEngineContract, args.inputs, args.idempotencyKey, args.trigger, actorId)
-        : await control.runs.createLiveRun(args.publicationId, args.inputs, args.idempotencyKey, args.trigger, actorId)
+        ? await control.runs.createDraftRun(args.flowId, args.revisionId, currentEngineContract, args.inputs, args.idempotencyKey, args.trigger, {
+            actorId,
+            channel: 'mcp',
+          })
+        : await control.runs.createLiveRun(args.publicationId, args.inputs, args.idempotencyKey, args.trigger, { initiator: { actorId, channel: 'mcp' } })
     ).run
   })
   register('run_list', mcpTools.run_list, ({ flowId, status, cursor, limit, pendingWait }) => {
@@ -199,12 +202,15 @@ function createServer(service: ServerService, actorId: string, logger: Logger, e
   register('connector_connections', mcpTools.connector_connections, async ({ serviceId, flowId }, context) => ({
     connections: await control.listConnectorConnections(serviceId, flowId, context.mcpReq.signal),
   }))
-  register('event_source_list', mcpTools.event_source_list, async () => {
-    const sources = await control.listEventSources()
+  register('event_source_list', mcpTools.event_source_list, async (_, context) => {
+    const sources = await control.listEventSources(undefined, context.mcpReq.signal)
     return {
       ...sources,
       ...(sources.sources.length == 0
-        ? { guidance: 'No event sources are visible to this identity. Open Workbench to create and verify a Feishu event source, then list again.' }
+        ? {
+            guidance:
+              'No event sources are visible to this identity. Open Workbench to create and verify an event source for the required provider, then list again.',
+          }
         : {}),
     }
   })

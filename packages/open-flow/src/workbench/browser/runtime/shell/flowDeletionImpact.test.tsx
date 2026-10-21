@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nProvider } from 'val-i18n-react'
 import { afterAll, expect, it } from 'vitest'
 import { createI18n } from '../i18n.ts'
-import { FlowDeletionImpact } from './resourceBrowser.tsx'
+import { FlowDeletionImpact } from './flowDeletionDialog.tsx'
 
 const i18n = createI18n('zh-CN')
 afterAll(() => i18n.dispose())

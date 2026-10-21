@@ -59,6 +59,7 @@ describe('Agent Run admission with an owner-scoped Variable', () => {
       store.variables.put('operator', 'TOKEN', 'foreign-secret')
 
       const input = {
+        initiator: { channel: 'api' as const },
         closureDigest: 'closure',
         flowId: 'flow',
         idempotencyKey: 'run',

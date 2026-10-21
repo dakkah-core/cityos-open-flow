@@ -17,6 +17,7 @@ import type {
 import { isTriggerNode } from '../../../flow/common/change.ts'
 import { nodeInputMappings } from '../../../flow/common/condition.ts'
 import { connectionUsage } from '../../../flow/common/connectionUsage.ts'
+import { nodeSystemOutputPorts } from '../../../flow/common/errorHandling.ts'
 import { checkInputSources, inputSourceCandidates, nodeOutputDescription, nodeOutputPorts } from '../../../flow/common/graph.ts'
 import { agentActions, codeActions } from '../../../flow/common/semantics.ts'
 import { sourcePort } from '../../../flow/common/sourceField.ts'
@@ -27,6 +28,7 @@ export interface InputSourceQuery {
 }
 
 export type ResolvedNode =
+  | { readonly id: string; readonly kind: 'webhook-response'; readonly node: Extract<GraphNode, { kind: 'webhook-response' }> }
   | { readonly id: string; readonly kind: 'outputs'; readonly node: import('../../../flow/common/change.ts').OutputsNode }
   | { readonly id: string; readonly kind: 'condition'; readonly node: ConditionNode }
   | {
@@ -89,16 +91,8 @@ export class RevisionView {
     this.connectorProviderIds = connectorProviderIds
   }
 
-  public inputDefs() {
-    return this.#document.inputDefs ?? []
-  }
-
-  public outputDefs() {
-    return this.#document.outputDefs ?? []
-  }
-
   public inputMappings(node: GraphNode) {
-    return nodeInputMappings(node, this.#document)
+    return nodeInputMappings(node)
   }
 
   public graph(): Graph {
@@ -111,13 +105,13 @@ export class RevisionView {
     const cached = this.#inputSources.get(key)
     if (cached != null) return cached
     const node = graph.nodes[nodeId]!
-    const mapping = nodeInputMappings(node, this.#document)[handle]
+    const mapping = nodeInputMappings(node)[handle]
     const sources = mapping?.kind === 'sources' ? mapping.sources.filter((source) => source.kind === 'node') : []
     let checks: InputSourcesCheck | undefined = sources.length == 0 ? { conflict: false, sources: [] } : undefined
     let candidates: ReturnType<typeof inputSourceCandidates> | undefined
     const query: InputSourceQuery = {
-      check: () => (checks ??= checkInputSources(graph, nodeId, handle, sources, this.inputDefs(), this.#document)),
-      candidates: () => (candidates ??= inputSourceCandidates(graph, nodeId, handle, this.inputDefs(), this.#document)),
+      check: () => (checks ??= checkInputSources(graph, nodeId, handle, sources)),
+      candidates: () => (candidates ??= inputSourceCandidates(graph, nodeId, handle)),
     }
     this.#inputSources.set(key, query)
     return query
@@ -126,7 +120,7 @@ export class RevisionView {
   public sourceType(source: import('../../../flow/common/change.ts').Source): string | undefined {
     const graph = this.graph()
     const node = source.kind === 'node' ? graph.nodes[source.nodeId] : undefined
-    const output = source.kind === 'node' && node != null ? nodeOutputPorts(node, this.inputDefs())[source.output] : undefined
+    const output = source.kind === 'node' && node != null ? (source.system ? nodeSystemOutputPorts(node) : nodeOutputPorts(node))[source.output] : undefined
     const schema = output == null || source.kind !== 'node' ? undefined : sourcePort(output, source.field)?.jsonSchema
     if (source.kind === 'binding') return 'string'
     if (schema != null && typeof schema === 'object' && !Array.isArray(schema) && 'type' in schema && typeof schema.type === 'string') return schema.type
@@ -135,11 +129,11 @@ export class RevisionView {
 
   public outputDescription(nodeId: string, output: string): string | undefined {
     const graph = this.graph()
-    return nodeOutputDescription(graph, nodeId, output, this.inputDefs())
+    return nodeOutputDescription(graph, nodeId, output)
   }
 
   public designerInputs(): readonly unknown[] {
-    const inputs: unknown[] = [this.#document.graph, this.#document.inputDefs]
+    const inputs: unknown[] = [this.#document.graph]
     for (const [nodeId, node] of Object.entries(this.#document.graph.nodes)) {
       const resolved = this.resolveNode(nodeId, node)
       if (resolved.kind == 'task') inputs.push(resolved.definition)
@@ -172,6 +166,9 @@ export class RevisionView {
         resolved = { definition, id: nodeId, kind: node.kind, module, node }
         break
       }
+      case 'webhook-response':
+        resolved = { id: nodeId, kind: node.kind, node }
+        break
       case 'outputs':
         resolved = { id: nodeId, kind: node.kind, node }
         break

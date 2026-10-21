@@ -21,7 +21,7 @@ const published: Flow = {
     draft: { variableNames: [], connections: [], errorSourceFlowIds: [] },
     sharedAccess: { accessRevision: 0, providerIds: [], bindings: [] },
   },
-  live: { enabled: false, publicationId: 'publication', revisionId: 'revision' },
+  live: { hasStart: true, enabled: false, publicationId: 'publication', revisionId: 'revision' },
 }
 function render(props: Partial<ComponentProps<typeof ErrorTriggerSources>> = {}) {
   return renderToStaticMarkup(

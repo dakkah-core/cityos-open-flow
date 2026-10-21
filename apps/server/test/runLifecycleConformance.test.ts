@@ -31,6 +31,7 @@ for (const conformance of runLifecycleConformanceCases) {
       const harness: RunLifecycleHarness = {
         async accept(input) {
           const result = store.runs.acceptControlRun({
+            initiator: { channel: 'api' },
             ...input,
             closureDigest: 'closure',
             flowId: 'flow',
@@ -107,7 +108,7 @@ for (const conformance of runLifecycleConformanceCases) {
                   inputs: {},
                   results: {},
                   counts: {},
-                  version: 5,
+                  version: 6,
                   dependencies: {
                     nextId: 1,
                     iterations: {},

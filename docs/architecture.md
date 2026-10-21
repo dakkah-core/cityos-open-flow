@@ -48,11 +48,24 @@ Display profiles and catalog visibility during editing do not grant execution au
 
 ### Event sources
 
-The public package owns event source definitions: provider identity, configuration and secret handling,
-callback authentication and payloads, consumer matching, readiness, and resource subscription rules.
-The Server owns source persistence, Connector authorization, shared subscription lifecycles, durable
-receipt, deduplication, fixed delivery targets, and Run admission. Server storage and delivery code
-consume the source definition rather than interpreting provider-specific configuration or state.
+Connector owns Provider event protocols: configuration validation, external identity verification,
+signatures and challenges, payload normalization, event identity and ordering, consumer predicates,
+and remote subscription operations. Its exported catalog supplies source metadata and configuration
+schemas. Open Flow does not implement those protocols or infer Provider rules from callback payloads.
+
+Open Flow owns source instances, Team and Connection authorization, shared ingress, consumer demand,
+subscription coordination, durable receipt, deduplication, delivery targets, and Run admission. It
+forwards the original callback bytes as base64 through the authenticated Connector source operation.
+Connector returns a challenge/error response or a normalized event with matched consumer identities.
+Open Flow rechecks the current binding version and scope before committing delivery targets.
+
+Source configuration and callback secrets remain opaque persisted source data; OAuth credentials and
+OAuth application secrets remain in Connector. Management responses expose only the validated public
+projection returned by Connector. Shared application sources share callback credentials and verified
+state while retaining their individual Team, Connection and consumer boundaries. Connector supplies
+readiness and expiry; Open Flow revokes readiness on failed or pending managed-resource coordination.
+Existing Workbench presets are presentation and editing conveniences, not Provider validation authority.
+See [shared provider event sources](triggers/shared-event-sources.md) for setup and acceptance boundaries.
 
 ## 2. Core resources and sources of truth
 
@@ -60,8 +73,8 @@ consume the source definition rather than interpreting provider-specific configu
 
 Flow is a deployment-generated top-level resource with a stable identity and independent lifecycle. It does not belong to a Project.
 Each Flow has one mutable Draft head. Revisions are immutable execution definitions that store the graph, node configuration, variable references, and code.
-Workflow call inputs belong to `FlowDocument.inputDefs`; Start exposes these definitions as graph outputs and stores only node metadata.
-Workflow business outputs belong to `FlowDocument.outputDefs` and `outputMappings`. A single Outputs node consumes these mappings under ordinary execution dependency rules and stores only node metadata. It has no downstream execution or data ports. Its computed values are retained separately from the Run's existing node results and logs; this does not add workflow invocation support.
+Start owns `inputDefs` and exposes them as graph outputs.
+A single Outputs node owns `outputDefs` and `outputMappings` and consumes its mappings under ordinary execution dependency rules. Interface configuration follows node creation, deletion, copying and undo. It has no downstream execution or data ports. Its computed values are retained separately from the Run's node results and logs. Call Workflow consumes the successful child Run's business outputs.
 Node identities do not change when names change. Each node owns its execution configuration. A local edit must not change other nodes' behavior.
 
 Semantic changes commit atomically with an expected Revision and a stable request identity. They must not silently overwrite concurrent changes.
@@ -122,7 +135,11 @@ Each invocation waits for every direct predecessor in its iteration to complete 
 Loops permit repeated invocations within execution budgets. Initial entry does not wait for recurrence edges. Each recurrence starts a new iteration, retaining outer ancestors and explicit feedback while resetting its dependent continuation. Nested loops start fresh on ordinary entry. Unselected loop exits settle when the loop finishes; Wait pending notifications remain available immediately.
 Dependency progress, loop iterations, selected predecessors, and invocation input snapshots belong to the Scheduler and survive checkpoint recovery. Run-wide last-completed results are a presentation projection, not an input data source.
 
-An ordinary Task commits its result once, after the complete output passes validation.
+An ordinary Task commits its business result once, after the complete output passes validation.
+Supported Tasks may explicitly handle a final invocation or runtime input/output validation failure,
+commit a separate system error and continue through the same execution edges. Success exposes a null
+system error. Handled failure does not commit business outputs or dispatch Flow Error. System outputs
+never occupy business output names or add canvas execution ports.
 Internal Run storage must not become a second data channel through which scripts can read arbitrary node results.
 Node execution, events, and capability calls share cancellation and deadlines. Catching an ordinary business error cannot disable resource limits or termination requirements.
 
@@ -130,6 +147,14 @@ The deployment owns the Run's sole execution authority and terminal state. Admis
 Retries must not duplicate accepted execution. If side-effect outcomes cannot be confirmed, execution ends as indeterminate and is not automatically replayed.
 Cancellation and completion races must produce one authoritative terminal state.
 The deployment limits concurrency and execution budgets and owns queuing and recovery. Clients must not take ownership of scheduling facts.
+
+### Workflow calls
+
+A Call Workflow Task stores a target Flow ID and a local input/output contract snapshot. Editing does not resolve the target; selection, explicit refresh and deployment checks do. The deployment admits each call against the target's current enabled Live, under the same owner, and fixes that child Run's Revision and authorization normally. Each Publication fixes an interface snapshot with independently nullable inputs and outputs: null means the corresponding Start or Outputs node is absent. Interface reads use this snapshot without loading a Revision. When the saved Revision differs from current Live, compare their published interfaces by named schemas and nullability; unchanged interfaces remain callable, while changes require explicit refresh. Descriptions and port ordering do not affect interface equality. Snapshot provenance is not a historical execution selector. Recursive call chains are rejected.
+
+Each call owns a durable parent Run/node/execution to child Run association. The Scheduler suspends the calling invocation without retaining an execution slot, and the child terminal state wakes it. Waits and Agent approvals remain owned by the child. Parent cancellation or failure cancels unfinished descendants; an indeterminate child propagates an indeterminate outcome. Logs remain separate, while call provenance survives event expiry. `source` continues to mean Draft or Live.
+
+Definition references use `flow_resource_references` with relation kind `flow`, independently of runtime call associations. The existing single resource extraction feeds both variable and Flow relationships in the owning Draft/Live transaction. Index maintenance never reads or materializes another Revision.
 
 ### Wait and Agent
 

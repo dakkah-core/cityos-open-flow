@@ -11,34 +11,12 @@
           "nullable": false
         },
         {
-          "handle": "fields",
-          "jsonSchema": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "nullable": false,
-          "value": []
-        },
-        {
           "handle": "formula",
           "jsonSchema": {
             "type": "string"
           },
           "nullable": false,
           "value": ""
-        },
-        {
-          "handle": "maxRecordsPerPoll",
-          "jsonSchema": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 1000
-          },
-          "nullable": false,
-          "value": 200
         },
         {
           "handle": "tableIdOrName",
@@ -66,6 +44,32 @@
           },
           "nullable": false,
           "value": ""
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
+          "handle": "fields",
+          "jsonSchema": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "nullable": false,
+          "value": []
+        },
+        {
+          "handle": "maxRecordsPerPoll",
+          "jsonSchema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "nullable": false,
+          "value": 200
         }
       ],
       "definitionVersion": 2,
@@ -112,6 +116,252 @@
       ],
       "provider": "airtable",
       "type": "poll"
+    },
+    "options": false
+  },
+  {
+    "snapshot": {
+      "key": "asana.on_task_event",
+      "provider": "asana",
+      "name": "on_task_event",
+      "displayName": "Project Task Event",
+      "description": "Receives tasks added to a project, completion changes, and selected custom field changes. Task details represent current state, not historical state.",
+      "definitionVersion": 2,
+      "type": "integration",
+      "endpoint": {
+        "methods": ["POST"],
+        "body": {
+          "formats": ["json"],
+          "allowArray": false,
+          "allowEmpty": true
+        },
+        "successStatus": 200
+      },
+      "configInputs": [
+        {
+          "handle": "projectId",
+          "jsonSchema": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Project ID"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "eventTypes",
+          "jsonSchema": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["task.added", "task.completed", "task.field_changed"]
+            },
+            "minItems": 1,
+            "uniqueItems": true,
+            "title": "Events"
+          },
+          "nullable": false,
+          "value": ["task.added", "task.completed"]
+        },
+        {
+          "handle": "customFieldId",
+          "jsonSchema": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Custom field ID"
+          },
+          "nullable": true
+        }
+      ],
+      "outputs": [
+        {
+          "handle": "projectId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "events",
+          "jsonSchema": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "event": {
+                  "type": "string"
+                },
+                "task": {
+                  "type": "object"
+                },
+                "change": {
+                  "type": "object"
+                }
+              },
+              "required": ["event", "task", "change"]
+            }
+          },
+          "nullable": false
+        }
+      ]
+    },
+    "options": false
+  },
+  {
+    "snapshot": {
+      "key": "calendly.on_booking_event",
+      "provider": "calendly",
+      "name": "on_booking_event",
+      "displayName": "Booking Created or Canceled",
+      "description": "Receives bookings and cancellations, preserving reschedule links. Requires a Personal Access Token connection.",
+      "definitionVersion": 2,
+      "type": "integration",
+      "endpoint": {
+        "methods": ["POST"],
+        "body": {
+          "formats": ["json"],
+          "allowArray": false,
+          "allowEmpty": false
+        },
+        "successStatus": 200
+      },
+      "configInputs": [
+        {
+          "handle": "scope",
+          "jsonSchema": {
+            "type": "string",
+            "enum": ["user", "organization"],
+            "title": "Scope"
+          },
+          "nullable": false,
+          "value": "user"
+        },
+        {
+          "handle": "eventTypes",
+          "jsonSchema": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["invitee.created", "invitee.canceled"]
+            },
+            "minItems": 1,
+            "uniqueItems": true,
+            "title": "Events"
+          },
+          "nullable": false,
+          "value": ["invitee.created", "invitee.canceled"]
+        }
+      ],
+      "outputs": [
+        {
+          "handle": "event",
+          "jsonSchema": {
+            "type": "string",
+            "enum": ["invitee.created", "invitee.canceled"]
+          },
+          "nullable": false
+        },
+        {
+          "handle": "inviteeUri",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "createdAt",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "body",
+          "jsonSchema": {
+            "type": "object"
+          },
+          "nullable": false
+        }
+      ]
+    },
+    "options": false
+  },
+  {
+    "snapshot": {
+      "key": "clickup.on_task_event",
+      "provider": "clickup",
+      "name": "on_task_event",
+      "displayName": "Task Event",
+      "description": "Receives task creation, status changes, and new comments in a ClickUp Workspace or List.",
+      "definitionVersion": 2,
+      "type": "integration",
+      "endpoint": {
+        "methods": ["POST"],
+        "body": {
+          "formats": ["json"],
+          "allowArray": false,
+          "allowEmpty": false
+        },
+        "successStatus": 200
+      },
+      "configInputs": [
+        {
+          "handle": "workspaceId",
+          "jsonSchema": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "title": "Workspace ID"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "listId",
+          "jsonSchema": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "title": "List ID"
+          },
+          "nullable": true
+        },
+        {
+          "handle": "eventTypes",
+          "jsonSchema": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["taskCreated", "taskStatusUpdated", "taskCommentPosted"]
+            },
+            "minItems": 1,
+            "uniqueItems": true,
+            "title": "Events"
+          },
+          "nullable": false,
+          "value": ["taskCreated", "taskStatusUpdated", "taskCommentPosted"]
+        }
+      ],
+      "outputs": [
+        {
+          "handle": "event",
+          "jsonSchema": {
+            "type": "string",
+            "enum": ["taskCreated", "taskStatusUpdated", "taskCommentPosted"]
+          },
+          "nullable": false
+        },
+        {
+          "handle": "taskId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "body",
+          "jsonSchema": {
+            "type": "object"
+          },
+          "nullable": false
+        }
+      ]
     },
     "options": false
   },
@@ -246,7 +496,319 @@
       ]
     },
     "options": false,
-    "eventSource": "feishu"
+    "eventSource": "feishu",
+    "source": {
+      "createSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "feishu"
+          },
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "connectionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "teamId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verificationToken": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "encryptKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "eventTypes": {
+            "minItems": 1,
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_.:]{0,127}$"
+            }
+          },
+          "manageSubscriptions": {
+            "type": "boolean"
+          }
+        },
+        "required": ["version", "name", "connectionId", "teamId", "verificationToken", "encryptKey", "eventTypes", "manageSubscriptions"],
+        "additionalProperties": false
+      },
+      "updateSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "eventTypes": {
+            "minItems": 1,
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_.:]{0,127}$"
+            }
+          },
+          "verificationToken": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "signingSecret": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "encryptKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": ["version", "expectedRevision", "name", "enabled", "eventTypes"],
+        "additionalProperties": false
+      },
+      "kind": "feishu",
+      "provider": "feishu_app_bot",
+      "triggerId": "feishu_app_bot.on_event",
+      "maximumBodyBytes": 65536,
+      "applicationIngress": false,
+      "managed": false
+    }
+  },
+  {
+    "snapshot": {
+      "key": "fireflies.on_meeting_ready",
+      "provider": "fireflies",
+      "name": "on_meeting_ready",
+      "displayName": "Meeting Transcript or Summary Ready",
+      "description": "Receives separate transcript and summary readiness events through Fireflies Webhooks V2 after checking meeting access.",
+      "definitionVersion": 2,
+      "type": "integration",
+      "endpoint": {
+        "methods": ["POST"],
+        "body": {
+          "formats": ["json"],
+          "allowArray": false,
+          "allowEmpty": false
+        },
+        "successStatus": 200
+      },
+      "configInputs": [
+        {
+          "handle": "sourceId",
+          "jsonSchema": {
+            "type": "string",
+            "pattern": "^source_[0-9a-f]{32}$",
+            "title": "Event source"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "eventTypes",
+          "jsonSchema": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["meeting.transcribed", "meeting.summarized"]
+            },
+            "minItems": 1,
+            "maxItems": 2,
+            "uniqueItems": true,
+            "title": "Events"
+          },
+          "nullable": false,
+          "value": ["meeting.transcribed", "meeting.summarized"]
+        }
+      ],
+      "outputs": [
+        {
+          "handle": "event",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "deliveryId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "accountId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "meetingId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "body",
+          "jsonSchema": {
+            "type": "object"
+          },
+          "nullable": false
+        }
+      ]
+    },
+    "options": false,
+    "eventSource": "fireflies",
+    "source": {
+      "createSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "fireflies"
+          },
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "connectionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "teamId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "signingSecret": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "eventTypes": {
+            "minItems": 1,
+            "maxItems": 2,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["meeting.transcribed", "meeting.summarized"]
+            }
+          }
+        },
+        "required": ["kind", "version", "name", "connectionId", "teamId", "signingSecret", "eventTypes"],
+        "additionalProperties": false
+      },
+      "updateSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "eventTypes": {
+            "minItems": 1,
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_.:]{0,127}$"
+            }
+          },
+          "verificationToken": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "signingSecret": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "encryptKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": ["version", "expectedRevision", "name", "enabled", "eventTypes"],
+        "additionalProperties": false
+      },
+      "kind": "fireflies",
+      "provider": "fireflies",
+      "triggerId": "fireflies.on_meeting_ready",
+      "maximumBodyBytes": 65536,
+      "applicationIngress": false,
+      "managed": false
+    }
   },
   {
     "snapshot": {
@@ -320,14 +882,6 @@
           "nullable": false
         },
         {
-          "handle": "insecureSsl",
-          "jsonSchema": {
-            "type": "boolean"
-          },
-          "nullable": false,
-          "value": false
-        },
-        {
           "handle": "owner",
           "jsonSchema": {
             "type": "string",
@@ -342,6 +896,18 @@
             "pattern": "^(?!\\.{1,2}$)[a-zA-Z0-9._-]{1,100}$"
           },
           "nullable": false
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
+          "handle": "insecureSsl",
+          "jsonSchema": {
+            "type": "boolean"
+          },
+          "nullable": false,
+          "value": false
         }
       ],
       "definitionVersion": 2,
@@ -521,14 +1087,6 @@
           "nullable": false
         },
         {
-          "handle": "insecureSsl",
-          "jsonSchema": {
-            "type": "boolean"
-          },
-          "nullable": false,
-          "value": false
-        },
-        {
           "handle": "project",
           "jsonSchema": {
             "type": "string",
@@ -546,6 +1104,18 @@
           },
           "nullable": false,
           "value": ""
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
+          "handle": "insecureSsl",
+          "jsonSchema": {
+            "type": "boolean"
+          },
+          "nullable": false,
+          "value": false
         }
       ],
       "definitionVersion": 2,
@@ -601,24 +1171,6 @@
     "snapshot": {
       "configInputs": [
         {
-          "handle": "includeDrafts",
-          "jsonSchema": {
-            "type": "boolean"
-          },
-          "nullable": false,
-          "value": false,
-          "description": "Also trigger on draft messages."
-        },
-        {
-          "handle": "includeSpamAndTrash",
-          "jsonSchema": {
-            "type": "boolean"
-          },
-          "nullable": false,
-          "value": false,
-          "description": "Also trigger on messages in SPAM and TRASH."
-        },
-        {
           "handle": "labelNamesOrIds",
           "jsonSchema": {
             "type": "array",
@@ -630,16 +1182,6 @@
           "nullable": false,
           "description": "Only trigger on messages carrying all of these labels, referenced by name or ID.",
           "value": []
-        },
-        {
-          "handle": "maxMessagesPerPoll",
-          "jsonSchema": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100
-          },
-          "nullable": false,
-          "value": 25
         },
         {
           "handle": "readStatus",
@@ -667,6 +1209,38 @@
           "nullable": false,
           "description": "Only trigger on messages whose sender matches this address or name.",
           "value": ""
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
+          "handle": "includeDrafts",
+          "jsonSchema": {
+            "type": "boolean"
+          },
+          "nullable": false,
+          "value": false,
+          "description": "Also trigger on draft messages."
+        },
+        {
+          "handle": "includeSpamAndTrash",
+          "jsonSchema": {
+            "type": "boolean"
+          },
+          "nullable": false,
+          "value": false,
+          "description": "Also trigger on messages in SPAM and TRASH."
+        },
+        {
+          "handle": "maxMessagesPerPoll",
+          "jsonSchema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "nullable": false,
+          "value": 25
         }
       ],
       "definitionVersion": 2,
@@ -755,6 +1329,10 @@
           },
           "nullable": false,
           "value": ""
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
         },
         {
           "handle": "maxEventsPerPoll",
@@ -884,6 +1462,28 @@
           "description": "Optional shared drive ID. Omit it to monitor the connected account."
         },
         {
+          "handle": "includeRemoved",
+          "jsonSchema": {
+            "type": "boolean"
+          },
+          "nullable": false,
+          "value": true,
+          "description": "Include changes caused by deletion or loss of access."
+        },
+        {
+          "handle": "restrictToMyDrive",
+          "jsonSchema": {
+            "type": "boolean"
+          },
+          "nullable": false,
+          "value": false,
+          "description": "Restrict changes to the My Drive hierarchy."
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
           "handle": "includeCorpusRemovals",
           "jsonSchema": {
             "type": "boolean"
@@ -902,15 +1502,6 @@
           "description": "Include items from My Drive and shared drives."
         },
         {
-          "handle": "includeRemoved",
-          "jsonSchema": {
-            "type": "boolean"
-          },
-          "nullable": false,
-          "value": true,
-          "description": "Include changes caused by deletion or loss of access."
-        },
-        {
           "handle": "pageSize",
           "jsonSchema": {
             "type": "integer",
@@ -920,15 +1511,6 @@
           "nullable": false,
           "value": 100,
           "description": "Maximum changes included in one Flow Run."
-        },
-        {
-          "handle": "restrictToMyDrive",
-          "jsonSchema": {
-            "type": "boolean"
-          },
-          "nullable": false,
-          "value": false,
-          "description": "Restrict changes to the My Drive hierarchy."
         }
       ],
       "definitionVersion": 2,
@@ -1052,16 +1634,6 @@
           "value": ["file"]
         },
         {
-          "handle": "maxFilesPerPoll",
-          "jsonSchema": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 200
-          },
-          "nullable": false,
-          "value": 50
-        },
-        {
           "handle": "mimeTypes",
           "jsonSchema": {
             "type": "array",
@@ -1080,6 +1652,20 @@
           },
           "nullable": false,
           "value": ""
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
+          "handle": "maxFilesPerPoll",
+          "jsonSchema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "nullable": false,
+          "value": 50
         }
       ],
       "definitionVersion": 2,
@@ -1175,6 +1761,28 @@
           "description": "Optional shared drive ID. Omit it to monitor the connected account."
         },
         {
+          "handle": "includeRemoved",
+          "jsonSchema": {
+            "type": "boolean"
+          },
+          "nullable": false,
+          "value": true,
+          "description": "Include changes caused by deletion or loss of access."
+        },
+        {
+          "handle": "restrictToMyDrive",
+          "jsonSchema": {
+            "type": "boolean"
+          },
+          "nullable": false,
+          "value": false,
+          "description": "Restrict changes to the My Drive hierarchy."
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
           "handle": "includeCorpusRemovals",
           "jsonSchema": {
             "type": "boolean"
@@ -1193,15 +1801,6 @@
           "description": "Include items from My Drive and shared drives."
         },
         {
-          "handle": "includeRemoved",
-          "jsonSchema": {
-            "type": "boolean"
-          },
-          "nullable": false,
-          "value": true,
-          "description": "Include changes caused by deletion or loss of access."
-        },
-        {
           "handle": "pageSize",
           "jsonSchema": {
             "type": "integer",
@@ -1211,15 +1810,6 @@
           "nullable": false,
           "value": 100,
           "description": "Maximum changes included in one Flow Run."
-        },
-        {
-          "handle": "restrictToMyDrive",
-          "jsonSchema": {
-            "type": "boolean"
-          },
-          "nullable": false,
-          "value": false,
-          "description": "Restrict changes to the My Drive hierarchy."
         }
       ],
       "definitionVersion": 2,
@@ -1267,6 +1857,26 @@
           "value": "A:ZZZ"
         },
         {
+          "handle": "sheet",
+          "jsonSchema": {
+            "type": "string",
+            "minLength": 1
+          },
+          "nullable": false
+        },
+        {
+          "handle": "spreadsheetId",
+          "jsonSchema": {
+            "type": "string",
+            "minLength": 1
+          },
+          "nullable": false
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
           "handle": "dateTimeRender",
           "jsonSchema": {
             "type": "string",
@@ -1302,22 +1912,6 @@
           },
           "nullable": false,
           "value": 100
-        },
-        {
-          "handle": "sheet",
-          "jsonSchema": {
-            "type": "string",
-            "minLength": 1
-          },
-          "nullable": false
-        },
-        {
-          "handle": "spreadsheetId",
-          "jsonSchema": {
-            "type": "string",
-            "minLength": 1
-          },
-          "nullable": false
         },
         {
           "handle": "valueRender",
@@ -1373,6 +1967,403 @@
       "type": "poll"
     },
     "options": false
+  },
+  {
+    "snapshot": {
+      "key": "intercom.on_conversation_event",
+      "provider": "intercom",
+      "name": "on_conversation_event",
+      "displayName": "Customer Conversation or Ticket",
+      "description": "Receives customer conversations, customer replies and new tickets from a verified Intercom application event source. Administrator replies are excluded.",
+      "definitionVersion": 2,
+      "type": "integration",
+      "endpoint": {
+        "methods": ["POST"],
+        "body": {
+          "formats": ["json"],
+          "allowArray": false,
+          "allowEmpty": false
+        },
+        "successStatus": 200
+      },
+      "configInputs": [
+        {
+          "handle": "sourceId",
+          "jsonSchema": {
+            "type": "string",
+            "pattern": "^source_[0-9a-f]{32}$",
+            "title": "Event source"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "eventTypes",
+          "jsonSchema": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["conversation.user.created", "conversation.user.replied", "ticket.created"]
+            },
+            "minItems": 1,
+            "maxItems": 3,
+            "uniqueItems": true,
+            "title": "Events"
+          },
+          "nullable": false,
+          "value": ["conversation.user.created", "conversation.user.replied", "ticket.created"]
+        }
+      ],
+      "outputs": [
+        {
+          "handle": "event",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "deliveryId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "workspaceId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "objectId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "body",
+          "jsonSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          },
+          "nullable": false
+        }
+      ]
+    },
+    "options": false,
+    "eventSource": "intercom",
+    "source": {
+      "createSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "intercom"
+          },
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "connectionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "teamId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "appId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "signingSecret": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "eventTypes": {
+            "minItems": 1,
+            "maxItems": 3,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["conversation.user.created", "conversation.user.replied", "ticket.created"]
+            }
+          }
+        },
+        "required": ["kind", "version", "name", "connectionId", "teamId", "appId", "signingSecret", "eventTypes"],
+        "additionalProperties": false
+      },
+      "updateSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "eventTypes": {
+            "minItems": 1,
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_.:]{0,127}$"
+            }
+          },
+          "verificationToken": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "signingSecret": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "encryptKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": ["version", "expectedRevision", "name", "enabled", "eventTypes"],
+        "additionalProperties": false
+      },
+      "kind": "intercom",
+      "provider": "intercom",
+      "triggerId": "intercom.on_conversation_event",
+      "maximumBodyBytes": 65536,
+      "applicationIngress": true,
+      "managed": false
+    }
+  },
+  {
+    "snapshot": {
+      "key": "jira.on_issue_event",
+      "provider": "jira",
+      "name": "on_issue_event",
+      "displayName": "Issue or Comment Event",
+      "description": "Receives Jira Cloud issue creation, issue updates and new comments through a shared project webhook with automatic renewal.",
+      "definitionVersion": 2,
+      "type": "integration",
+      "endpoint": {
+        "methods": ["POST"],
+        "body": {
+          "formats": ["json"],
+          "allowArray": false,
+          "allowEmpty": false
+        },
+        "successStatus": 200
+      },
+      "configInputs": [
+        {
+          "handle": "sourceId",
+          "jsonSchema": {
+            "type": "string",
+            "pattern": "^source_[0-9a-f]{32}$",
+            "title": "Event source"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "eventTypes",
+          "jsonSchema": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["jira:issue_created", "jira:issue_updated", "comment_created"]
+            },
+            "minItems": 1,
+            "maxItems": 3,
+            "uniqueItems": true,
+            "title": "Events"
+          },
+          "nullable": false,
+          "value": ["jira:issue_created", "jira:issue_updated", "comment_created"]
+        }
+      ],
+      "outputs": [
+        {
+          "handle": "event",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "deliveryId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "cloudId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "issueId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "body",
+          "jsonSchema": {
+            "type": "object"
+          },
+          "nullable": false
+        }
+      ]
+    },
+    "options": false,
+    "eventSource": "jira",
+    "source": {
+      "createSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "jira"
+          },
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "connectionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "teamId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "project": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "eventTypes": {
+            "minItems": 1,
+            "maxItems": 3,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["jira:issue_created", "jira:issue_updated", "comment_created"]
+            }
+          }
+        },
+        "required": ["kind", "version", "name", "connectionId", "teamId", "project", "eventTypes"],
+        "additionalProperties": false
+      },
+      "updateSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "eventTypes": {
+            "minItems": 1,
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_.:]{0,127}$"
+            }
+          },
+          "verificationToken": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "signingSecret": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "encryptKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": ["version", "expectedRevision", "name", "enabled", "eventTypes"],
+        "additionalProperties": false
+      },
+      "kind": "jira",
+      "provider": "jira",
+      "triggerId": "jira.on_issue_event",
+      "maximumBodyBytes": 65536,
+      "applicationIngress": false,
+      "managed": true
+    }
   },
   {
     "snapshot": {
@@ -1502,6 +2493,10 @@
           "value": ["page_added"]
         },
         {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
           "handle": "includeProperties",
           "jsonSchema": {
             "type": "boolean"
@@ -1620,6 +2615,18 @@
           "value": ["file"]
         },
         {
+          "handle": "parentFolderId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false,
+          "value": ""
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
           "handle": "maxItemsPerPoll",
           "jsonSchema": {
             "type": "integer",
@@ -1628,14 +2635,6 @@
           },
           "nullable": false,
           "value": 50
-        },
-        {
-          "handle": "parentFolderId",
-          "jsonSchema": {
-            "type": "string"
-          },
-          "nullable": false,
-          "value": ""
         }
       ],
       "definitionVersion": 2,
@@ -1729,24 +2728,6 @@
           "description": "A well-known mail folder name, folder ID, or an empty string for the whole mailbox."
         },
         {
-          "handle": "includeDrafts",
-          "jsonSchema": {
-            "type": "boolean"
-          },
-          "nullable": false,
-          "value": false
-        },
-        {
-          "handle": "maxMessagesPerPoll",
-          "jsonSchema": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100
-          },
-          "nullable": false,
-          "value": 25
-        },
-        {
           "handle": "readStatus",
           "jsonSchema": {
             "type": "string",
@@ -1780,6 +2761,28 @@
           },
           "nullable": false,
           "value": false
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
+          "handle": "includeDrafts",
+          "jsonSchema": {
+            "type": "boolean"
+          },
+          "nullable": false,
+          "value": false
+        },
+        {
+          "handle": "maxMessagesPerPoll",
+          "jsonSchema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "nullable": false,
+          "value": 25
         }
       ],
       "definitionVersion": 2,
@@ -1878,6 +2881,435 @@
       "type": "poll"
     },
     "options": false
+  },
+  {
+    "snapshot": {
+      "key": "pandadoc.on_document_event",
+      "provider": "pandadoc",
+      "name": "on_document_event",
+      "displayName": "Document Status Changed",
+      "description": "Receives document status changes in the connected workspace, optionally only when the entire document is completed.",
+      "definitionVersion": 2,
+      "type": "integration",
+      "endpoint": {
+        "methods": ["POST"],
+        "body": {
+          "formats": ["json"],
+          "allowArray": true,
+          "allowEmpty": false
+        },
+        "successStatus": 200
+      },
+      "configInputs": [
+        {
+          "handle": "completedOnly",
+          "jsonSchema": {
+            "type": "boolean",
+            "title": "Completed documents only"
+          },
+          "nullable": false,
+          "value": true
+        }
+      ],
+      "outputs": [
+        {
+          "handle": "events",
+          "nullable": false,
+          "jsonSchema": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "event": {
+                  "type": "string"
+                },
+                "data": {
+                  "type": "object"
+                }
+              },
+              "required": ["event", "data"]
+            }
+          }
+        }
+      ]
+    },
+    "options": false
+  },
+  {
+    "snapshot": {
+      "key": "pipedrive.on_crm_event",
+      "provider": "pipedrive",
+      "name": "on_crm_event",
+      "displayName": "Deal or Contact Event",
+      "description": "Receives new deals or contacts, or actual changes to a deal stage or status using Pipedrive Webhooks v2.",
+      "definitionVersion": 2,
+      "type": "integration",
+      "endpoint": {
+        "methods": ["POST"],
+        "body": {
+          "formats": ["json"],
+          "allowArray": false,
+          "allowEmpty": false
+        },
+        "successStatus": 200
+      },
+      "configInputs": [
+        {
+          "handle": "eventType",
+          "jsonSchema": {
+            "type": "string",
+            "enum": ["deal.created", "deal.stage_changed", "deal.status_changed", "person.created"],
+            "title": "Event"
+          },
+          "nullable": false,
+          "value": "deal.created"
+        }
+      ],
+      "outputs": [
+        {
+          "handle": "event",
+          "jsonSchema": {
+            "type": "string",
+            "enum": ["deal.created", "deal.stage_changed", "deal.status_changed", "person.created"]
+          },
+          "nullable": false
+        },
+        {
+          "handle": "deliveryId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "objectId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "body",
+          "jsonSchema": {
+            "type": "object"
+          },
+          "nullable": false
+        }
+      ]
+    },
+    "options": false
+  },
+  {
+    "snapshot": {
+      "key": "resend.on_email_event",
+      "provider": "resend",
+      "name": "on_email_event",
+      "displayName": "Email Received, Bounced or Complained",
+      "description": "Receives inbound email, bounce, and complaint notifications. Read message bodies and attachments with Actions.",
+      "definitionVersion": 2,
+      "type": "integration",
+      "endpoint": {
+        "methods": ["POST"],
+        "body": {
+          "formats": ["json"],
+          "allowArray": false,
+          "allowEmpty": false
+        },
+        "successStatus": 200
+      },
+      "configInputs": [
+        {
+          "handle": "eventTypes",
+          "jsonSchema": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["email.received", "email.bounced", "email.complained"]
+            },
+            "minItems": 1,
+            "uniqueItems": true,
+            "title": "Events"
+          },
+          "nullable": false,
+          "value": ["email.received", "email.bounced", "email.complained"]
+        }
+      ],
+      "outputs": [
+        {
+          "handle": "event",
+          "jsonSchema": {
+            "type": "string",
+            "enum": ["email.received", "email.bounced", "email.complained"]
+          },
+          "nullable": false
+        },
+        {
+          "handle": "deliveryId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "emailId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "createdAt",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "body",
+          "jsonSchema": {
+            "type": "object"
+          },
+          "nullable": false
+        }
+      ]
+    },
+    "options": false
+  },
+  {
+    "snapshot": {
+      "key": "sentry.on_issue_alert",
+      "provider": "sentry",
+      "name": "on_issue_alert",
+      "displayName": "Issue Alert",
+      "description": "Receives Issue Alert Rule notifications from a verified Sentry Custom Integration installation.",
+      "definitionVersion": 2,
+      "type": "integration",
+      "endpoint": {
+        "methods": ["POST"],
+        "body": {
+          "formats": ["json"],
+          "allowArray": false,
+          "allowEmpty": false
+        },
+        "successStatus": 200
+      },
+      "configInputs": [
+        {
+          "handle": "projectIds",
+          "jsonSchema": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "uniqueItems": true,
+            "title": "Project IDs"
+          },
+          "nullable": true
+        },
+        {
+          "handle": "ruleNames",
+          "jsonSchema": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true,
+            "title": "Alert rule names"
+          },
+          "nullable": true
+        },
+        {
+          "handle": "sourceId",
+          "jsonSchema": {
+            "type": "string",
+            "pattern": "^source_[0-9a-f]{32}$",
+            "title": "Event source"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "eventTypes",
+          "jsonSchema": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["issue.alert"]
+            },
+            "minItems": 1,
+            "maxItems": 1,
+            "uniqueItems": true,
+            "title": "Events"
+          },
+          "nullable": false,
+          "value": ["issue.alert"]
+        }
+      ],
+      "outputs": [
+        {
+          "handle": "event",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "deliveryId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "organizationId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "issueId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "body",
+          "jsonSchema": {
+            "type": "object"
+          },
+          "nullable": false
+        }
+      ]
+    },
+    "options": false,
+    "eventSource": "sentry",
+    "source": {
+      "createSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "sentry"
+          },
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "connectionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "teamId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "appId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "installationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "organizationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "signingSecret": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "eventTypes": {
+            "minItems": 1,
+            "maxItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "const": "issue.alert"
+            }
+          }
+        },
+        "required": ["kind", "version", "name", "connectionId", "teamId", "appId", "installationId", "organizationId", "signingSecret", "eventTypes"],
+        "additionalProperties": false
+      },
+      "updateSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "eventTypes": {
+            "minItems": 1,
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_.:]{0,127}$"
+            }
+          },
+          "verificationToken": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "signingSecret": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "encryptKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": ["version", "expectedRevision", "name", "enabled", "eventTypes"],
+        "additionalProperties": false
+      },
+      "kind": "sentry",
+      "provider": "sentry",
+      "triggerId": "sentry.on_issue_alert",
+      "maximumBodyBytes": 65536,
+      "applicationIngress": true,
+      "managed": false
+    }
   },
   {
     "snapshot": {
@@ -2188,6 +3620,19 @@
           "description": "Never trigger on messages written by these Slack user IDs."
         },
         {
+          "handle": "textContains",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false,
+          "value": "",
+          "description": "Only trigger when message text contains this string, case-insensitively."
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
           "handle": "includeBotMessages",
           "jsonSchema": {
             "type": "boolean"
@@ -2215,15 +3660,6 @@
           "nullable": false,
           "value": 15,
           "description": "Maximum number of messages processed per poll."
-        },
-        {
-          "handle": "textContains",
-          "jsonSchema": {
-            "type": "string"
-          },
-          "nullable": false,
-          "value": "",
-          "description": "Only trigger when message text contains this string, case-insensitively."
         }
       ],
       "definitionVersion": 2,
@@ -2294,16 +3730,259 @@
   },
   {
     "snapshot": {
+      "key": "slackbot.on_event",
+      "provider": "slackbot",
+      "name": "on_event",
+      "displayName": "Mention or Direct Message",
+      "description": "Receives user mentions and new direct messages through a shared Slack application event source. Slack Connect events are excluded.",
+      "definitionVersion": 2,
+      "type": "integration",
+      "endpoint": {
+        "methods": ["POST"],
+        "body": {
+          "formats": ["json"],
+          "allowArray": false,
+          "allowEmpty": false
+        },
+        "successStatus": 200
+      },
       "configInputs": [
         {
-          "handle": "apiVersion",
+          "handle": "sourceId",
           "jsonSchema": {
             "type": "string",
-            "maxLength": 40
+            "pattern": "^source_[0-9a-f]{32}$",
+            "title": "Event source"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "eventTypes",
+          "jsonSchema": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["app_mention", "message.im"]
+            },
+            "minItems": 1,
+            "maxItems": 2,
+            "uniqueItems": true,
+            "title": "Events"
           },
           "nullable": false,
-          "value": ""
+          "value": ["app_mention", "message.im"]
         },
+        {
+          "handle": "channelIds",
+          "jsonSchema": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "maxItems": 100,
+            "uniqueItems": true,
+            "title": "Channel IDs"
+          },
+          "nullable": true
+        }
+      ],
+      "outputs": [
+        {
+          "handle": "event",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "deliveryId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "appId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "teamId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "channel",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "user",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "text",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "ts",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "threadTs",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": true
+        },
+        {
+          "handle": "body",
+          "jsonSchema": {
+            "type": "object"
+          },
+          "nullable": false
+        }
+      ]
+    },
+    "options": false,
+    "eventSource": "slack",
+    "source": {
+      "createSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "slack"
+          },
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "connectionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "teamId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "appId": {
+            "type": "string",
+            "pattern": "^A[A-Z0-9]+$"
+          },
+          "workspaceId": {
+            "type": "string",
+            "pattern": "^T[A-Z0-9]+$"
+          },
+          "signingSecret": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "eventTypes": {
+            "minItems": 1,
+            "maxItems": 2,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["app_mention", "message.im"]
+            }
+          }
+        },
+        "required": ["kind", "version", "name", "connectionId", "teamId", "appId", "workspaceId", "signingSecret", "eventTypes"],
+        "additionalProperties": false
+      },
+      "updateSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "eventTypes": {
+            "minItems": 1,
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_.:]{0,127}$"
+            }
+          },
+          "verificationToken": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "signingSecret": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "encryptKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": ["version", "expectedRevision", "name", "enabled", "eventTypes"],
+        "additionalProperties": false
+      },
+      "kind": "slack",
+      "provider": "slackbot",
+      "triggerId": "slackbot.on_event",
+      "maximumBodyBytes": 65536,
+      "applicationIngress": true,
+      "managed": false
+    }
+  },
+  {
+    "snapshot": {
+      "configInputs": [
         {
           "handle": "events",
           "jsonSchema": {
@@ -2325,6 +4004,19 @@
           },
           "nullable": false,
           "value": false
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
+          "handle": "apiVersion",
+          "jsonSchema": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "nullable": false,
+          "value": ""
         }
       ],
       "definitionVersion": 2,
@@ -2380,6 +4072,92 @@
     "snapshot": {
       "configInputs": [
         {
+          "handle": "formId",
+          "jsonSchema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "title": "Form"
+          },
+          "nullable": false,
+          "description": "Choose a form accessible to this Connection."
+        }
+      ],
+      "definitionVersion": 2,
+      "description": "Receives new Tally form submissions through a signed, automatically managed webhook.",
+      "displayName": "Form Response",
+      "endpoint": {
+        "body": {
+          "allowArray": false,
+          "allowEmpty": false,
+          "formats": ["json"]
+        },
+        "methods": ["POST"],
+        "successStatus": 200
+      },
+      "key": "tally.on_form_response",
+      "name": "on_form_response",
+      "outputs": [
+        {
+          "handle": "response",
+          "nullable": false,
+          "jsonSchema": {
+            "type": "object",
+            "properties": {
+              "eventId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "formId": {
+                "type": "string"
+              },
+              "submissionId": {
+                "type": "string"
+              },
+              "responseId": {
+                "type": "string"
+              },
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": ["string", "null"]
+                    },
+                    "value": {},
+                    "options": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  },
+                  "required": ["key", "type", "label", "value"]
+                }
+              }
+            },
+            "required": ["eventId", "createdAt", "formId", "submissionId", "responseId", "fields"]
+          }
+        }
+      ],
+      "provider": "tally",
+      "type": "integration"
+    },
+    "options": true
+  },
+  {
+    "snapshot": {
+      "configInputs": [
+        {
           "handle": "chatIds",
           "jsonSchema": {
             "type": "array",
@@ -2393,15 +4171,6 @@
           "nullable": false,
           "value": [],
           "description": "Only accept updates from these numeric Telegram chat IDs. Empty means every chat."
-        },
-        {
-          "handle": "dropPendingUpdates",
-          "jsonSchema": {
-            "type": "boolean"
-          },
-          "nullable": false,
-          "value": true,
-          "description": "Discard updates queued before the webhook is created or resumed."
         },
         {
           "handle": "updates",
@@ -2458,6 +4227,19 @@
           "nullable": false,
           "value": [],
           "description": "Only accept updates from these numeric Telegram user IDs. Empty means every user."
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
+        },
+        {
+          "handle": "dropPendingUpdates",
+          "jsonSchema": {
+            "type": "boolean"
+          },
+          "nullable": false,
+          "value": true,
+          "description": "Discard updates queued before the webhook is created or resumed."
         }
       ],
       "definitionVersion": 2,
@@ -2504,6 +4286,163 @@
   },
   {
     "snapshot": {
+      "key": "typeform.on_form_response",
+      "provider": "typeform",
+      "name": "on_form_response",
+      "displayName": "Completed Form Response",
+      "description": "Receives complete Typeform submissions through an automatically managed signed webhook.",
+      "definitionVersion": 2,
+      "type": "integration",
+      "endpoint": {
+        "methods": ["POST"],
+        "body": {
+          "formats": ["json"],
+          "allowArray": false,
+          "allowEmpty": false
+        },
+        "successStatus": 200
+      },
+      "configInputs": [
+        {
+          "handle": "formId",
+          "jsonSchema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "title": "Form ID"
+          },
+          "nullable": false
+        }
+      ],
+      "outputs": [
+        {
+          "handle": "response",
+          "nullable": false,
+          "jsonSchema": {
+            "type": "object",
+            "properties": {
+              "eventId": {
+                "type": "string"
+              },
+              "form_id": {
+                "type": "string"
+              },
+              "token": {
+                "type": "string"
+              },
+              "submitted_at": {
+                "type": "string"
+              },
+              "answers": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "definition": {
+                "type": "object"
+              }
+            },
+            "required": ["eventId", "form_id", "token", "submitted_at", "answers"]
+          }
+        }
+      ]
+    },
+    "options": false
+  },
+  {
+    "snapshot": {
+      "key": "vercel.on_deployment_event",
+      "provider": "vercel",
+      "name": "on_deployment_event",
+      "displayName": "Deployment Ready or Failed",
+      "description": "Receives successful and failed deployments for a Vercel project.",
+      "definitionVersion": 2,
+      "type": "integration",
+      "endpoint": {
+        "methods": ["POST"],
+        "body": {
+          "formats": ["json"],
+          "allowArray": false,
+          "allowEmpty": false
+        },
+        "successStatus": 200
+      },
+      "configInputs": [
+        {
+          "handle": "teamId",
+          "jsonSchema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "title": "Team ID"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "projectId",
+          "jsonSchema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "title": "Project ID"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "environment",
+          "jsonSchema": {
+            "type": "string",
+            "enum": ["all", "production", "preview"],
+            "title": "Environment"
+          },
+          "nullable": false,
+          "value": "all"
+        }
+      ],
+      "outputs": [
+        {
+          "handle": "event",
+          "jsonSchema": {
+            "type": "string",
+            "enum": ["deployment.ready", "deployment.error"]
+          },
+          "nullable": false
+        },
+        {
+          "handle": "deliveryId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "deploymentId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "projectId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "body",
+          "jsonSchema": {
+            "type": "object"
+          },
+          "nullable": false
+        }
+      ]
+    },
+    "options": false
+  },
+  {
+    "snapshot": {
       "configInputs": [
         {
           "handle": "events",
@@ -2535,6 +4474,10 @@
             "uniqueItems": true
           },
           "nullable": false
+        },
+        {
+          "group": "Advanced settings",
+          "collapsed": true
         },
         {
           "handle": "webhookName",
@@ -2753,5 +4696,205 @@
       "type": "integration"
     },
     "options": false
+  },
+  {
+    "snapshot": {
+      "key": "zoom.on_recording_ready",
+      "provider": "zoom",
+      "name": "on_recording_ready",
+      "displayName": "Cloud Recording Ready",
+      "description": "Receives completed cloud recordings hosted by the connected Zoom user through a verified application event source.",
+      "definitionVersion": 2,
+      "type": "integration",
+      "endpoint": {
+        "methods": ["POST"],
+        "body": {
+          "formats": ["json"],
+          "allowArray": false,
+          "allowEmpty": false
+        },
+        "successStatus": 200
+      },
+      "configInputs": [
+        {
+          "handle": "sourceId",
+          "jsonSchema": {
+            "type": "string",
+            "pattern": "^source_[0-9a-f]{32}$",
+            "title": "Event source"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "eventTypes",
+          "jsonSchema": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["recording.completed"]
+            },
+            "minItems": 1,
+            "maxItems": 1,
+            "uniqueItems": true,
+            "title": "Events"
+          },
+          "nullable": false,
+          "value": ["recording.completed"]
+        }
+      ],
+      "outputs": [
+        {
+          "handle": "event",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "deliveryId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "accountId",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "meetingUuid",
+          "jsonSchema": {
+            "type": "string"
+          },
+          "nullable": false
+        },
+        {
+          "handle": "body",
+          "jsonSchema": {
+            "type": "object"
+          },
+          "nullable": false
+        }
+      ]
+    },
+    "options": false,
+    "eventSource": "zoom",
+    "source": {
+      "createSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "zoom"
+          },
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "connectionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "teamId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "appId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "signingSecret": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "eventTypes": {
+            "minItems": 1,
+            "maxItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "const": "recording.completed"
+            }
+          }
+        },
+        "required": ["kind", "version", "name", "connectionId", "teamId", "appId", "signingSecret", "eventTypes"],
+        "additionalProperties": false
+      },
+      "updateSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "eventTypes": {
+            "minItems": 1,
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_.:]{0,127}$"
+            }
+          },
+          "verificationToken": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "signingSecret": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "encryptKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": ["version", "expectedRevision", "name", "enabled", "eventTypes"],
+        "additionalProperties": false
+      },
+      "kind": "zoom",
+      "provider": "zoom",
+      "triggerId": "zoom.on_recording_ready",
+      "maximumBodyBytes": 65536,
+      "applicationIngress": true,
+      "managed": false
+    }
   }
 ]

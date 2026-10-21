@@ -26,8 +26,8 @@ function ScheduleStory({ dark, language, log }: { dark: boolean; language: UiLan
           }}
         />
         <output aria-label="Saved schedules">{JSON.stringify(schedules)}</output>
-        <TriggerSummary inputDefs={[]} trigger={{ kind: 'cron', name: 'Schedule', cronTimes: schedules }} />
-        <TriggerSummary inputDefs={[]} trigger={{ kind: 'start', name: 'Start' }} />
+        <TriggerSummary trigger={{ kind: 'cron', name: 'Schedule', cronTimes: schedules }} />
+        <TriggerSummary trigger={{ inputDefs: [], kind: 'start', name: 'Start' }} />
         <h3>Read only</h3>
         <TriggerScheduleEditor schedules={schedules} disabled onChange={() => log('Unexpected read-only save')} />
         <h3>Missing schedule</h3>

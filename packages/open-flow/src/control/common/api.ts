@@ -1,4 +1,7 @@
 import type { CanvasCommand } from '../../canvas/common/commands.ts'
+
+import { currentEngineContract } from '../../execution/common/engineContract.ts'
+import { workflowContractSchema, workflowReferencesSchema } from '../../workflow/common/workflow.ts'
 export type { CanvasCommand, CanvasCommandSubscriber } from '../../canvas/common/commands.ts'
 import type { LiveDetails } from './liveDetails.ts'
 
@@ -59,8 +62,8 @@ import type { FlowResourceReferences } from '../../flow/common/semantics.ts'
 import { flowCheck } from './checkDecoders.ts'
 import { connection, connectorAccess, connectorAccessSnapshot, connectorAccessCandidatesBatch, connectorAction, leinaBots } from './connectorDecoders.ts'
 import { allConnectorConnectionsQuery, connectorActionQuery, connectorConnectionsQuery, connectorProvidersQuery } from './connectorQueries.ts'
-import { exact, integer, invalidResponse, jsonValue, record, string } from './decoding.ts'
-import { errorListener, flow, flowPage, variable, variableReferences } from './flowDecoders.ts'
+import { requiredFields, integer, invalidResponse, jsonValue, record, string } from './decoding.ts'
+import { errorListener, flow, flowPage, variable, variableListItem, variableReferences } from './flowDecoders.ts'
 import { live, publication, publicationPage, publishOperation } from './publicationDecoders.ts'
 import { draft, draftChange, draftSync, presentation } from './revisionDecoders.ts'
 import { runCancellation, runDetails, runPage, runResult, waitResolution } from './runDecoders.ts'
@@ -100,7 +103,7 @@ export interface FlowResources {
 }
 
 export interface Flow {
-  readonly live?: { readonly enabled: boolean; readonly publicationId: string; readonly revisionId: string }
+  readonly live?: { readonly enabled: boolean; readonly hasStart: boolean; readonly publicationId: string; readonly revisionId: string }
 
   readonly createdAt: string
   readonly draftRevisionId: string
@@ -126,8 +129,12 @@ export interface Presentation {
   readonly version: 1
 }
 
+export interface FlowListItem extends Flow {
+  readonly referenceCount: number
+}
+
 export interface FlowPage {
-  readonly flows: readonly Flow[]
+  readonly flows: readonly FlowListItem[]
   readonly nextCursor?: string
   readonly total?: number
   readonly version: 1
@@ -143,7 +150,10 @@ export interface VariableReference {
 export interface VariableReferences {
   readonly version: 1
   readonly references: readonly VariableReference[]
-  readonly unknown: readonly { readonly flowId: string; readonly flowName: string; readonly scope: 'draft' | 'live' }[]
+}
+
+export interface VariableListItem extends Variable {
+  readonly referenceCount: number
 }
 
 export interface Variable {
@@ -441,6 +451,13 @@ export interface PublicationPage {
   readonly version: 1
 }
 
+export type RunChannel = 'workbench' | 'cli' | 'mcp' | 'api' | 'trigger' | 'workflow'
+
+export interface RunInitiator {
+  readonly actorId?: string
+  readonly channel: RunChannel
+}
+
 export interface Run {
   readonly createdAt: string
   readonly finishedAt?: string
@@ -467,7 +484,21 @@ export type ErrorDispatch =
   | { readonly status: 'dispatched'; readonly flowId: string; readonly runId: string }
   | { readonly status: 'failed'; readonly flowId: string; readonly message: string }
 
+export interface WorkflowCaller {
+  readonly flowId: string
+  readonly runId: string
+  readonly nodeId: string
+  readonly executionId: string
+}
+export interface WorkflowRunCall extends WorkflowCaller {
+  readonly status: RunStatus | null
+}
+
 type RunDetailsBase = Run & {
+  readonly initiator?: RunInitiator
+  readonly caller?: WorkflowCaller
+  readonly calls?: readonly WorkflowRunCall[]
+  readonly triggerNodeId?: string
   readonly errorDispatches?: readonly ErrorDispatch[]
   readonly errorSource?: { readonly flowId: string; readonly runId: string }
   readonly closureDigest: string
@@ -636,6 +667,8 @@ export function decodeRunEvent(value: unknown) {
             nodeKind !== 'agent' &&
             nodeKind !== 'value' &&
             nodeKind !== 'outputs' &&
+            nodeKind !== 'webhook-response' &&
+            nodeKind !== 'workflow' &&
             nodeKind !== 'wait'
           )
             return invalidResponse()
@@ -654,11 +687,28 @@ export function decodeRunEvent(value: unknown) {
           return {
             ...base,
             kind,
-            payload: { ...node, outputs: Object.fromEntries(Object.entries(record(payload.outputs)).map(([key, item]) => [key, jsonValue(item)])) },
+            payload: {
+              ...node,
+              ...(payload.systemOutputs === undefined
+                ? {}
+                : { systemOutputs: Object.fromEntries(Object.entries(record(payload.systemOutputs)).map(([key, item]) => [key, jsonValue(item)])) }),
+              outputs: Object.fromEntries(Object.entries(record(payload.outputs)).map(([key, item]) => [key, jsonValue(item)])),
+            },
           } as const
         case 'node.failed': {
           const error = record(payload.error)
-          return { ...base, kind, payload: { ...node, error: { code: string(error.code), message: string(error.message) } } } as const
+          return {
+            ...base,
+            kind,
+            payload: {
+              ...node,
+              ...(payload.handled === true ? { handled: true as const } : {}),
+              ...(payload.systemOutputs === undefined
+                ? {}
+                : { systemOutputs: Object.fromEntries(Object.entries(record(payload.systemOutputs)).map(([key, item]) => [key, jsonValue(item)])) }),
+              error: { code: string(error.code), message: string(error.message) },
+            },
+          } as const
         }
         case 'node.log': {
           const level = payload.level
@@ -731,8 +781,10 @@ export type ConditionalResult<T> =
 
 export class ControlClient {
   private readonly requestControl: ControlRequest
+  private readonly channel: 'workbench' | 'cli' | 'api'
 
-  constructor(requestControl: ControlRequest) {
+  constructor(requestControl: ControlRequest, channel: 'workbench' | 'cli' | 'api' = 'api') {
+    this.channel = channel
     this.requestControl = requestControl
   }
 
@@ -742,13 +794,15 @@ export class ControlClient {
     return jsonValue(result.document)
   }
 
-  async listFlows(options: { readonly cursor?: string; readonly includeTotal?: boolean; readonly limit?: number } = {}): Promise<FlowPage> {
+  async listFlows(
+    options: { readonly cursor?: string; readonly includeTotal?: boolean; readonly limit?: number; readonly signal?: AbortSignal } = {},
+  ): Promise<FlowPage> {
     const parameters = new URLSearchParams()
     if (options.cursor != null) parameters.set('cursor', options.cursor)
     if (options.limit != null) parameters.set('limit', String(options.limit))
     if (options.includeTotal != null) parameters.set('includeTotal', String(options.includeTotal))
     const query = parameters.size == 0 ? '' : `?${parameters}`
-    return flowPage(await this.request(`/v1/flows${query}`))
+    return flowPage(await this.request(`/v1/flows${query}`, options.signal == null ? undefined : { signal: options.signal }))
   }
 
   async listEventSources(
@@ -758,9 +812,13 @@ export class ControlClient {
     return decodeEventSources(await this.request('/v1/event-sources' + (flowId == null ? '' : `?flowId=${segment(flowId)}`), { signal }))
   }
 
-  async listEventSourceConnections(teamId: string | null, signal?: AbortSignal): Promise<readonly ConnectorConnection[]> {
-    const source = record(await this.request(`/v1/event-sources/connections${teamId == null ? '' : `?teamId=${segment(teamId)}`}`, { signal }))
-    exact(source, ['version', 'connections'])
+  async listEventSourceConnections(
+    teamId: string | null,
+    signal?: AbortSignal,
+    kind: 'feishu' | 'slack' | 'intercom' | 'sentry' | 'zoom' | 'fireflies' | 'jira' = 'feishu',
+  ): Promise<readonly ConnectorConnection[]> {
+    const source = record(await this.request(`/v1/event-sources/connections?kind=${kind}${teamId == null ? '' : `&teamId=${segment(teamId)}`}`, { signal }))
+    requiredFields(source, ['version', 'connections'])
     if (source.version != 1 || !Array.isArray(source.connections)) return invalidResponse()
     return source.connections.map(connection)
   }
@@ -777,11 +835,20 @@ export class ControlClient {
     await this.request(`/v1/event-sources/${segment(sourceId)}`, { method: 'DELETE', body: JSON.stringify({ version: 1, expectedRevision }) })
   }
 
-  async listVariables(): Promise<{ readonly variables: readonly Variable[]; readonly version: 1 }> {
+  async listVariables(): Promise<{ readonly variables: readonly VariableListItem[]; readonly version: 1 }> {
     const source = record(await this.request('/v1/variables'))
-    exact(source, ['variables', 'version'])
+    requiredFields(source, ['variables', 'version'])
     if (source.version != 1 || !Array.isArray(source.variables)) return invalidResponse()
-    return { variables: source.variables.map(variable), version: 1 }
+    return { variables: source.variables.map(variableListItem), version: 1 }
+  }
+
+  async getFlowReferences(flowId: string, options: { direction?: 'incoming' | 'outgoing'; offset?: number; limit?: number; signal?: AbortSignal } = {}) {
+    const query = new URLSearchParams({ direction: options.direction ?? 'incoming', offset: String(options.offset ?? 0), limit: String(options.limit ?? 50) })
+    return workflowReferencesSchema.parse(await this.request(`/v1/flows/${segment(flowId)}/references?${query}`, { signal: options.signal }))
+  }
+
+  async getWorkflowContract(flowId: string, signal?: AbortSignal) {
+    return workflowContractSchema.parse(await this.request(`/v1/flows/${segment(flowId)}/call-contract`, { signal }))
   }
 
   async getVariableReferences(name: string, signal?: AbortSignal): Promise<VariableReferences> {
@@ -803,7 +870,7 @@ export class ControlClient {
 
   async deleteVariable(name: string): Promise<void> {
     const source = record(await this.request(`/v1/variables/${segment(name)}`, { method: 'DELETE' }))
-    exact(source, ['version'])
+    requiredFields(source, ['version'])
     if (source.version != 1) return invalidResponse()
   }
 
@@ -843,7 +910,7 @@ export class ControlClient {
         body: JSON.stringify({ version: 1, command }),
       }),
     )
-    exact(source, ['version', 'flowId', 'broadcast'])
+    requiredFields(source, ['version', 'flowId', 'broadcast'])
     if (source.version != 1 || source.broadcast !== true || source.flowId !== flowId) return invalidResponse()
     return { version: 1, flowId: string(source.flowId), broadcast: true }
   }
@@ -987,11 +1054,11 @@ export class ControlClient {
 
   async listTriggerConfigOptions(flowId: string, nodeId: string, field: string, signal?: AbortSignal): Promise<readonly TriggerConfigOption[]> {
     const source = record(await this.request(`/v1/flows/${segment(flowId)}/triggers/${segment(nodeId)}/options/${segment(field)}`, { signal }))
-    exact(source, ['options', 'version'])
+    requiredFields(source, ['options', 'version'])
     if (source.version != 1 || !Array.isArray(source.options) || source.options.length > 1000) return invalidResponse()
     return source.options.map((value) => {
       const item = record(value)
-      exact(item, ['value', 'label', ...(item.color == null ? [] : ['color'])])
+      requiredFields(item, ['value', 'label', ...(item.color == null ? [] : ['color'])])
       const color = item.color == null ? undefined : string(item.color)
       if (color != null && !/^#[0-9a-fA-F]{6}$/.test(color)) return invalidResponse()
       return color == null ? { value: string(item.value), label: string(item.label) } : { value: string(item.value), label: string(item.label), color }
@@ -1000,13 +1067,13 @@ export class ControlClient {
 
   async listConnectorTeams(signal?: AbortSignal) {
     const source = record(await this.request('/v1/connector/teams', { signal }))
-    exact(source, ['enabled', 'teams', 'version'])
+    requiredFields(source, ['enabled', 'teams', 'version'])
     if (source.version != 1 || typeof source.enabled != 'boolean' || !Array.isArray(source.teams)) return invalidResponse()
     return {
       enabled: source.enabled,
       teams: source.teams.map((value: unknown) => {
         const team = record(value)
-        exact(team, ['id', 'name', 'systemCreated'])
+        requiredFields(team, ['id', 'name', 'systemCreated'])
         if (typeof team.systemCreated != 'boolean') return invalidResponse()
         return { id: string(team.id), name: string(team.name), systemCreated: team.systemCreated }
       }),
@@ -1121,7 +1188,7 @@ export class ControlClient {
         method: 'POST',
       }),
     )
-    exact(source, ['url', 'version'])
+    requiredFields(source, ['url', 'version'])
     if (source.version != 1) return invalidResponse()
     try {
       const url = new URL(string(source.url))
@@ -1198,7 +1265,7 @@ export class ControlClient {
   async checkFlow(flowId: string, revisionId: string): Promise<FlowCheck> {
     return flowCheck(
       await this.request(`/v1/flows/${segment(flowId)}/revisions/${segment(revisionId)}/check`, {
-        body: JSON.stringify({ engineContract: 'open-flow-engine/v5', version: 1 }),
+        body: JSON.stringify({ engineContract: currentEngineContract, version: 1 }),
         method: 'POST',
       }),
     )
@@ -1230,8 +1297,8 @@ export class ControlClient {
   async createDraftRun(flowId: string, revisionId: string, options: RunOptions): Promise<DraftRun> {
     const created = runDetails(
       await this.request(`/v1/flows/${segment(flowId)}/revisions/${segment(revisionId)}/runs`, {
-        body: JSON.stringify({ engineContract: 'open-flow-engine/v5', inputs: options.inputs ?? {}, trigger: options.trigger, version: 2 }),
-        headers: { 'idempotency-key': options.idempotencyKey ?? operationKey('run') },
+        body: JSON.stringify({ engineContract: currentEngineContract, inputs: options.inputs ?? {}, trigger: options.trigger, version: 2 }),
+        headers: { 'idempotency-key': options.idempotencyKey ?? operationKey('run'), 'x-open-flow-client': this.channel },
         method: 'POST',
       }),
     )
@@ -1242,7 +1309,7 @@ export class ControlClient {
     const created = runDetails(
       await this.request('/v1/runs', {
         body: JSON.stringify({ inputs: options.inputs ?? {}, trigger: options.trigger, publicationId, version: 2 }),
-        headers: { 'idempotency-key': options.idempotencyKey ?? operationKey('run') },
+        headers: { 'idempotency-key': options.idempotencyKey ?? operationKey('run'), 'x-open-flow-client': this.channel },
         method: 'POST',
       }),
     )
@@ -1261,7 +1328,7 @@ export class ControlClient {
   async publishFlow(flowId: string, revisionId: string, expectedLivePublicationId: string | null, options: PublicationOptions = {}): Promise<PublishOperation> {
     return publishOperation(
       await this.request(`/v1/flows/${segment(flowId)}/revisions/${segment(revisionId)}/publications`, {
-        body: JSON.stringify({ engineContract: 'open-flow-engine/v5', expectedLivePublicationId, version: 1 }),
+        body: JSON.stringify({ engineContract: currentEngineContract, expectedLivePublicationId, version: 1 }),
         headers: { 'idempotency-key': options.idempotencyKey ?? operationKey('publication') },
         method: 'POST',
       }),
@@ -1376,7 +1443,7 @@ export class ControlClient {
     const suffix = query == '' ? '' : `?${query}`
     return this.connectorRequest(`/v1/connector/actions${suffix}`, 'actions', signal, (value) => {
       const source = record(value)
-      exact(source, ['actions', 'version'])
+      requiredFields(source, ['actions', 'version'])
       if (source.version != 1 || !Array.isArray(source.actions)) return invalidResponse()
       return source.actions.map(connectorAction)
     })

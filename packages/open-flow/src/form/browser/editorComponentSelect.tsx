@@ -6,11 +6,11 @@ import { useTranslate } from 'val-i18n-react'
 import { MenuHeader } from '../../ui/browser/menu-header.tsx'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from '../../ui/browser/select.tsx'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../ui/browser/tooltip.tsx'
-import { editorComponent, editorGroups, schemaForEditor } from '../common/editorComponent.ts'
+import { editorGroups, schemaForEditor } from '../common/editorComponent.ts'
 import { objectValue } from '../common/value.ts'
 import { EditorComponentIcon } from './editorComponentIcon.tsx'
 import { fieldSelectTriggerClass } from './fieldSelect.tsx'
-import { FieldTypeDisplay } from './fieldTypeDisplay.tsx'
+import { FieldTypeDisplay, useFieldTypePresentation } from './fieldTypeDisplay.tsx'
 import { selectionMenuContentClass, selectionMenuItemClass } from './selectionMenuStyles.ts'
 
 export function EditorComponentSelect({
@@ -49,8 +49,7 @@ export function EditorComponentSelect({
 }) {
   const t = useTranslate()
   const [container, setContainer] = useState<HTMLDivElement | null>(null)
-  const selectedComponent = editorComponent(schema)
-  const label = t(valueOnly && selectedComponent === 'json' ? 'valueEditor.any' : `valueEditor.components.${selectedComponent}`)
+  const { component: selectedComponent, label } = useFieldTypePresentation(schema, valueOnly)
   const accessibleLabel = valueOnly ? t('valueEditor.valueDataType', { name, type: label }) : `${t('valueEditor.type', { name })}: ${label}`
   if (showArrayItemType && selectedComponent === 'array' && !Array.isArray(objectValue(schema)?.items)) {
     const source = objectValue(schema) ?? {}
@@ -173,8 +172,7 @@ export function EditorComponentSelect({
 /** Displays a type inside explanatory copy without inheriting field-control height. */
 export function InlineEditorComponentDisplay({ schema, name }: { schema: unknown; name: string }) {
   const t = useTranslate()
-  const selectedComponent = editorComponent(schema)
-  const label = t(`valueEditor.components.${selectedComponent}`)
+  const { component, label } = useFieldTypePresentation(schema)
   return (
     <span
       role="img"
@@ -182,7 +180,7 @@ export function InlineEditorComponentDisplay({ schema, name }: { schema: unknown
       className="relative inline-flex min-w-0 items-center pl-[22px] text-xs leading-[18px] font-normal text-muted-foreground"
     >
       <span aria-hidden="true" className="absolute left-0 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center">
-        <EditorComponentIcon component={selectedComponent} />
+        <EditorComponentIcon component={component} />
       </span>
       <span className="min-w-0 truncate">{label}</span>
     </span>

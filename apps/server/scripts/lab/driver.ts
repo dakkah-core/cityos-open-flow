@@ -22,6 +22,9 @@ export function driver(lab: LabSession, transport: 'cli' | 'mcp'): ToolCall {
         delete query.flowId
         let argv: string[]
         switch (name) {
+          case 'flow_list':
+            argv = ['list', '--json']
+            break
           case 'flow_read':
           case 'flow_search':
           case 'flow_edit':

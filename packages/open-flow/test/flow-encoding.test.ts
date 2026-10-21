@@ -140,7 +140,7 @@ describe('Flow Revision encoding', () => {
       modules: { helper: { imports: [] }, main: { imports: ['helper'] } },
       version: 1,
     })
-    await expect(digestBytes(first)).resolves.toBe('sha256:ef68b578a5338019dd74a85a2cbddb15a912ae40aa441228cb6a79e169a7ea9a')
+    await expect(digestBytes(first)).resolves.toBe('sha256:eaa97692add0f7361de48442d818d5ac9f9e891b03469614659fd3d77283fa79')
   })
 
   it('changes the encoded Revision when workflow semantics change', () => {
@@ -631,4 +631,38 @@ it('upgrades v5 shared Task references into independent node configurations and 
   expect((await flowClosure(changed)).digest).not.toBe((await flowClosure(upgraded)).digest)
   legacy.document.graph.nodes.first.taskId = 'missing'
   expect(() => repairRevision(canonicalJsonBytes(legacy as JsonValue))).toThrow()
+})
+
+it('preserves model v8 bytes, round trips retry configuration, and rejects retries before v9', () => {
+  const old: RevisionContent = { ...revision(), modelVersion: 8 }
+  const bytes = encodeRevision(old)
+  expect(encodeRevision(decodeRevision(bytes))).toEqual(bytes)
+  const source = revision()
+  const node = {
+    kind: 'task' as const,
+    inputs: {},
+    task: { moduleId: 'main', name: 'Task', inputs: [], outputs: [] },
+    retry: { maxRetries: 2, intervalMs: 2000 },
+  }
+  const current = { ...source, document: { ...source.document, graph: { ...source.document.graph, nodes: { task: node } } } }
+  expect(decodeRevision(encodeRevision(current)).document.graph.nodes.task).toEqual(node)
+  expect(() => decodeRevision(encodeRevision({ ...current, modelVersion: 8 }))).toThrow('version 9')
+})
+it.each([
+  { maxRetries: 6, intervalMs: 1000 },
+  { maxRetries: -1, intervalMs: 1000 },
+  { maxRetries: 1, intervalMs: 0 },
+  { maxRetries: 1, intervalMs: 61000 },
+  { maxRetries: 1, intervalMs: 1500 },
+])('rejects invalid retry policies at decoding (%j)', (retry) => {
+  const source = revision()
+  expect(() =>
+    decodeRevisionContent({
+      ...source,
+      document: {
+        ...source.document,
+        graph: { edges: [], nodes: { task: { kind: 'task', inputs: {}, task: { moduleId: 'main', name: 'Task', inputs: [], outputs: [] }, retry } } },
+      },
+    }),
+  ).toThrow()
 })

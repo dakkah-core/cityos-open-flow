@@ -57,7 +57,7 @@ export function codeTyping(
     const aliases = declaration.connections.flatMap((connection) => (connection.alias == null ? [] : [JSON.stringify(connection.alias)])).join(' | ') || 'never'
     const options =
       permissions?.mode == 'independent'
-        ? declaration.connectionId == null
+        ? declaration.connectionId == null || declaration.connectionId === ''
           ? '{ connectionId?: never }'
           : `{ connectionId?: ${JSON.stringify(declaration.connectionId)} }`
         : permissions?.mode == 'shared'

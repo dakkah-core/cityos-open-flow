@@ -38,9 +38,9 @@ it('wraps CLI-created chains without replacing saved node positions or execution
   }
   const graph = designerGraph(draft)
   const positions = Object.fromEntries(graph.nodes.map((node) => [node.id, node.position]))
-  expect(positions['step-4']!.x).toBe(positions['step-0']!.x)
-  expect(positions['step-4']!.y).toBeGreaterThan(positions['step-3']!.y)
-  expect(positions['step-8']!.y).toBeGreaterThan(positions['step-7']!.y)
+  expect(positions['step-6']!.x).toBe(positions['step-0']!.x)
+  expect(positions['step-6']!.y).toBeGreaterThan(positions['step-5']!.y)
+  expect(positions['step-9']!.y).toBe(positions['step-6']!.y)
   expect(graph.edges.map(({ source, target }) => ({ source, target }))).toEqual(edges)
   const saved = { x: 2500, y: -100 }
   const reopened = designerGraph(draft, setNodePositions({}, { 'step-4': saved }))
@@ -94,6 +94,7 @@ describe('Designer port projection', () => {
       connectionRequired: true,
       diagnostics: 1,
       executorName: 'JavaScript',
+      fallbackIcon: ':carbon:code:',
       actionSummary: {
         count: 3,
         providers: [
@@ -329,6 +330,8 @@ describe('Designer port projection', () => {
     ).nodes[0]
 
     expect(publicNode).toMatchObject({
+      fallbackIcon: ':carbon:connection-signal:',
+      icon: providerIcon(action),
       additionalInputs: [{ handle: 'start', jsonSchema: {}, nullable: false }],
       diagnostics: 0,
       executorName: 'Connector · Hacker News',
@@ -375,7 +378,7 @@ describe('Designer port projection', () => {
     const waiting = {
       closureDigest: 'closure',
       createdAt: '2026-09-02T00:00:00.000Z',
-      engineContract: 'open-flow-engine/v5',
+      engineContract: 'open-flow-engine/v6',
       engineDigest: 'sha256:engine',
       flowId: draft.flowId,
       modelVersion: currentFlowModelVersion,
@@ -713,6 +716,7 @@ it('projects Agent tools through the shared action summary', () => {
   }
   const first = designerGraph(draft).nodes[0]
   expect(first).toMatchObject({
+    fallbackIcon: ':carbon:machine-learning-model:',
     actionSummary: { count: 2, providers: [{ id: 'gmail', icon: expect.any(String), label: 'gmail' }] },
   })
   const agent = ((draft.content.document.graph.nodes['agent'] as TaskNode).task as ManagedTaskDefinition)!
@@ -744,4 +748,35 @@ it('keeps node content visibility independent and preserves unrelated presentati
   expect(flowPresentation(shown)?.hiddenNodeContent).toEqual({ other: true })
   expect(shown.custom).toBe('preserved')
   expect(setNodeContentHidden(initial, 'value', false)).toBe(initial)
+})
+
+it('projects a deferred Provider connection as a reminder without creating an error, even before catalogs load', () => {
+  const draft: NonNullable<Parameters<typeof designerGraph>[0]> = {
+    actorId: 'actor',
+    createdAt: '2026-10-16T00:00:00Z',
+    digest: 'digest',
+    flowId: 'flow',
+    modelVersion: currentFlowModelVersion,
+    parentRevisionId: null,
+    revisionId: 'revision',
+    version: 1,
+    content: {
+      modelVersion: currentFlowModelVersion,
+      modules: {},
+      document: {
+        bindings: {},
+        graph: {
+          edges: [],
+          nodes: {
+            provider: {
+              kind: 'task',
+              inputs: {},
+              task: { name: 'Send', inputs: [], outputs: [], executor: { kind: 'connector', action: 'mail.send', connectionId: '' } },
+            },
+          },
+        },
+      },
+    },
+  }
+  expect(designerGraph(draft, {}, []).nodes[0]).toMatchObject({ connectionDeferred: true, connectionRequired: false, diagnostics: 0 })
 })

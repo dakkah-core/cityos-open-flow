@@ -16,10 +16,11 @@ import { Store } from '../node/storage/store.ts'
 import { createServerApp } from '../node/transport/http.ts'
 import { createConnectorHost } from './connectorHost.ts'
 import { closeService, openService, startService } from './serviceFixture.ts'
+import { sourceProtocolFixture } from './sourceProtocolFixture.ts'
 
 const token = 'mcp-test-operator-token-000000000001'
 const version = '2026-07-28'
-const start = { kind: 'graph.node.create', nodeId: 'start', node: { kind: 'start', name: 'Start' } }
+const start = { kind: 'graph.node.create', nodeId: 'start', node: { inputDefs: [], kind: 'start', name: 'Start' } }
 
 it('broadcasts REST and MCP canvas commands to every subscriber of only the authorized Flow', async () => {
   const { call, control, service, app, client } = await fixture()
@@ -175,6 +176,7 @@ it('shares current online details between REST and MCP without exposing historic
 
 it('discovers independent Feishu event sources without exposing secrets', async () => {
   const connector = createConnectorHost({
+    trigger: async (_provider, _connection, _trigger, request) => (request.operation === 'source' ? sourceProtocolFixture(request.request) : undefined),
     listConnections: async () => [
       {
         connectionId: 'connection-1',
@@ -385,6 +387,7 @@ it('serves discovery and an atomic authoring, validation and execution workflow 
   expect(await call('flow_check', { flowId, revisionId })).toMatchObject({ valid: true, revisionId })
   const runArgs = { source: 'draft', flowId, revisionId, trigger: { nodeId: startId, outputs: {} }, idempotencyKey: 'run' }
   const run = await call('flow_run', runArgs)
+  expect(run.initiator).toEqual({ actorId: 'operator', channel: 'mcp' })
   const runId = z.string().parse(run.runId)
   expect(await call('flow_run', runArgs)).toEqual(run)
   await startService(service)
@@ -790,11 +793,11 @@ it('executes fixed Live code revisions and keeps old Run retries stable after re
   if (publication.status != 'succeeded') throw new Error('Publication did not succeed.')
   expect(await call('flow_publish', publishArgs)).toEqual(publication)
   expect(await call('flow_set_enabled', { flowId, expectedPublicationId: publication.publicationId, enabled: false })).toMatchObject({
-    live: { enabled: false },
+    live: { hasStart: true, enabled: false },
   })
   expect((await control.getLive(flowId)).status).toBe('suspended')
   expect(await call('flow_set_enabled', { flowId, expectedPublicationId: publication.publicationId, enabled: true })).toMatchObject({
-    live: { enabled: true },
+    live: { hasStart: true, enabled: true },
   })
   const args = { source: 'live', publicationId: publication.publicationId, trigger: { nodeId: 'start', outputs: {} }, idempotencyKey: 'live-run' }
   const run = await call('flow_run', args)
@@ -860,7 +863,7 @@ it('reports uncertain mutation outcomes and recovers the accepted resource with 
   const accepted = await call('flow_create', args)
   const page = await call('flow_list')
   expect(page.flows).toHaveLength(1)
-  expect(page.flows).toEqual([accepted])
+  expect(page.flows).toEqual([{ ...accepted, referenceCount: 0 }])
 })
 
 it('serves a modern client through an HTTP proxy and accepts chunked JSON requests', async () => {

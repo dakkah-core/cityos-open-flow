@@ -1,17 +1,17 @@
 import type { AuthoringHost, AuthoringRequest } from '../src/control/common/authoring.ts'
 import type { FlowRunOptions, SchedulerEvent } from '../src/execution/common/scheduler.ts'
-import type { Graph, InputMapping, Port, RevisionContent } from '../src/flow/common/change.ts'
+import type { Graph, InputMapping, Port, RevisionContent, OutputsNode } from '../src/flow/common/change.ts'
 
 import * as Effect from 'effect/Effect'
 import { describe, expect, it } from 'vitest'
-import { authoringNode, authoringSchema, compileAuthoring, readAuthoring, searchAuthoring } from '../src/control/common/authoring.ts'
+import { authoringNode, authoringSchema, compileAuthoring, searchAuthoring } from '../src/control/common/authoring.ts'
 import { currentEngineContract } from '../src/execution/common/runtime.ts'
 import { runFlow } from '../src/execution/common/scheduler.ts'
 import { applyFlowChanges, currentFlowModelVersion } from '../src/flow/common/change.ts'
 import { decodeRevision, encodeRevision, digestBytes } from '../src/flow/common/encoding.ts'
 import { validateFlowGraph, inputSourceCandidates } from '../src/flow/common/graph.ts'
 import { inverseFlowChanges } from '../src/flow/common/inverseChanges.ts'
-import { deleteNodes, setInputVariable, updateFlowInputDefs, updateFlowOutputDefs } from '../src/flow/common/nodeChanges.ts'
+import { deleteNodes, setInputVariable, updateStartInputDefs, updateOutputsDefs } from '../src/flow/common/nodeChanges.ts'
 import { flowClosure, flowDependencies, prepareFlow } from '../src/flow/common/semantics.ts'
 import { advanceWaiting, waitHost } from './waitHost.ts'
 
@@ -19,21 +19,40 @@ const field = (handle: string): Port => ({ handle, jsonSchema: { type: 'number' 
 const source = (nodeId: string, output = 'value'): InputMapping => ({ kind: 'sources', sources: [{ kind: 'node', nodeId, output }] })
 const value = (n: number) => ({ kind: 'value' as const, name: `Value ${n}`, inputs: {}, values: [{ ...field('value'), value: n }] })
 function content(graph?: Graph): RevisionContent {
+  const sourceGraph: Graph = graph ?? {
+    nodes: {
+      start: { kind: 'start', name: 'Start', inputDefs: [] },
+      value: value(42),
+      outputs: { kind: 'outputs', name: 'Outputs', outputDefs: [], outputMappings: {} },
+    },
+    edges: [
+      { source: 'start', target: 'value' },
+      { source: 'value', target: 'outputs' },
+    ],
+  }
+  const outputs = sourceGraph.nodes.outputs
+  if (outputs?.kind != 'outputs') throw new Error('Expected Outputs fixture')
   return {
     modelVersion: currentFlowModelVersion,
     modules: {},
     document: {
       bindings: {},
-      outputDefs: [field('answer')],
-      outputMappings: { answer: source('value') },
-      graph: graph ?? {
-        nodes: { start: { kind: 'start', name: 'Start' }, value: value(42), outputs: { kind: 'outputs', name: 'Outputs' } },
-        edges: [
-          { source: 'start', target: 'value' },
-          { source: 'value', target: 'outputs' },
-        ],
+      graph: {
+        ...sourceGraph,
+        nodes: { ...sourceGraph.nodes, outputs: { ...outputs, outputDefs: [field('answer')], outputMappings: { answer: source('value') } } },
       },
     },
+  }
+}
+function outputNode(revision: RevisionContent) {
+  const node = Object.values(revision.document.graph.nodes).find((candidate) => candidate.kind == 'outputs')
+  if (node?.kind != 'outputs') throw new Error('Expected Outputs')
+  return node
+}
+function outputsDocument(revision: RevisionContent, patch: Partial<OutputsNode>) {
+  return {
+    ...revision.document,
+    graph: { ...revision.document.graph, nodes: { ...revision.document.graph.nodes, outputs: { ...outputNode(revision), ...patch } } },
   }
 }
 async function run(revision: RevisionContent, options: Partial<Pick<FlowRunOptions, 'emit' | 'invokeTask' | 'bindingValues'>> = {}) {
@@ -68,7 +87,7 @@ describe('workflow Outputs', () => {
   it('computes each loop invocation from its own snapshot and retains the final business output', async () => {
     const revision = content({
       nodes: {
-        start: { kind: 'start', name: 'Start' },
+        start: { inputDefs: [], kind: 'start', name: 'Start' },
         counter: {
           kind: 'task',
           inputs: { previous: source('counter', 'count') },
@@ -95,7 +114,7 @@ describe('workflow Outputs', () => {
             },
           ],
         },
-        outputs: { kind: 'outputs', name: 'Outputs' },
+        outputs: { outputDefs: [], outputMappings: {}, kind: 'outputs', name: 'Outputs' },
       },
       edges: [
         { source: 'start', target: 'counter' },
@@ -109,7 +128,7 @@ describe('workflow Outputs', () => {
       {
         ...revision,
         modules: { counter: { name: 'Counter', imports: [], source: 'export default () => ({count: 1})' } },
-        document: { ...revision.document, outputMappings: { answer: source('counter', 'count') } },
+        document: outputsDocument(revision, { outputMappings: { answer: source('counter', 'count') } }),
       },
       {
         invokeTask: (call) => Effect.succeed({ count: Number(call.input.previous ?? 0) + 1 }),
@@ -169,7 +188,7 @@ describe('workflow Outputs', () => {
         kind: 'graph.node.input.set',
         nodeId: 'outputs',
         handle: 'answer',
-        before: revision.document.outputMappings!.answer,
+        before: outputNode(revision).outputMappings.answer,
         value: { kind: 'value', value: 7 },
       },
     ])
@@ -177,7 +196,7 @@ describe('workflow Outputs', () => {
     const legacy: RevisionContent = {
       modelVersion: 7,
       modules: {},
-      document: { bindings: {}, graph: { nodes: { start: { kind: 'start', name: 'Start' } }, edges: [] } },
+      document: { bindings: {}, graph: { nodes: { start: { inputDefs: [], kind: 'start', name: 'Start' } }, edges: [] } },
     }
     const encoded = encodeRevision(legacy)
     expect(await digestBytes(encodeRevision(decodeRevision(encoded)))).toEqual(await digestBytes(encoded))
@@ -204,7 +223,13 @@ describe('workflow Outputs', () => {
     const outputDone = Promise.withResolvers<void>()
     const task = { kind: 'task' as const, inputs: {}, task: { name: 'Task', moduleId: 'main', inputs: [], outputs: [field('value')] } }
     const revision = content({
-      nodes: { start: { kind: 'start', name: 'Start' }, left: task, right: task, unrelated: task, outputs: { kind: 'outputs', name: 'Outputs' } },
+      nodes: {
+        start: { inputDefs: [], kind: 'start', name: 'Start' },
+        left: task,
+        right: task,
+        unrelated: task,
+        outputs: { outputDefs: [], outputMappings: {}, kind: 'outputs', name: 'Outputs' },
+      },
       edges: ['left', 'right', 'unrelated']
         .map((target) => ({ source: 'start', target }))
         .concat([
@@ -217,7 +242,7 @@ describe('workflow Outputs', () => {
       {
         ...revision,
         modules: { main: { name: 'Task', imports: [], source: 'export default () => ({value: 0})' } },
-        document: { ...revision.document, outputDefs: [field('left'), field('right')], outputMappings: { left: source('left'), right: source('right') } },
+        document: outputsDocument(revision, { outputDefs: [field('left'), field('right')], outputMappings: { left: source('left'), right: source('right') } }),
       },
       {
         invokeTask: ({ nodeId }) =>
@@ -242,7 +267,7 @@ describe('workflow Outputs', () => {
   it.each([true, false])('uses selected branches and skips inactive sources (%s)', async (selected) => {
     const revision = content({
       nodes: {
-        start: { kind: 'start', name: 'Start' },
+        start: { inputDefs: [], kind: 'start', name: 'Start' },
         condition: {
           kind: 'condition',
           inputs: {},
@@ -251,7 +276,7 @@ describe('workflow Outputs', () => {
         },
         yes: value(1),
         no: value(2),
-        outputs: { kind: 'outputs', name: 'Outputs' },
+        outputs: { outputDefs: [], outputMappings: {}, kind: 'outputs', name: 'Outputs' },
       },
       edges: [
         { source: 'start', target: 'condition' },
@@ -268,16 +293,15 @@ describe('workflow Outputs', () => {
         { kind: 'node', nodeId: 'no', output: 'value' },
       ],
     }
-    expect(await run({ ...revision, document: { ...revision.document, outputMappings: { answer: mapping } } })).toMatchObject({
+    expect(await run({ ...revision, document: outputsDocument(revision, { outputMappings: { answer: mapping } }) })).toMatchObject({
       outputs: { answer: selected ? 1 : 2 },
     })
-    const skipped = {
+    const skipped: RevisionContent = {
       ...revision,
       document: {
-        ...revision.document,
-        outputMappings: { answer: { kind: 'value' as const, value: 0 } },
+        ...outputsDocument(revision, { outputMappings: { answer: { kind: 'value', value: 0 } } }),
         graph: {
-          ...revision.document.graph,
+          ...outputsDocument(revision, { outputMappings: { answer: { kind: 'value', value: 0 } } }).graph,
           edges: revision.document.graph.edges.filter((edge) => edge.target != 'outputs').concat([{ source: selected ? 'no' : 'yes', target: 'outputs' }]),
         },
       },
@@ -289,26 +313,43 @@ describe('workflow Outputs', () => {
     const revision = content()
     const variable = applyFlowChanges(revision, setInputVariable(revision, 'outputs', 'answer', 'TOKEN', 'binding')!)
     const removed = applyFlowChanges(variable, deleteNodes(variable, ['outputs']))
-    expect(removed.document.outputMappings).toEqual(variable.document.outputMappings)
-    expect(removed.document.bindings).toEqual(variable.document.bindings)
-    const renamed = updateFlowOutputDefs(variable, [field('result')])
-    expect(applyFlowChanges(variable, renamed).document.outputMappings).toEqual({ result: variable.document.outputMappings!.answer })
+    expect(removed.document.graph.nodes.outputs).toBeUndefined()
+    expect(removed.document.bindings).toEqual({})
+    const renamed = updateOutputsDefs(variable, 'outputs', [field('result')])
+    expect(outputNode(applyFlowChanges(variable, renamed)).outputMappings).toEqual({ result: outputNode(variable).outputMappings.answer })
     expect(applyFlowChanges(applyFlowChanges(variable, renamed), inverseFlowChanges(variable, renamed))).toEqual(variable)
     expect([...flowDependencies(variable).bindings]).toEqual(['binding'])
-    const fromStart = { ...revision, document: { ...revision.document, inputDefs: [field('amount')], outputMappings: { answer: source('start', 'amount') } } }
-    expect(applyFlowChanges(fromStart, updateFlowInputDefs(fromStart, [field('total')])).document.outputMappings).toEqual({ answer: source('start', 'total') })
-    expect(inputSourceCandidates(revision.document.graph, 'outputs', 'answer', [], revision.document).value).toMatchObject([
-      { output: 'value', check: { kind: 'available' } },
-    ])
+    const fromStart: RevisionContent = {
+      ...revision,
+      document: {
+        ...outputsDocument(revision, { outputMappings: { answer: source('start', 'amount') } }),
+        graph: {
+          ...revision.document.graph,
+          nodes: {
+            ...revision.document.graph.nodes,
+            start: { kind: 'start', name: 'Start', inputDefs: [field('amount')] },
+            outputs: { ...outputNode(revision), outputMappings: { answer: source('start', 'amount') } },
+          },
+        },
+      },
+    }
+    expect(outputNode(applyFlowChanges(fromStart, updateStartInputDefs(fromStart, 'start', [field('total')]))).outputMappings).toEqual({
+      answer: source('start', 'total'),
+    })
+    expect(inputSourceCandidates(revision.document.graph, 'outputs', 'answer').value).toMatchObject([{ output: 'value', check: { kind: 'available' } }])
   })
 
   it('rejects duplicate sinks, outgoing edges, invalid types, conflicting and missing sources', async () => {
     const revision = content()
-    expect(() => applyFlowChanges(revision, [{ kind: 'graph.node.create', nodeId: 'another', node: { kind: 'outputs', name: 'Another' } }])).toThrow('only one')
+    expect(() =>
+      applyFlowChanges(revision, [
+        { kind: 'graph.node.create', nodeId: 'another', node: { outputDefs: [], outputMappings: {}, kind: 'outputs', name: 'Another' } },
+      ]),
+    ).toThrow('only one')
     expect(() => applyFlowChanges(revision, [{ kind: 'graph.edge.connect', edge: { source: 'outputs', target: 'value' } }])).toThrow('downstream')
-    const invalid = { ...revision, document: { ...revision.document, outputMappings: { answer: { kind: 'value' as const, value: 'wrong' } } } }
+    const invalid = { ...revision, document: outputsDocument(revision, { outputMappings: { answer: { kind: 'value', value: 'wrong' } } }) }
     await expect(run(invalid)).rejects.toThrow('declared schema')
-    expect(validateFlowGraph({ ...revision, document: { ...revision.document, outputMappings: { answer: source('missing') } } })).toEqual(
+    expect(validateFlowGraph({ ...revision, document: outputsDocument(revision, { outputMappings: { answer: source('missing') } }) })).toEqual(
       expect.arrayContaining([expect.objectContaining({ code: 'graph.source-missing' })]),
     )
     const conflict: InputMapping = {
@@ -318,14 +359,14 @@ describe('workflow Outputs', () => {
         { kind: 'node', nodeId: 'value', output: 'value' },
       ],
     }
-    expect(validateFlowGraph({ ...revision, document: { ...revision.document, outputMappings: { answer: conflict } } })).toEqual(
+    expect(validateFlowGraph({ ...revision, document: outputsDocument(revision, { outputMappings: { answer: conflict } }) })).toEqual(
       expect.arrayContaining([expect.objectContaining({ code: 'graph.source-unavailable' })]),
     )
-    expect(await run({ ...revision, document: { ...revision.document, outputDefs: [], outputMappings: {} } })).toHaveProperty('outputs', {})
+    expect(await run({ ...revision, document: outputsDocument(revision, { outputDefs: [], outputMappings: {} }) })).toHaveProperty('outputs', {})
     expect(
       await run({
         ...revision,
-        document: { ...revision.document, outputDefs: [{ ...field('answer'), nullable: true }], outputMappings: { answer: { kind: 'unset' } } },
+        document: outputsDocument(revision, { outputDefs: [{ ...field('answer'), nullable: true }], outputMappings: { answer: { kind: 'unset' } } }),
       }),
     ).toHaveProperty('outputs', { answer: null })
   })
@@ -341,14 +382,29 @@ describe('workflow Outputs', () => {
       ...revision,
       document: {
         ...revision.document,
-        inputDefs: [{ handle: 'record', jsonSchema: { type: 'object', properties: { count: { type: 'number' } }, required: ['count'] }, nullable: false }],
+
         bindings: { token: { kind: 'variable' as const, target: 'TOKEN' } },
-        outputDefs: [
-          { handle: '__proto__', jsonSchema: {}, nullable: false },
-          { handle: 'constructor', jsonSchema: { type: 'string' }, nullable: false },
-          field('nested'),
-        ],
-        outputMappings: mappings,
+        graph: {
+          ...revision.document.graph,
+          nodes: {
+            ...revision.document.graph.nodes,
+            start: {
+              ...(revision.document.graph.nodes['start'] as Extract<import('../src/flow/common/change.ts').GraphNode, { kind: 'start' }>),
+              inputDefs: [
+                { handle: 'record', jsonSchema: { type: 'object', properties: { count: { type: 'number' } }, required: ['count'] }, nullable: false },
+              ],
+            },
+            outputs: {
+              ...(revision.document.graph.nodes['outputs'] as Extract<import('../src/flow/common/change.ts').GraphNode, { kind: 'outputs' }>),
+              outputDefs: [
+                { handle: '__proto__', jsonSchema: {}, nullable: false },
+                { handle: 'constructor', jsonSchema: { type: 'string' }, nullable: false },
+                field('nested'),
+              ],
+              outputMappings: mappings,
+            },
+          },
+        },
       },
     }
     const prepared = await prepareFlow(changed, currentEngineContract, 'start')
@@ -369,12 +425,15 @@ describe('workflow Outputs', () => {
   it('authors, reads, locally edits and executes through public operations', async () => {
     const empty: RevisionContent = { modelVersion: currentFlowModelVersion, modules: {}, document: { bindings: {}, graph: { nodes: {}, edges: [] } } }
     const created = await compile(empty, [
+      { op: 'node.add', type: 'start', name: 'Start', as: 'start', config: { inputDefs: { amount: { schema: { type: 'number' }, nullable: false } } } },
       {
-        op: 'flow.update',
-        set: { inputDefs: { amount: { schema: { type: 'number' }, nullable: false } }, outputDefs: { total: { schema: { type: 'number' }, nullable: false } } },
+        op: 'node.add',
+        type: 'outputs',
+        name: 'Outputs',
+        as: 'outputs',
+        inputs: { total: { kind: 'output', node: '$start', port: 'amount' } },
+        config: { outputDefs: { total: { schema: { type: 'number' }, nullable: false } } },
       },
-      { op: 'node.add', type: 'start', name: 'Start', as: 'start' },
-      { op: 'node.add', type: 'outputs', name: 'Outputs', as: 'outputs', inputs: { total: { kind: 'output', node: '$start', port: 'amount' } } },
       { op: 'edge.connect', source: '$start', target: '$outputs' },
     ])
     const outputId = created.nodes.outputs!
@@ -384,12 +443,14 @@ describe('workflow Outputs', () => {
       inputPorts: { total: { schema: { type: 'number' } } },
       outputPorts: {},
     })
-    expect(readAuthoring(created.content)).toMatchObject({
-      outputMappings: { total: { kind: 'sources', sources: [{ kind: 'output', node: created.nodes.start, port: 'amount' }] } },
+    expect(authoringNode(created.content, outputId)).toMatchObject({
+      inputs: { total: { kind: 'sources', sources: [{ kind: 'output', node: created.nodes.start, port: 'amount' }] } },
     })
-    const changed = await compile(created.content, [{ op: 'flow.update', set: { outputDefs: { total: { description: 'Invoice total' } } } }])
-    expect(changed.content.document.outputMappings).toEqual(created.content.document.outputMappings)
-    expect(searchAuthoring(changed.content, { query: 'Invoice total' }).matches).toContainEqual(expect.objectContaining({ field: 'outputDefs.total' }))
+    const changed = await compile(created.content, [
+      { op: 'node.update', node: outputId, set: { config: { outputDefs: { total: { description: 'Invoice total' } } } } },
+    ])
+    expect(outputNode(changed.content).outputMappings).toEqual(outputNode(created.content).outputMappings)
+    expect(searchAuthoring(changed.content, { query: 'Invoice total' }).matches).toContainEqual(expect.objectContaining({ node: outputId, field: 'config' }))
     const prepared = await prepareFlow(changed.content, currentEngineContract, created.nodes.start!)
     if (prepared.kind != 'prepared') throw new Error(JSON.stringify(prepared))
     expect(
@@ -408,7 +469,7 @@ describe('workflow Outputs', () => {
     })
     expect((await compile(empty, [authoringSchema('outputs').example as AuthoringRequest['edits'][number]])).content.document.graph.nodes).toHaveProperty(
       'node:step',
-      { kind: 'outputs', name: 'Step' },
+      { outputDefs: [], outputMappings: {}, kind: 'outputs', name: 'Step' },
     )
   })
 })

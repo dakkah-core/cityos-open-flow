@@ -11,6 +11,7 @@ import { currentFlowModelVersion } from '../../flow/common/change.ts'
 import { decodeRevisionContent } from '../../flow/common/changeSchema.ts'
 import { nodeInputPorts } from '../../flow/common/graph.ts'
 import { prepareFlow, validateFlow } from '../../flow/common/semantics.ts'
+import { triggerDefinitions } from '../../trigger/providers/definitions.ts'
 import { authoringNode, authoringSchema, authoringTypes, compileAuthoring, readAuthoring } from './authoring.ts'
 
 const empty: RevisionContent = {
@@ -45,6 +46,7 @@ function trigger(type: 'poll' | 'integration', key: string = type): TriggerKeySn
     : { ...common, type, endpoint: { methods: ['POST'], successStatus: 200, body: { allowArray: false, allowEmpty: false, formats: ['json'] } } }
 }
 const host: AuthoringHost = {
+  workflow: async (flowId) => ({ version: 1, flowId, name: 'Target', revisionId: 'r1', publicationId: 'p1', triggerNodeId: 'start', inputs: [], outputs: [] }),
   id: (name) => name,
   action: async (id) => ({
     actionId: id,
@@ -78,6 +80,94 @@ async function roundTrip(content: RevisionContent, ref: string) {
 }
 
 describe('business configuration authoring contracts', () => {
+  it('authors a Tally form subscription and preserves its output binding during a local form edit', async () => {
+    const definition = triggerDefinitions.find((item) => item.snapshot.key == 'tally.on_form_response')!.snapshot
+    const created = await edit(
+      empty,
+      [
+        {
+          op: 'node.add',
+          type: 'integration',
+          as: 'form',
+          name: 'Customer enquiries',
+          config: { key: definition.key, connectionId: 'tally-account' },
+          inputs: { formId: { kind: 'value', value: 'lead-form' } },
+        },
+        {
+          op: 'node.add',
+          type: 'code',
+          as: 'process',
+          name: 'Process response',
+          code: 'export default ({ response }) => ({ response })',
+          inputs: { response: { kind: 'output', node: '$form' } },
+        },
+        { op: 'edge.connect', source: '$form', target: '$process' },
+      ],
+      { trigger: () => definition },
+    )
+    const formId = created.nodes.form!
+    expect(authoringNode(created.content, formId)).toMatchObject({
+      config: { key: definition.key, connectionId: 'tally-account' },
+      inputs: { formId: { kind: 'value', value: 'lead-form' } },
+    })
+    const updated = await edit(created.content, [{ op: 'input.set', node: formId, input: 'formId', source: { kind: 'value', value: 'feedback-form' } }], {
+      trigger: () => {
+        throw new Error('A form edit must preserve the saved definition')
+      },
+    })
+    expect(updated.content.document.graph.nodes[created.nodes.process!]).toEqual(created.content.document.graph.nodes[created.nodes.process!])
+    expect(updated.content.document.graph.edges).toEqual(created.content.document.graph.edges)
+    expect(authoringNode(updated.content, formId).inputs).toEqual({ formId: { kind: 'value', value: 'feedback-form' } })
+    expect((await validateFlow(updated.content, findEngineContract(currentEngineContract)!)).diagnostics).toEqual([])
+    await expect(
+      edit(updated.content, [{ op: 'input.set', node: formId, input: 'formId', source: { kind: 'output', node: created.nodes.process! } }]),
+    ).rejects.toThrow()
+  })
+
+  it.each([
+    ...[
+      'slackbot.on_event',
+      'intercom.on_conversation_event',
+      'sentry.on_issue_alert',
+      'zoom.on_recording_ready',
+      'fireflies.on_meeting_ready',
+      'jira.on_issue_event',
+    ].map((key) => [key, 'sourceId', 'source_11111111111111111111111111111111', 'source_22222222222222222222222222222222'] as const),
+    ['typeform.on_form_response', 'formId', 'survey', 'feedback'],
+    ['clickup.on_task_event', 'workspaceId', '12345', '67890'],
+    ['calendly.on_booking_event', 'scope', 'user', 'organization'],
+    ['pipedrive.on_crm_event', 'eventType', 'deal.created', 'deal.stage_changed'],
+    ['resend.on_email_event', 'eventTypes', ['email.received'], ['email.bounced']],
+    ['pandadoc.on_document_event', 'completedOnly', true, false],
+    ['asana.on_task_event', 'projectId', 'project-one', 'project-two'],
+    ['vercel.on_deployment_event', 'environment', 'preview', 'production'],
+  ] as const)('creates, reads and locally updates %s through business authoring', async (key, field, original, changed) => {
+    const definition = triggerDefinitions.find((item) => item.snapshot.key === key)!.snapshot
+    const values: Record<string, { kind: 'value'; value: string }> =
+      key === 'vercel.on_deployment_event' ? { teamId: { kind: 'value' as const, value: 'team' }, projectId: { kind: 'value' as const, value: 'project' } } : {}
+    const created = await edit(
+      empty,
+      [
+        {
+          op: 'node.add',
+          type: 'integration',
+          as: 'trigger',
+          name: 'Business event',
+          config: { key, connectionId: 'account' },
+          inputs: { ...values, [field]: { kind: 'value', value: JSON.parse(JSON.stringify(original)) } },
+        },
+      ],
+      { trigger: () => definition },
+    )
+    const node = created.nodes.trigger!
+    expect(authoringNode(created.content, node).config).toMatchObject({ key, connectionId: 'account' })
+    const updated = await edit(created.content, [
+      { op: 'input.set', node, input: field, source: { kind: 'value', value: JSON.parse(JSON.stringify(changed)) } },
+    ])
+    expect(authoringNode(updated.content, node).inputs).toMatchObject({ [field]: { kind: 'value', value: changed } })
+    expect((await validateFlow(updated.content, findEngineContract(currentEngineContract)!)).diagnostics).toEqual([])
+  })
+
   it('creates named values without port definitions, preserves null, and executes their values', async () => {
     const created = await edit(empty, [
       { op: 'node.add', type: 'start', as: 'start', name: 'Start' },
@@ -397,4 +487,36 @@ it('rejects caller-supplied Connector output mapping on creation and update', as
   ).rejects.toThrow()
   const created = await edit(empty, [{ op: 'node.add', type: 'connector', as: 'source', name: 'Source', config: { action: 'test.read' } }])
   await expect(edit(created.content, [{ op: 'node.update', node: created.nodes.source!, set: { config: { outputMode: 'value' } } }])).rejects.toThrow()
+})
+
+it('preserves explicit deferred accounts in public creation, reads, local updates and clearing', async () => {
+  const created = await edit(empty, [
+    { op: 'node.add', type: 'connector', as: 'send', name: 'Send', config: { action: 'test.send', connectionId: '' } },
+    {
+      op: 'node.add',
+      type: 'code',
+      as: 'code',
+      name: 'Code',
+      config: { capabilities: [{ kind: 'connector', mode: 'independent', actions: [{ action: 'test.send', connectionId: '' }] }] },
+      code: 'export default () => ({})',
+    },
+    {
+      op: 'node.add',
+      type: 'agent',
+      as: 'agent',
+      name: 'Agent',
+      config: { model: 'fixture', tools: [{ name: 'send', description: 'Send message', action: 'test.send', connectionId: '', approval: false }] },
+    },
+  ])
+  for (const nodeId of Object.values(created.nodes)) await roundTrip(created.content, nodeId)
+  expect(authoringNode(created.content, created.nodes.send!).config).toMatchObject({ connectionId: '' })
+  expect(authoringNode(created.content, created.nodes.code!).config).toMatchObject({ capabilities: [{ actions: [{ connectionId: '' }] }] })
+  expect(authoringNode(created.content, created.nodes.agent!).config).toMatchObject({ tools: [{ connectionId: '' }] })
+  const reconnected = await edit(created.content, [{ op: 'node.update', node: created.nodes.send!, set: { config: { connectionId: 'work' } } }])
+  expect(authoringNode(reconnected.content, created.nodes.send!).config).toMatchObject({ connectionId: 'work' })
+  const cleared = await edit(reconnected.content, [{ op: 'node.update', node: created.nodes.send!, clear: [['config', 'connectionId']] }])
+  expect(authoringNode(cleared.content, created.nodes.send!).config).not.toHaveProperty('connectionId')
+  for (const type of ['poll', 'integration'] as const) {
+    await expect(edit(empty, [{ op: 'node.add', as: 'trigger', type, name: 'Trigger', config: { key: type, connectionId: '' } }])).rejects.toThrow()
+  }
 })

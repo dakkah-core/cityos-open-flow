@@ -37,6 +37,38 @@ function configurationRequest(method: string, body: unknown): RequestInit {
   return { body: JSON.stringify(body), headers: { 'content-type': 'application/json' }, method }
 }
 
+it('advertises the configured MCP address to members and falls back to the browser origin when unset', async () => {
+  const file = await databaseFile()
+  const service = await openService(file)
+  const configured = settings(file)
+  const { user } = await service.control.users.create('member@example.com', 'user')
+  const app = createServerApp(service, { resolveControlActor: () => user.userId, settings: configured })
+  const anonymous = createServerApp(service, { settings: configured })
+  expect((await anonymous.request('/config/agent-access')).status).toBe(401)
+  expect((await app.request('/config')).status).toBe(403)
+
+  const fallback = await app.request('/config/agent-access')
+  expect(fallback.status).toBe(200)
+  expect(fallback.headers.get('cache-control')).toBe('no-store')
+  expect(await fallback.json()).toEqual({ version: 1, mcpUrl: '/v1/mcp' })
+
+  expect(configured.putIntegration(1, 'https://flows.example.com', 'integration-callback-key-32-bytes')).toBe('saved')
+  expect(await (await app.request('/config/agent-access')).json()).toEqual({ version: 1, mcpUrl: 'https://flows.example.com/v1/mcp' })
+
+  const environment = createServerApp(service, {
+    resolveControlActor: () => user.userId,
+    settings: settings(file, {
+      integrationPublicOrigin: 'https://environment.example.com',
+      integrationCallbackKey: 'environment-integration-key-32-bytes',
+    }),
+  })
+  expect(await (await environment.request('/config/agent-access')).json()).toEqual({ version: 1, mcpUrl: 'https://environment.example.com/v1/mcp' })
+
+  expect(configured.deleteIntegration(2)).toBe('saved')
+  expect(await (await app.request('/config/agent-access')).json()).toEqual({ version: 1, mcpUrl: '/v1/mcp' })
+  await closeService(service)
+})
+
 it('keeps LLM invocations on the configuration snapshot taken when they start', async () => {
   const file = await databaseFile()
   const configured = settings(file)

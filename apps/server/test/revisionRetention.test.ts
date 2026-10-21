@@ -53,9 +53,9 @@ it('keeps active and published revisions outside the recent Run window', () => {
   run('run-old', 'old', 1)
   run('run-active', 'active', 2, 'waiting')
   connection
-    .prepare(`INSERT INTO publications (publication_id, flow_id, revision_id, revision_digest, closure_digest, engine_contract,
+    .prepare(`INSERT INTO publications (interface_json, publication_id, flow_id, revision_id, revision_digest, closure_digest, engine_contract,
               idempotency_key, request_digest, actor_id, operation, model_version, created_at)
-              VALUES ('published', 'flow', 'published', 'published', 'closure', 'engine', 'publish', 'publish', 'operator', 'publish', 3, 1)`)
+              VALUES ('{"inputs":null,"outputs":null}', 'published', 'flow', 'published', 'published', 'closure', 'engine', 'publish', 'publish', 'operator', 'publish', 3, 1)`)
     .run()
   connection
     .prepare(`INSERT INTO publish_operations (operation_id, flow_id, revision_id, revision_digest, closure_digest, engine_contract,

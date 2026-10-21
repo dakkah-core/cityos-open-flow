@@ -121,11 +121,11 @@ export function createControlApp(service: ControlService, resolveActor?: Resolve
 
   app.get('/event-sources', async (context) => {
     query(context.req.raw, ['flowId'], controlErrorCode.eventSourceInvalid)
-    return response(200, await service.listEventSources(context.req.query('flowId')))
+    return response(200, await service.listEventSources(context.req.query('flowId'), context.req.raw.signal))
   })
   app.get('/event-sources/connections', async (context) => {
-    query(context.req.raw, ['teamId'], controlErrorCode.eventSourceInvalid)
-    return response(200, await service.listEventSourceConnections(context.req.query('teamId'), context.req.raw.signal))
+    query(context.req.raw, ['teamId', 'kind'], controlErrorCode.eventSourceInvalid)
+    return response(200, await service.listEventSourceConnections(context.req.query('teamId'), context.req.raw.signal, context.req.query('kind')))
   })
   app.post('/event-sources', async (context) => {
     query(context.req.raw, [], controlErrorCode.eventSourceInvalid)
@@ -135,7 +135,7 @@ export function createControlApp(service: ControlService, resolveActor?: Resolve
   app.put('/event-sources/:sourceId', async (context) => {
     query(context.req.raw, [], controlErrorCode.eventSourceInvalid)
     const body = await decodeRequest(context.req.raw, controlErrorCode.eventSourceInvalid, controlRequests.updateEventSource)
-    return response(200, service.updateEventSource(context.req.param('sourceId'), body))
+    return response(200, await service.updateEventSource(context.req.param('sourceId'), body, context.req.raw.signal))
   })
   app.delete('/event-sources/:sourceId', async (context) => {
     query(context.req.raw, [], controlErrorCode.eventSourceInvalid)
@@ -624,11 +624,27 @@ export function createControlApp(service: ControlService, resolveActor?: Resolve
       body.inputs,
       idempotencyKey(context.req.raw, controlErrorCode.runInvalid),
       body.trigger,
-      context.get('actorId'),
+      { actorId: context.get('actorId'), channel: clientChannel(context.req.raw) },
     )
     return response(accepted.created ? 202 : 200, accepted.run)
   })
 
+  app.get('/flows/:flowId/call-contract', (context) => response(200, service.getWorkflowContract(context.get('actorId'), context.req.param('flowId'))))
+  app.get('/flows/:flowId/references', (context) => {
+    const direction = context.req.query('direction') ?? 'incoming'
+    const offset = Number(context.req.query('offset') ?? 0)
+    const limit = Number(context.req.query('limit') ?? 50)
+    if (
+      !['incoming', 'outgoing'].includes(direction) ||
+      !Number.isSafeInteger(offset) ||
+      offset < 0 ||
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > 100
+    )
+      throw new ControlError(controlErrorCode.flowInvalid, 'Invalid reference query.')
+    return response(200, service.getFlowReferences(context.get('actorId'), context.req.param('flowId'), direction as 'incoming' | 'outgoing', offset, limit))
+  })
   app.post('/runs', async (context) => {
     const body = await decodeRequest(context.req.raw, controlErrorCode.runInvalid, controlRequests.createLiveRun)
     service.authorize(context.get('actorId'), { publicationId: body.publicationId })
@@ -637,7 +653,7 @@ export function createControlApp(service: ControlService, resolveActor?: Resolve
       body.inputs,
       idempotencyKey(context.req.raw, controlErrorCode.runInvalid),
       body.trigger,
-      context.get('actorId'),
+      { initiator: { actorId: context.get('actorId'), channel: clientChannel(context.req.raw) } },
     )
     return response(accepted.created ? 202 : 200, accepted.run)
   })
@@ -851,4 +867,10 @@ async function decodeRequest<Value>(request: Request, code: InvalidCode, decode:
       cause: error,
     })
   }
+}
+
+function clientChannel(request: Request): 'workbench' | 'cli' | 'api' {
+  const channel = request.headers.get('x-open-flow-client') ?? 'api'
+  if (channel == 'workbench' || channel == 'cli' || channel == 'api') return channel
+  throw new ControlError(controlErrorCode.runInvalid, 'Invalid Run client channel.')
 }

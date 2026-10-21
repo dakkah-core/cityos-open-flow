@@ -1,29 +1,13 @@
 import type { I18n } from 'val-i18n'
 import type { ReadonlyVal } from 'value-enhancer'
 import type { CanvasCommand, CanvasCommandSubscriber } from '../../../../canvas/common/commands.ts'
-import type { EventSource } from '../../../../control/common/api.ts'
-import type { ConnectorCapability } from '../../../../flow/common/change.ts'
-import type { Settings as NodeSettings } from '../../../../flow/common/nodeChanges.ts'
 import type { WorkflowFile } from '../../../../flow/common/workflowFile.ts'
-import type {
-  WorkbenchClient,
-  ConnectorConnection,
-  Draft,
-  Flow,
-  GraphNode,
-  InputPort,
-  Port,
-  JsonValue,
-  Live,
-  TriggerKeySnapshot,
-  TriggerSchedule,
-} from '../api.ts'
+import type { WorkbenchClient, ConnectorConnection, Draft, Flow, JsonValue, Live, TriggerKeySnapshot } from '../api.ts'
 import type { DesignerViewport, Point } from '../canvasPresentation.ts'
 import type { FlowChangeEvent } from '../contract.ts'
 import type { AddNodeOption } from '../editor/addNodeOptions.ts'
 import type { DiagnosticItem } from '../editor/diagnostics.ts'
-import type { ConditionSettings, TaskPorts, FlowChanges, TaskSettings, ValueSettings, WebhookSettings } from '../editor/flowChanges.ts'
-import type { NodeClipboard } from '../editor/nodeClipboard.ts'
+import type { FlowChanges } from '../editor/flowChanges.ts'
 import type { PropertyDeletion } from '../editor/propertyDeletion.ts'
 import type { RevisionView } from '../revisionView.ts'
 import type { DesignerEdge, DesignerGraph } from '../workspace.ts'
@@ -34,25 +18,13 @@ import type { SetNotice } from './workbenchNotice.ts'
 import type { ModuleEditorDraft, WorkspaceState, Workspace$ } from './workspaceModel.ts'
 
 import { dequal } from 'dequal/lite'
-import { isJsonObject } from '../../../../base/common/json.ts'
 import { controlErrorCode } from '../../../../control/common/errors.ts'
 import { createAuthoringId } from '../../../../flow/common/authoring.ts'
 import { connect as connectFlowNodes, disconnect as disconnectFlowNodes } from '../../../../flow/common/edgeChanges.ts'
-import { inputValue } from '../../../../flow/common/inputValue.ts'
 import { inverseFlowChanges } from '../../../../flow/common/inverseChanges.ts'
-import {
-  resetInputValues,
-  setInputSources,
-  repairNodeNames,
-  updateTriggerConfig,
-  updateTriggerSchedule,
-  updateFlowInputDefs,
-  setConnectorConnection as changeConnectorConnection,
-  setCodeActions as changeCodeActions,
-  setTriggerConnection as changeTriggerConnection,
-} from '../../../../flow/common/nodeChanges.ts'
+import { repairNodeNames } from '../../../../flow/common/nodeChanges.ts'
 import { encodeWorkflowFile, workflowFileName } from '../../../../flow/common/workflowFile.ts'
-import { feishuResourceKind, supportsFeishuChatFilter } from '../../../../trigger/providers/feishu/config.ts'
+import { workflowCandidate } from '../../../../workflow/common/workflow.ts'
 import { ApiError } from '../api.ts'
 import {
   canvasPresentationChange,
@@ -66,26 +38,8 @@ import {
 } from '../canvasPresentation.ts'
 import { connectionCatalog } from '../connectionCatalog.ts'
 import { addNodeIntent } from '../editor/addNodeOptions.ts'
-import { updateOutputPorts } from '../editor/flowChanges.ts'
-import {
-  applyFlowChanges,
-  deleteSelection,
-  updateCondition,
-  updateTaskPorts,
-  updateTaskAdditionalInputs,
-  updateNodeDescription,
-  updateNodeIcon,
-  updateNodeSettings,
-  updateNodeName,
-  updateTask,
-  updateValue,
-  updateResolution,
-  updateWebhook,
-  addNode as addFlowNode,
-  setInputVariable as changeInputVariable,
-  setInputValue as changeInputValue,
-} from '../editor/flowChanges.ts'
-import { copyNodes, pasteNodes } from '../editor/nodeClipboard.ts'
+import { CanvasClipboard } from '../editor/canvasClipboard.ts'
+import { applyFlowChanges, deleteSelection, addNode as addFlowNode, selectWebhookResponse, setTriggerConnection } from '../editor/flowChanges.ts'
 import { createI18n } from '../i18n.ts'
 import { revisionView } from '../revisionView.ts'
 import { designerGraph } from '../workspace.ts'
@@ -95,12 +49,12 @@ import { DraftChanges } from './draftChanges.ts'
 import { FlowCatalog } from './flowCatalog.ts'
 import { Latest } from './latest.ts'
 import { ModuleEditorSession } from './moduleEditorSession.ts'
+import { NodeEdits } from './nodeEdits.ts'
 import { PresentationChanges } from './presentationChanges.ts'
 import { resourceValue } from './resource.ts'
 import { errorNotice } from './workbenchNotice.ts'
 import { moduleEditorStatus, selectedModuleEditor, WorkspaceModel } from './workspaceModel.ts'
 
-const PASTE_OFFSET: Point = { x: 40, y: 40 }
 const deletionMessageKeys = {
   field: 'history.deleted.field',
   group: 'history.deleted.group',
@@ -112,17 +66,6 @@ const deletionMessageKeys = {
   conditionGroup: 'history.deleted.conditionGroup',
   webhookBody: 'history.deleted.webhookBody',
 } as const satisfies Readonly<Record<PropertyDeletion['target'], string>>
-
-interface Clipboard {
-  readonly hiddenNodeIds: readonly string[]
-  readonly comments: readonly {
-    readonly content: string
-    readonly position: Point
-    readonly sourceId: string
-    readonly title: string
-  }[]
-  readonly nodes: NodeClipboard
-}
 
 interface ReconciledRevision {
   readonly revision: RevisionView
@@ -139,13 +82,17 @@ export class WorkspaceStore {
   readonly #presentationChanges: PresentationChanges
   readonly #flows: FlowCatalog
   readonly #runChanged: (event: Extract<FlowChangeEvent, { readonly kind: 'run.changed' | 'run.created' }>) => void
+  public readonly notify: SetNotice = (notice) => {
+    if (!this.#disposed) this.#setNotice(notice)
+  }
+
   readonly #setNotice: SetNotice
   readonly #model: WorkspaceModel
   readonly #modules: ModuleEditorSession
   readonly #history = new CanvasHistory()
   public readonly history$: ReadonlyVal<CanvasHistory['state$']['value']> = this.#history.state$
   #historyRecovery?: Promise<void>
-  #clipboard?: Clipboard
+  readonly #clipboard: CanvasClipboard
   #diagnosticFocusId = 0
   #draftInvalidation = 0
   #draftUpdateNotice = false
@@ -157,6 +104,7 @@ export class WorkspaceStore {
   #stopCatalogWatch?: () => void
   #stopFlowWatch?: () => void
   public readonly $: Workspace$
+  public readonly nodes: NodeEdits
 
   public constructor(
     client: WorkbenchClient,
@@ -176,6 +124,7 @@ export class WorkspaceStore {
     this.#client = client
     this.#setNotice = setNotice
     this.#identity = identity
+    this.#clipboard = new CanvasClipboard(identity, i18n.t)
     this.#i18n = i18n
     this.#runChanged = runChanged
     this.#flows = new FlowCatalog(client, setNotice, i18n)
@@ -201,6 +150,11 @@ export class WorkspaceStore {
     })
     this.#presentationChanges = new PresentationChanges(client, setNotice, (presentation) => this.#set({ presentation }), i18n)
     this.$ = this.#model.$
+    this.nodes = new NodeEdits(
+      this.$.revision,
+      async (changes, deletion) => (await this.#canvasChange('edit', 1, changes, undefined, undefined, deletion)) && this.#model.value.draft != null,
+      identity,
+    )
   }
 
   public dispose(): void {
@@ -218,9 +172,14 @@ export class WorkspaceStore {
   }
 
   public async start(flowId?: string): Promise<void> {
-    const current = this.#draftSession.capture()
-    let initialLoad: Promise<void> | undefined
     this.#started = false
+    await this.selectFlow(flowId)
+    this.#started = !this.#disposed
+  }
+
+  async #loadFlowCatalog(): Promise<void> {
+    if (this.#flows.loaded && this.#stopCatalogWatch != null) return
+    let initialLoad: Promise<void> | undefined
     if (this.#stopCatalogWatch == null) {
       const subscription = this.#client.watchFlowCatalog((event) => {
         if (this.#disposed) return
@@ -239,8 +198,6 @@ export class WorkspaceStore {
     if (this.#disposed) return
     initialLoad = this.reloadFlows()
     await initialLoad
-    if (!this.#disposed && current()) await this.selectFlow(flowId)
-    this.#started = !this.#disposed
   }
 
   public async reloadFlows(): Promise<void> {
@@ -290,21 +247,25 @@ export class WorkspaceStore {
       workspaceLoading: flowId != null,
       workspaceRepairing: false,
     })
-    if (flowId == null) return true
+    if (flowId == null) {
+      await this.#loadFlowCatalog()
+      return true
+    }
     try {
       let invalidated = false
       let pendingRevision: string | undefined
+      const changed = (revisionId?: string): void => {
+        if (!current()) return
+        if (this.#draftChanges.committed == null) {
+          invalidated = true
+          pendingRevision = revisionId
+        } else if (revisionId != this.#draftChanges.committed.revisionId) {
+          void this.#refreshDraft(revisionId)
+        }
+      }
       const subscription = this.#client.watchFlow(
         flowId,
-        (revisionId) => {
-          if (!current()) return
-          if (this.#draftChanges.committed == null) {
-            invalidated = true
-            pendingRevision = revisionId
-          } else if (revisionId != this.#draftChanges.committed.revisionId) {
-            void this.#refreshDraft(revisionId)
-          }
-        },
+        changed,
         (event) => {
           if (current()) this.#runChanged(event)
         },
@@ -321,8 +282,23 @@ export class WorkspaceStore {
         },
       )
       this.#stopFlowWatch = subscription.stop
-      await subscription.ready
+      let reading = false
+      void subscription.ready.then(
+        () => {
+          // Reconcile changes missed between the initial read and subscription readiness.
+          if (reading) changed()
+        },
+        (error) => {
+          if (!current()) return
+          subscription.stop()
+          this.#stopFlowWatch = undefined
+          this.#setNotice(errorNotice(error, this.#i18n.t))
+        },
+      )
+      // An already-ready subscription covers the initial read without a catch-up request.
+      await Promise.resolve()
       if (!current()) return false
+      reading = true
       let editor = await this.#client.getEditor(flowId)
       for (let attempt = 0; current() && Object.values(revisionView(editor.draft).graph().nodes).some((node) => node.kind == 'manual'); attempt += 1) {
         if (attempt >= 3) throw new ApiError(409, controlErrorCode.flowRevisionConflict, 'The Draft changed while upgrading its Start node.')
@@ -372,16 +348,22 @@ export class WorkspaceStore {
 
   public async repairWorkspace(): Promise<void> {
     const flowId = this.#model.value.flowId
-    const flow = flowId == null ? undefined : this.#flows.flow(flowId)
-    if (flowId == null || flow == null || this.#model.value.workspaceRepairing) return
-    const repair = (this.#pendingRepair ??= { changeId: this.#identity(), expectedRevisionId: flow.draftRevisionId })
+    if (flowId == null || this.#model.value.workspaceRepairing) return
+    const current = this.#draftSession.capture()
     this.#set({ workspaceRepairing: true, workspaceLoadProblem: this.#model.value.workspaceLoadProblem })
     try {
+      let repair = this.#pendingRepair
+      if (repair == null) {
+        const flow = this.#flows.flow(flowId) ?? (await this.#client.getFlow(flowId))
+        if (!current()) return
+        repair = this.#pendingRepair = { changeId: this.#identity(), expectedRevisionId: flow.draftRevisionId }
+      }
       await this.#client.repairDraft(flowId, repair.expectedRevisionId, repair.changeId)
+      if (!current()) return
       this.#pendingRepair = undefined
       await this.selectFlow(flowId)
     } catch (error) {
-      if (this.#disposed) return
+      if (this.#disposed || !current()) return
       if (error instanceof ApiError && error.code == controlErrorCode.flowRevisionConflict) {
         this.#pendingRepair = undefined
         await this.selectFlow(flowId)
@@ -444,7 +426,7 @@ export class WorkspaceStore {
   }
 
   public createFlow(name: string, create?: (name: string) => Promise<string>): Promise<Flow | undefined> {
-    return this.#createFlow(async () => (create == null ? this.#client.createFlow(name) : this.#client.getFlow(await create(name))))
+    return this.#createFlow(() => this.#flows.create(name, create))
   }
 
   public importFlow(
@@ -453,24 +435,21 @@ export class WorkspaceStore {
     key: string,
     importer?: (file: WorkflowFile, name: string, key: string) => Promise<string>,
   ): Promise<Flow | undefined> {
-    return this.#createFlow(async () =>
-      importer == null ? this.#client.importFlow(file, { name, idempotencyKey: key }) : this.#client.getFlow(await importer(file, name, key)),
-    )
+    return this.#createFlow(() => this.#flows.import(file, name, key, importer))
   }
 
-  async #createFlow(create: () => Promise<Flow>): Promise<Flow | undefined> {
+  async #createFlow(create: () => Promise<Flow | undefined>): Promise<Flow | undefined> {
     if (!(await this.saveModuleEditor())) return
     this.#set({ busy: 'flow' })
     try {
-      const created = await create()
-      if (this.#disposed) return
-      this.#flows.insert(created)
-      return created
-    } catch (error) {
-      if (!this.#disposed) this.#setNotice(errorNotice(error, this.#i18n.t))
+      return await create()
     } finally {
       this.#set({ busy: undefined })
     }
+  }
+
+  public getFlowReferences(flowId: string, options: { offset?: number; signal?: AbortSignal } = {}) {
+    return this.#client.getFlowReferences(flowId, { ...options, direction: 'incoming', limit: 50 })
   }
 
   public getErrorListeners(flowId: string, signal?: AbortSignal) {
@@ -479,66 +458,40 @@ export class WorkspaceStore {
 
   public async deleteFlow(flowId: string): Promise<boolean> {
     if (!(await this.saveModuleEditor())) return false
-    const flow = this.#flows.flow(flowId)
-    if (flow == null || flow.status == 'retiring') return false
     this.#set({ busy: 'flow' })
     try {
-      await this.#client.deleteFlow(flowId)
-      if (this.#disposed) return false
-      this.#flows.remove(flowId)
-      this.#setNotice({ kind: 'success', message: this.#i18n.t('notice.flowDeleteAccepted', { name: flow.name }) })
-      return true
-    } catch (error) {
-      if (!this.#disposed) this.#setNotice(errorNotice(error, this.#i18n.t))
-      return false
+      return await this.#flows.delete(flowId)
     } finally {
       this.#set({ busy: undefined })
     }
   }
 
   public async renameFlow(flowId: string, name: string): Promise<boolean> {
-    const flow = this.#flows.flow(flowId)
-    const nextName = name.trim()
-    if (flow == null || nextName.length == 0) return false
-    if (flow.name == nextName) return true
     this.#set({ busy: 'flow' })
-    let changed: Flow | undefined
     try {
-      changed = await this.#client.renameFlow(flowId, nextName)
-      if (changed != null) this.#flows.include(changed)
-    } catch (error) {
-      if (!this.#disposed) this.#setNotice(errorNotice(error, this.#i18n.t))
+      return await this.#flows.rename(flowId, name)
+    } finally {
+      this.#set({ busy: undefined })
     }
-    this.#set({ busy: undefined })
-    if (changed == null) return false
-    this.#setNotice({
-      kind: 'success',
-      message: this.#i18n.t('notice.flowRenamed', { name: nextName }),
-    })
-    return true
   }
 
-  public async addNode(option: AddNodeOption, position: Point, connection?: (nodeId: string) => Omit<DesignerEdge, 'id'>): Promise<string | undefined> {
+  public async addNode(
+    option: AddNodeOption,
+    position: Point,
+    connection?: (nodeId: string) => Omit<DesignerEdge, 'id'>,
+    relatedChanges?: (nodeId: string, revision: RevisionView) => FlowChanges,
+  ): Promise<string | undefined> {
     if (!(await this.saveModuleEditor())) return
     const draft = this.#model.value.draft
     if (draft == null) return
     const nodeId = this.#identity()
     if (option.kind == 'comment') return await this.#addComment(nodeId, position)
     const revision = revisionView(draft)
-    let intent = addNodeIntent(option, revision, this.#i18n.t)
+    const intent = addNodeIntent(option, revision, this.#i18n.t)
     if (intent == null) return
-    if (intent.kind == 'provider-trigger' && intent.connectionId == null) {
-      try {
-        const connections = await resourceValue(this.catalogs.connections.get(intent.definition.provider, draft.flowId))
-        const allowed = this.filterTriggerConnections == null ? connections : await this.filterTriggerConnections(draft.flowId, intent.definition, connections)
-        intent = { ...intent, connectionId: connectionCatalog(allowed).preferred?.connectionId }
-      } catch (error) {
-        if (!this.#disposed && this.#model.value.draft == draft) this.#setNotice(errorNotice(error, this.#i18n.t))
-      }
-      if (this.#disposed || this.#model.value.draft != draft) return
-    }
     const edge = connection?.(nodeId)
-    const nodeChanges = addFlowNode(revision, nodeId, intent)
+    const created = addFlowNode(revision, nodeId, intent)
+    const nodeChanges = created == null ? undefined : [...created, ...(relatedChanges?.(nodeId, revision) ?? [])]
     if (nodeChanges == null) return
     const changes =
       edge == null
@@ -554,7 +507,40 @@ export class WorkspaceStore {
     if (!(await this.#canvasChange('add', 1, changes, (value) => setNodePositions(value, { [nodeId]: position }), [nodeId]))) return
     if (this.#disposed) return
     this.#set({ nodeFocus: { nodeId, requestId: ++this.#nodeFocusId } })
+    if (intent.kind == 'provider-trigger' && intent.connectionId == null) void this.#configureAddedTrigger(draft.flowId, nodeId, intent.definition)
     return nodeId
+  }
+
+  public async addWebhookResponseNode(triggerId: string): Promise<string | undefined> {
+    const option = this.$.addNodeOptions.value.find((item) => item.kind === 'webhook-response')
+    const position = this.#designer().nodes.find((node) => node.id === triggerId)?.position
+    if (option == null || position == null) return
+    return this.addNode(
+      option,
+      { x: position.x + 320, y: position.y },
+      undefined,
+      (nodeId, revision) => selectWebhookResponse(revision, triggerId, nodeId) ?? [],
+    )
+  }
+
+  async #configureAddedTrigger(flowId: string, nodeId: string, definition: TriggerKeySnapshot): Promise<void> {
+    const current = this.#draftSession.capture()
+    const original = this.$.revision.value?.graph().nodes[nodeId]
+    const unchanged = () => current() && !this.#disposed && this.$.revision.value?.graph().nodes[nodeId] === original
+    try {
+      const connections = await resourceValue(this.catalogs.connections.get(definition.provider, flowId))
+      if (!unchanged()) return
+      const allowed = this.filterTriggerConnections == null ? connections : await this.filterTriggerConnections(flowId, definition, connections)
+      if (!unchanged()) return
+      const connection = connectionCatalog(allowed).preferred
+      if (connection == null) return
+      const revision = this.$.revision.value
+      if (revision == null) return
+      const changes = setTriggerConnection(revision, nodeId, connection.connectionId)
+      if (changes != null && this.#history.completeNodeCreation(nodeId, changes)) await this.#changeDraft(changes, false, 'canvas')
+    } catch (error) {
+      if (unchanged()) this.#setNotice(errorNotice(error, this.#i18n.t))
+    }
   }
 
   public async connect(edge: Omit<DesignerEdge, 'id'>): Promise<void> {
@@ -603,217 +589,20 @@ export class WorkspaceStore {
   public copySelectedNodes(): void {
     const revision = this.$.revision.value
     if (revision == null || this.#model.value.selectedNodeIds.length == 0) return
-    const selected = new Set(this.#model.value.selectedNodeIds)
-    this.#clipboard = {
-      hiddenNodeIds: this.#designer().nodes.flatMap((node) => (node.contentHidden && selected.has(node.id) ? [node.id] : [])),
-      comments: this.#designer().nodes.flatMap((node) =>
-        node.kind == 'comment' && selected.has(node.id)
-          ? [
-              {
-                content: node.content,
-                position: node.position,
-                sourceId: node.id,
-                title: node.title,
-              },
-            ]
-          : [],
-      ),
-      nodes: copyNodes(revision, this.#model.value.selectedNodeIds),
-    }
+    this.#clipboard.copy(revision, this.#designer(), this.#model.value.selectedNodeIds)
   }
 
-  public async pasteNodes(sourcePositions?: Readonly<Record<string, Point>>, offset: Point = PASTE_OFFSET): Promise<void> {
+  public async pasteNodes(sourcePositions?: Readonly<Record<string, Point>>, offset?: Point): Promise<void> {
     if (!(await this.saveModuleEditor())) return
     const revision = this.$.revision.value
-    if (revision == null || this.#clipboard == null) return
-    const hiddenNodeIds = new Set(this.#clipboard.hiddenNodeIds)
-    const pasted = pasteNodes(revision, this.#clipboard.nodes, this.#identity)
-    const comments = this.#clipboard.comments.map((comment) => ({
-      ...comment,
-      nodeId: this.#identity(),
-    }))
-    if (pasted.nodeIds.length == 0 && comments.length == 0) return
-    const designerNodes = new Map(this.#designer().nodes.map((node) => [node.id, node]))
-    const added = new Set([...pasted.nodeIds, ...comments.map((comment) => comment.nodeId)])
-    const occupied = new Set([...designerNodes].filter(([nodeId]) => !added.has(nodeId)).map(([, node]) => `${node.position.x}\0${node.position.y}`))
-    const sources = [
-      ...pasted.sourceIds.map((sourceId) => sourcePositions?.[sourceId] ?? designerNodes.get(sourceId)?.position ?? { x: 80, y: 80 }),
-      ...comments.map((comment) => comment.position),
-    ]
-    let step = 1
-    if (offset.x != 0 || offset.y != 0) {
-      while (sources.some((source) => occupied.has(`${source.x + offset.x * step}\0${source.y + offset.y * step}`))) step += 1
-    }
-    const positions = Object.fromEntries(
-      pasted.sourceIds.map((sourceId, index) => {
-        const source = sourcePositions?.[sourceId] ?? designerNodes.get(sourceId)?.position
-        return [
-          pasted.nodeIds[index]!,
-          {
-            x: (source?.x ?? 80) + offset.x * step,
-            y: (source?.y ?? 80) + offset.y * step,
-          },
-        ]
-      }),
-    )
-    await this.#canvasChange(
-      'paste',
-      added.size,
-      pasted.changes,
-      (value) => {
-        let next = setNodePositions(value, positions)
-        for (const [index, sourceId] of pasted.sourceIds.entries()) {
-          if (hiddenNodeIds.has(sourceId)) next = setNodeContentHidden(next, pasted.nodeIds[index]!, true)
-        }
-        for (const comment of comments) {
-          if (hiddenNodeIds.has(comment.sourceId)) next = setNodeContentHidden(next, comment.nodeId, true)
-          next = setComment(next, comment.nodeId, {
-            content: comment.content,
-            position: { x: comment.position.x + offset.x * step, y: comment.position.y + offset.y * step },
-            title: this.#i18n.t('addNode.commentCopy', { title: comment.title }),
-          })
-        }
-        return next
-      },
-      [...pasted.nodeIds, ...comments.map((comment) => comment.nodeId)],
-    )
+    if (revision == null) return
+    const pasted = this.#clipboard.paste(revision, this.#designer(), sourcePositions, offset)
+    if (pasted != null) await this.#canvasChange('paste', pasted.nodeIds.length, pasted.changes, pasted.update, pasted.nodeIds)
   }
 
   public async duplicateSelectedNodes(positions?: Readonly<Record<string, Point>>, offset?: Point): Promise<void> {
     this.copySelectedNodes()
     await this.pasteNodes(positions, offset)
-  }
-
-  public async saveErrorSources(nodeId: string, value: readonly string[]): Promise<boolean> {
-    const node = this.$.revision.value?.graph()?.nodes[nodeId]
-    if (node?.kind != 'error' || dequal(node.sourceFlowIds ?? [], value)) return false
-    return (
-      (await this.#editDraft([{ kind: 'graph.trigger.sources.set', nodeId, before: node.sourceFlowIds, value: value.length == 0 ? undefined : value }])) != null
-    )
-  }
-
-  public async saveNodeSettings(nodeId: string, settings: NodeSettings): Promise<boolean> {
-    const revision = this.$.revision.value
-    if (revision == null) return false
-    const changes = updateNodeSettings(revision, nodeId, settings)
-    return changes != null && (await this.#editDraft(changes)) != null
-  }
-
-  public async saveNodeDescription(nodeId: string, description: string | undefined): Promise<boolean> {
-    const revision = this.$.revision.value
-    if (revision == null) return false
-    const changes = updateNodeDescription(revision, nodeId, description)
-    return changes != null && (await this.#editDraft(changes)) != null
-  }
-
-  public async saveNodeIcon(nodeId: string, icon: string | undefined): Promise<boolean> {
-    const revision = this.$.revision.value
-    if (revision == null) return false
-    const changes = updateNodeIcon(revision, nodeId, icon)
-    return changes != null && (await this.#editDraft(changes)) != null
-  }
-
-  public async saveNodeTitle(nodeId: string, title: string | undefined): Promise<boolean> {
-    const revision = this.$.revision.value
-    if (revision == null) return false
-    const changes = updateNodeName(revision, nodeId, title)
-    return changes != null && (await this.#editDraft(changes)) != null
-  }
-
-  public async setInputValue(nodeId: string, handle: string, value: JsonValue | undefined, deletion?: PropertyDeletion): Promise<boolean> {
-    const revision = this.$.revision.value
-    if (revision == null) return false
-    const changes = changeInputValue(revision, nodeId, handle, value)
-    return changes != null && (await this.#editDraft(changes, deletion)) != null
-  }
-
-  public async resetInputs(nodeId: string, handles: readonly string[]): Promise<boolean> {
-    const revision = this.$.revision.value
-    if (revision == null) return false
-    return (await this.#editDraft(resetInputValues(revision.revision.content, nodeId, handles))) != null
-  }
-
-  public async saveFlowOutputDefs(
-    nodeId: string,
-    definitions: readonly InputPort[],
-    deletion?: PropertyDeletion,
-    values?: Readonly<Record<string, JsonValue | undefined>>,
-  ): Promise<boolean> {
-    const revision = this.$.revision.value
-    if (revision == null || revision.graph().nodes[nodeId]?.kind != 'outputs') return false
-    return (await this.#editDraft(updateOutputPorts(revision, definitions, values), deletion)) != null
-  }
-
-  public async saveFlowInputDefs(inputDefs: readonly Port[], deletion?: PropertyDeletion): Promise<boolean> {
-    const revision = this.$.revision.value
-    if (revision == null) return false
-    const changes = updateFlowInputDefs(revision.revision.content, inputDefs)
-    return (await this.#editDraft(changes, deletion)) != null
-  }
-
-  public async resetTriggerConfig(triggerId: string, names?: readonly string[]): Promise<boolean> {
-    const revision = this.$.revision.value
-    if (revision == null) return false
-    const trigger = revision.graph()?.nodes[triggerId]
-    if (trigger?.kind !== 'poll' && trigger?.kind !== 'integration') return false
-    const selected =
-      names == null
-        ? Object.entries(trigger.config)
-        : names.flatMap((name) => (Object.hasOwn(trigger.config, name) ? [[name, trigger.config[name]] as const] : []))
-    const changes = selected.map(([name, before]) => ({
-      kind: 'graph.trigger.config.set' as const,
-      nodeId: triggerId,
-      name,
-      before,
-      value: undefined,
-    }))
-    return (await this.#editDraft(changes)) != null
-  }
-
-  public async setInputSource(
-    nodeId: string,
-    handle: string,
-    source: { readonly nodeId: string; readonly output: string; readonly field?: string },
-  ): Promise<boolean> {
-    const revision = this.$.revision.value
-    if (revision == null) return false
-    return (await this.#editDraft(setInputSources(revision.revision.content, nodeId, handle, [{ kind: 'node', ...source }]))) != null
-  }
-
-  public async setInputVariable(nodeId: string, handle: string, name: string | undefined): Promise<boolean> {
-    const revision = this.$.revision.value
-    if (revision == null) return false
-    const changes = name == null ? changeInputValue(revision, nodeId, handle, undefined) : changeInputVariable(revision, nodeId, handle, name, this.#identity())
-    return changes != null && (await this.#editDraft(changes)) != null
-  }
-
-  public async saveCondition(nodeId: string, settings: ConditionSettings, deletion?: PropertyDeletion): Promise<boolean> {
-    const revision = this.$.revision.value
-    if (revision == null) return false
-    const changes = updateCondition(revision, nodeId, settings)
-    return changes != null && (await this.#editDraft(changes, deletion)) != null
-  }
-
-  public async saveValue(nodeId: string, values: readonly ValueSettings[], deletion?: PropertyDeletion): Promise<boolean> {
-    const revision = this.$.revision.value
-    if (revision == null) return false
-    const changes = updateValue(revision, nodeId, values)
-    return changes != null && (await this.#editDraft(changes, deletion)) != null
-  }
-
-  public async saveResolution(
-    nodeId: string,
-    settings: Pick<Extract<GraphNode, { readonly kind: 'approval' | 'wait' }>, 'prompt'> & {
-      readonly name?: string
-      readonly inputDefinitions?: readonly InputPort[]
-    },
-    deletion?: PropertyDeletion,
-    values?: Readonly<Record<string, JsonValue | undefined>>,
-  ): Promise<boolean> {
-    const revision = this.$.revision.value
-    if (revision == null) return false
-    const changes = updateResolution(revision, nodeId, settings, values)
-    return changes != null && (await this.#editDraft(changes, deletion)) != null
   }
 
   public async saveNodeContentHidden(nodeId: string, hidden: boolean): Promise<void> {
@@ -829,53 +618,25 @@ export class WorkspaceStore {
     await this.#canvasChange('edit', 1, [], (value) => setComment(value, nodeId, { ...comment, position }))
   }
 
+  public async listWorkflowTargets(signal?: AbortSignal) {
+    const flowId = this.$.revision.value?.revision.flowId
+    if (flowId == null) return []
+    const candidates: import('../../../../workflow/common/workflow.ts').WorkflowCandidate[] = []
+    let cursor: string | undefined
+    do {
+      const page = await this.#client.listFlows({ cursor, limit: 100, signal })
+      candidates.push(...page.flows.filter((flow) => flow.flowId != flowId).map((flow) => workflowCandidate(flow)))
+      cursor = page.nextCursor
+    } while (cursor != null)
+    return candidates
+  }
+
+  public loadWorkflowContract(flowId: string, signal?: AbortSignal) {
+    return this.#client.getWorkflowContract(flowId, signal)
+  }
+
   public loadOpenApiDocument(url: string, signal?: AbortSignal): Promise<JsonValue> {
     return this.#client.loadOpenApiDocument(url, signal)
-  }
-
-  public async saveTaskSettings(nodeId: string, settings: TaskSettings, deletion?: PropertyDeletion): Promise<boolean> {
-    const revision = this.$.revision.value
-    if (revision == null) return false
-    const changes = updateTask(revision, nodeId, settings)
-    return changes != null && (await this.#editDraft(changes, deletion)) != null
-  }
-
-  public async saveTaskPorts(
-    nodeId: string,
-    ports: TaskPorts,
-    deletion?: PropertyDeletion,
-    values?: Readonly<Record<string, JsonValue | undefined>>,
-  ): Promise<boolean> {
-    const revision = this.$.revision.value
-    if (revision == null) return false
-    const changes = updateTaskPorts(revision, nodeId, ports, values)
-    return changes != null && (await this.#editDraft(changes, deletion)) != null
-  }
-
-  public async saveTaskAdditionalInputs(
-    nodeId: string,
-    inputs: readonly InputPort[],
-    deletion?: PropertyDeletion,
-    values?: Readonly<Record<string, JsonValue | undefined>>,
-  ): Promise<boolean> {
-    const revision = this.$.revision.value
-    if (revision == null) return false
-    const changes = updateTaskAdditionalInputs(revision, nodeId, inputs, values)
-    return changes != null && (await this.#editDraft(changes, deletion)) != null
-  }
-
-  public async setConnectorConnection(nodeId: string, connectionId: string | undefined): Promise<boolean> {
-    const revision = this.$.revision.value
-    if (revision == null) return false
-    const changes = changeConnectorConnection(revision.revision.content, nodeId, connectionId)
-    return changes != null && (await this.#editDraft(changes)) != null
-  }
-
-  public async setCodeActions(nodeId: string, capabilities: readonly ConnectorCapability[]): Promise<boolean> {
-    const revision = this.$.revision.value
-    if (revision == null) return false
-    const changes = changeCodeActions(revision.revision.content, nodeId, capabilities)
-    return changes == null || (await this.#editDraft(changes)) != null
   }
 
   public get eventSourceClient() {
@@ -888,25 +649,6 @@ export class WorkspaceStore {
     return await this.#client.listEventSources(flowId, signal)
   }
 
-  public async setTriggerEventSource(triggerId: string, source: EventSource): Promise<boolean> {
-    const revision = this.$.revision.value
-    if (revision == null) return false
-    const trigger = revision.graph()?.nodes[triggerId]
-    if (trigger?.kind != 'integration' || trigger.definition.key != 'feishu_app_bot.on_event' || source.provider != trigger.definition.provider) return false
-    const connectionChanges = changeTriggerConnection(revision.revision.content, triggerId, source.connectionId)
-    if (connectionChanges == null) return false
-    const changed = inputValue(trigger.config.sourceId, undefined) != source.sourceId
-    return (
-      (await this.#editDraft([
-        ...connectionChanges,
-        ...(updateTriggerConfig(revision.revision.content, triggerId, 'sourceId', source.sourceId) ?? []),
-        ...(changed ? (updateTriggerConfig(revision.revision.content, triggerId, 'eventTypes', undefined) ?? []) : []),
-        ...(changed ? (updateTriggerConfig(revision.revision.content, triggerId, 'resource', undefined) ?? []) : []),
-        ...(changed ? (updateTriggerConfig(revision.revision.content, triggerId, 'chatIds', undefined) ?? []) : []),
-      ])) != null
-    )
-  }
-
   public async loadTriggerConfigOptions(triggerId: string, field: string, signal: AbortSignal) {
     const flowId = this.#model.value.flowId
     const current = this.#draftSession.capture()
@@ -914,57 +656,6 @@ export class WorkspaceStore {
     signal.throwIfAborted()
     if (this.#disposed || !current() || flowId == null) throw new DOMException('Draft changed', 'AbortError')
     return await this.#client.listTriggerConfigOptions(flowId, triggerId, field, signal)
-  }
-
-  public async saveTriggerConfig(triggerId: string, name: string, value: JsonValue | undefined): Promise<boolean> {
-    const revision = this.$.revision.value
-    if (revision == null) return false
-    let changes = updateTriggerConfig(revision.revision.content, triggerId, name, value)
-    if (changes == null) return false
-    const trigger = revision.graph()?.nodes[triggerId]
-    if (changes.length > 0 && trigger?.kind == 'integration' && trigger.definition.key == 'feishu_app_bot.on_event' && name == 'eventTypes') {
-      const events = Array.isArray(value) ? value.filter((item): item is string => typeof item == 'string') : []
-      if (!supportsFeishuChatFilter(events)) changes = [...changes, ...(updateTriggerConfig(revision.revision.content, triggerId, 'chatIds', undefined) ?? [])]
-      const resource = inputValue(trigger.config.resource, undefined)
-      if (isJsonObject(resource) && resource.kind != feishuResourceKind(events)) {
-        changes = [...changes, ...(updateTriggerConfig(revision.revision.content, triggerId, 'resource', undefined) ?? [])]
-      }
-    }
-    if (changes.length > 0 && trigger?.kind == 'poll' && trigger.definition.key == 'linear.on_issue_changed' && name == 'teamId') {
-      return (await this.#editDraft([...changes, ...(updateTriggerConfig(revision.revision.content, triggerId, 'stateIds', undefined) ?? [])])) != null
-    }
-    return (await this.#editDraft(changes)) != null
-  }
-
-  public async saveTriggerSchedule(triggerId: string, schedule: readonly TriggerSchedule[]): Promise<boolean> {
-    const revision = this.$.revision.value
-    if (revision == null) return false
-    const changes = updateTriggerSchedule(revision.revision.content, triggerId, schedule)
-    return changes != null && (await this.#editDraft(changes)) != null
-  }
-
-  public async saveWebhook(triggerId: string, settings: WebhookSettings, deletion?: PropertyDeletion): Promise<boolean> {
-    const revision = this.$.revision.value
-    if (revision == null) return false
-    const changes = updateWebhook(revision, triggerId, settings)
-    return changes != null && (await this.#editDraft(changes, deletion)) != null
-  }
-
-  public async setTriggerConnection(triggerId: string, connectionId: string | undefined): Promise<boolean> {
-    const revision = this.$.revision.value
-    if (revision == null) return false
-    const changes = changeTriggerConnection(revision.revision.content, triggerId, connectionId)
-    if (changes == null) return false
-    const trigger = revision.graph()?.nodes[triggerId]
-    if (changes.length > 0 && trigger?.kind == 'poll' && trigger.definition.key == 'linear.on_issue_changed') {
-      return (
-        (await this.#editDraft([
-          ...changes,
-          ...['teamId', 'stateIds'].flatMap((field) => updateTriggerConfig(revision.revision.content, triggerId, field, undefined) ?? []),
-        ])) != null
-      )
-    }
-    return (await this.#editDraft(changes)) != null
   }
 
   public updateModuleSource(source: string): void {
@@ -1066,10 +757,6 @@ export class WorkspaceStore {
     )
     if (!(await change) || this.#disposed) return
     return nodeId
-  }
-
-  async #editDraft(changes: FlowChanges, deletion?: PropertyDeletion): Promise<Draft | undefined> {
-    return (await this.#canvasChange('edit', 1, changes, undefined, undefined, deletion)) ? this.#model.value.draft : undefined
   }
 
   #notifyDeletion(deletion: PropertyDeletion, entry: CanvasHistoryEntry): void {

@@ -22,3 +22,6 @@ assets/star-history/star-history.png
 
 # Generated local Flow skill.
 /.agents/skills/open-flow/
+
+# Local upstream qualification evidence.
+.build/

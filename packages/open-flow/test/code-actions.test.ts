@@ -50,7 +50,6 @@ describe('Code Connector capability', () => {
     [{ kind: 'connector', actionHints: ['github'] }],
     [{ kind: 'connector', actionHints: ['github.user', 'github.user'] }],
     [{ kind: 'connector', mode: 'shared', actions: [{ action: 'github.user', connectionId: 'work' }] }],
-    [{ kind: 'connector', mode: 'independent', actions: [{ action: 'github.user', connectionId: '' }] }],
     [{ kind: 'connector', mode: 'shared', actions: [{ action: 'github.user' }, { action: 'github.user' }] }],
     [{ kind: 'connector', mode: 'shared', actions: [] }],
     [{ kind: 'connector', mode: 'shared', extra: true }],

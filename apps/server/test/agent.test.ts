@@ -24,7 +24,8 @@ import { IsolatedVmHost } from '../node/runtime/isolated-vm.ts'
 const codeHost = new IsolatedVmHost()
 afterAll(() => codeHost.close())
 import { executeAgent as runAgent } from '../node/deployment/agent.ts'
-import { ConnectorClient, ConnectorTaskError } from '../node/deployment/connector.ts'
+import { ConnectorTaskError } from '../node/deployment/connector-contract.ts'
+import { ConnectorClient } from '../node/deployment/connector.ts'
 
 const savedResults = new Map<string, { result: import('@oomol-lab/open-flow/control-api').ResultInfo; content: string }>()
 afterEach(() => savedResults.clear())
@@ -847,4 +848,26 @@ it('does not expose code when disabled and does not recover from a CPU limit', a
   })
   expect(enabled.prompts).toHaveLength(1)
   expect(savedResults.size).toBe(0)
+})
+
+it.each([false, true])('filters deferred Agent tools before sending tools to the model (all=%s)', async (all) => {
+  if (task.executor.kind != 'agent') throw new Error('Expected Agent')
+  const external = vi.fn()
+  const { model, toolOptions } = fixture(['Done'])
+  const source: ManagedTaskDefinition = {
+    ...task,
+    executor: {
+      ...task.executor,
+      tools: [
+        { ...task.executor.tools[0]!, connectionId: '', name: 'deferred' },
+        ...(all ? [] : [{ ...task.executor.tools[0]!, id: 'active', name: 'active', connectionId: 'work' }]),
+      ],
+    },
+  }
+  await expect(executeAgent(source, invocation, model, external)).resolves.toEqual({ kind: 'completed', output: 'Done' })
+  const sent = toolOptions[0] as { tools: { name: string }[] }
+  expect(sent.tools.map((tool) => tool.name)).not.toContain('deferred')
+  expect(sent.tools.some((tool) => tool.name === 'active')).toBe(!all)
+  expect(external).not.toHaveBeenCalled()
+  expect(source.executor).toMatchObject({ tools: [{ connectionId: '' }, ...(all ? [] : [{ connectionId: 'work' }])] })
 })

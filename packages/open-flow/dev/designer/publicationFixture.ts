@@ -27,7 +27,7 @@ export function publicationFixture(flowId: string, revisionId: string): { draft:
 
         graph: {
           nodes: {
-            start: { kind: 'start', name: 'Start onboarding' },
+            start: { inputDefs: [], kind: 'start', name: 'Start onboarding' },
             customer: {
               kind: 'value',
               name: 'Customer details',

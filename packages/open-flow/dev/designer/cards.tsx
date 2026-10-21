@@ -86,6 +86,12 @@ export const cardStories: readonly FrontendStory[] = [
               { label: 'Trigger error', problem: 'Review the configuration.', disconnected: false },
               { label: 'Task error', problem: 'Review the configuration.', disconnected: false },
               {
+                label: 'Provider account deferred',
+                problem: 'No account is configured for now. Configure an account before executing this node.',
+                disconnected: true,
+                deferred: true,
+              },
+              {
                 label: 'Gmail disconnected',
                 problem: 'A connection is missing or unavailable. Reconnect or select an available connection in the node settings.',
                 disconnected: true,
@@ -97,6 +103,7 @@ export const cardStories: readonly FrontendStory[] = [
                 subtitle={state.disconnected ? 'Connector · Gmail' : state.label == 'GitHub trigger' ? 'Trigger · GitHub' : 'Identity indicators'}
                 icon={<i className="i-carbon:code" />}
                 problem={state.problem}
+                problemTone={'deferred' in state && state.deferred ? 'warning' : 'danger'}
                 problemIcon={state.disconnected ? <i aria-hidden="true" className="i-lucide-light:unplug" /> : undefined}
                 compact={compact}
               />
@@ -220,6 +227,7 @@ export const cardStories: readonly FrontendStory[] = [
             selected
             icon={<i className="i-carbon:search" />}
             footer={<RunChips run={{ status: 'running', progress: 42, runId: completed.runId, startedAt: completed.startedAt }} />}
+            running
           >
             <p>Gather company size, sector and recent announcements.</p>
           </CanvasCard>
