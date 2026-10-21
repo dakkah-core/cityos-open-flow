@@ -6,7 +6,7 @@ import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { build, esmExternalRequirePlugin } from 'vite'
+import { build, esmExternalRequirePlugin, normalizePath } from 'vite'
 import { generateScopedName } from '../../build/node/cssModules.ts'
 import designerUnoConfig from '../../build/node/designerUnoConfig.ts'
 import { providerIconsPlugin } from '../../build/node/providerIcons.ts'
@@ -94,8 +94,8 @@ async function buildRuntime(
   emptyOutDir: boolean,
 ): Promise<void> {
   const sharedTriggerPaths = new Map([
-    [path.join(options.sourceRoot, integrationTriggerEntryPath), './integration-trigger.js'],
-    [path.join(options.sourceRoot, pollTriggerEntryPath), './poll-trigger.js'],
+    [normalizePath(path.join(options.sourceRoot, integrationTriggerEntryPath)), './integration-trigger.js'],
+    [normalizePath(path.join(options.sourceRoot, pollTriggerEntryPath)), './poll-trigger.js'],
   ])
   await build({
     build: {

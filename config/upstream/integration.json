@@ -86,6 +86,13 @@
       ]
     },
     {
+      "id": "public-trigger-identities",
+      "purpose": "Normalize resolved bundler paths so Windows builds externalize public trigger runtimes instead of duplicating their error constructors.",
+      "invariant": "Errors from packaged provider triggers retain instanceof identity with the public poll and integration entries.",
+      "paths": ["packages/open-flow/src/distribution/node/browserPackage.ts"],
+      "tests": ["packages/open-flow/scripts/check-npm-package.ts", "packages/open-flow/scripts/npm-package-consumer/runtime.mjs.txt"]
+    },
+    {
       "id": "isolated-package-consumer",
       "purpose": "Materialize consumer dependency versions from the owning catalog and bound recursive fixture cleanup to its generated temporary directory.",
       "invariant": "Packed consumer tests install actual catalog versions without unresolved workspace protocols and cannot delete outside their isolated fixture.",
