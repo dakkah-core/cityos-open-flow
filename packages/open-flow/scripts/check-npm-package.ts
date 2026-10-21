@@ -7,12 +7,14 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { gunzipSync } from 'node:zlib'
+import { assertTemporaryConsumerTarget, consumerDependency } from './consumerSupport.ts'
 
 const execFileAsync = promisify(execFile)
 const packageRequire = createRequire(import.meta.url)
 const compiler = path.join(path.dirname(packageRequire.resolve('typescript/package.json')), 'bin/tsc')
 const rootPath = path.resolve(import.meta.dirname, '..')
 const manifest = JSON.parse(await readFile(path.join(rootPath, 'package.json'), 'utf8')) as { version: string; devDependencies: Record<string, string> }
+const workspace = JSON.parse(await readFile(path.resolve(rootPath, '../../package.json'), 'utf8'))
 const tarballPath = path.join(rootPath, 'dist/release', `oomol-lab-open-flow-${manifest.version}.tgz`)
 const sharedUiTokens = [
   '--ui-accent',
@@ -132,12 +134,12 @@ async function verifyConsumer(): Promise<void> {
           dependencies: {
             '@oomol-lab/open-flow': `file:${tarballPath}`,
             'effect': (packedManifest.peerDependencies as { effect: string }).effect,
-            'react': manifest.devDependencies.react,
-            'react-dom': manifest.devDependencies['react-dom'],
+            'react': consumerDependency(workspace, 'react', manifest.devDependencies.react!),
+            'react-dom': consumerDependency(workspace, 'react-dom', manifest.devDependencies['react-dom']!),
           },
           devDependencies: {
-            '@types/react': manifest.devDependencies['@types/react'],
-            '@types/react-dom': manifest.devDependencies['@types/react-dom'],
+            '@types/react': consumerDependency(workspace, '@types/react', manifest.devDependencies['@types/react']!),
+            '@types/react-dom': consumerDependency(workspace, '@types/react-dom', manifest.devDependencies['@types/react-dom']!),
             // Exercise the Rollup consumer pipeline as well as our Rolldown package build.
             'vite': '7.3.6',
           },
@@ -176,6 +178,7 @@ async function verifyConsumer(): Promise<void> {
     await execFileAsync(process.execPath, [browserPath], { cwd: directory })
     await verifyCommandConsumer(directory, manifest.version)
   } finally {
+    assertTemporaryConsumerTarget(directory)
     await rm(directory, { force: true, recursive: true })
   }
 }
@@ -204,6 +207,7 @@ async function verifyCommandConsumer(consumer: string, version: string): Promise
   })
   await execFileAsync(process.execPath, ['build', 'command.ts', '--target=bun', '--outfile=host.js'], { cwd: consumer })
   await execFileAsync(process.execPath, ['build', 'command.ts', '--compile', '--outfile=host'], { cwd: consumer })
+  assertTemporaryConsumerTarget(consumer, path.join(consumer, 'node_modules'))
   await rm(path.join(consumer, 'node_modules'), { recursive: true, force: true })
   const bundled = await execFileAsync(process.execPath, ['host.js'], { cwd: consumer, env: { ...process.env, BUN_CONFIG_NO_INSTALL: '1' } })
   assert.equal(bundled.stderr, '')

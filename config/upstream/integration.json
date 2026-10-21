@@ -86,6 +86,13 @@
       ]
     },
     {
+      "id": "isolated-package-consumer",
+      "purpose": "Materialize consumer dependency versions from the owning catalog and bound recursive fixture cleanup to its generated temporary directory.",
+      "invariant": "Packed consumer tests install actual catalog versions without unresolved workspace protocols and cannot delete outside their isolated fixture.",
+      "paths": ["packages/open-flow/scripts/check-npm-package.ts", "packages/open-flow/scripts/consumerSupport.ts"],
+      "tests": ["scripts/upstream/consumer-support.test.mjs"]
+    },
+    {
       "id": "distribution-build-memory",
       "purpose": "Run heavy declaration, browser and command distribution steps sequentially after the pinned compiler exceeded the Windows memory budget.",
       "invariant": "At most one distribution step runs at a time; a failed step prevents later builds and archive assembly.",
