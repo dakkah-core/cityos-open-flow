@@ -75,7 +75,7 @@ jobs:
 
       - name: Verify declared upstream changes
         run: |
-          node --test scripts/upstream/integration.test.mjs
+          node --test scripts/upstream/*.test.mjs
           node scripts/upstream/integration.mjs
 
       - name: Check

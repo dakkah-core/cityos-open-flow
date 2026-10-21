@@ -7,6 +7,7 @@ import { promisify } from 'node:util'
 import { generateTriggerLocales } from '../src/build/node/triggerLocales.ts'
 import { buildBrowserPackage } from '../src/distribution/node/browserPackage.ts'
 import { stageNpmPackage } from '../src/distribution/node/npmPackage.ts'
+import { runBuildSteps } from './buildSequence.ts'
 
 const rootPath = path.resolve(import.meta.dirname, '..')
 const workspaceRoot = path.resolve(rootPath, '../..')
@@ -29,36 +30,38 @@ await buildNpmPackage()
 async function buildNpmPackage(): Promise<void> {
   await stageNpmPackage({ packageRoot: npmPackageRoot, sourceRoot: rootPath, version: openFlowVersion })
   const compiler = path.join(path.dirname(packageRequire.resolve('typescript/package.json')), 'bin/tsc')
-  await Promise.all([
-    execFileAsync(
-      process.execPath,
-      [
-        compiler,
-        '--ignoreConfig',
-        '--declaration',
-        '--emitDeclarationOnly',
-        '--outDir',
-        path.join(npmPackageRoot, 'dist'),
-        '--rootDir',
-        path.join(rootPath, 'src/types'),
-        '--module',
-        'nodenext',
-        '--moduleResolution',
-        'nodenext',
-        '--target',
-        'esnext',
-        '--skipLibCheck',
-        'true',
-        path.join(rootPath, 'src/types/index.ts'),
-      ],
-      { cwd: rootPath },
-    ),
-    buildBrowserPackage({ packageRoot: npmPackageRoot, quiet, sourceRoot: rootPath }),
-    execFileAsync(
-      process.execPath,
-      ['run', '--filter', '@oomol-lab/open-flow-command', 'build', '--output', path.join(npmPackageRoot, 'dist/command'), ...(quiet ? ['--quiet'] : [])],
-      { cwd: workspaceRoot },
-    ),
+  await runBuildSteps([
+    () =>
+      execFileAsync(
+        process.execPath,
+        [
+          compiler,
+          '--ignoreConfig',
+          '--declaration',
+          '--emitDeclarationOnly',
+          '--outDir',
+          path.join(npmPackageRoot, 'dist'),
+          '--rootDir',
+          path.join(rootPath, 'src/types'),
+          '--module',
+          'nodenext',
+          '--moduleResolution',
+          'nodenext',
+          '--target',
+          'esnext',
+          '--skipLibCheck',
+          'true',
+          path.join(rootPath, 'src/types/index.ts'),
+        ],
+        { cwd: rootPath },
+      ),
+    () => buildBrowserPackage({ packageRoot: npmPackageRoot, quiet, sourceRoot: rootPath }),
+    () =>
+      execFileAsync(
+        process.execPath,
+        ['run', '--filter', '@oomol-lab/open-flow-command', 'build', '--output', path.join(npmPackageRoot, 'dist/command'), ...(quiet ? ['--quiet'] : [])],
+        { cwd: workspaceRoot },
+      ),
   ])
   await execFileAsync(
     process.execPath,

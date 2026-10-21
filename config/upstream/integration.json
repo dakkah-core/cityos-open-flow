@@ -6,26 +6,12 @@
     "commit": "0103070aea74d007660844d965b446664fc6eb52"
   },
   "baselineForkCommit": "227b75c563b37aaf99eb53280298047c2db87c23",
-  "ownedDirectories": [
-    "config/upstream",
-    "scripts/upstream"
-  ],
-  "publicEntries": [
-    "@oomol-lab/open-flow/workbench",
-    "@oomol-lab/open-flow/control-api",
-    "@oomol-lab/open-flow/workbench-host-conformance"
-  ],
+  "ownedDirectories": ["config/upstream", "scripts/upstream"],
+  "publicEntries": ["@oomol-lab/open-flow/workbench", "@oomol-lab/open-flow/control-api", "@oomol-lab/open-flow/workbench-host-conformance"],
   "toolchain": "package.json#workspaces.catalog;.node-version;.bun-version",
   "consumerProvenance": "dakkah-cityos-cms/packages/engineering-pipeline-runtime-core/src/open-flow-authoring.ts",
-  "supportedConsumerContracts": [
-    "cityos.open-flow-authoring.v1 (engine/v5; candidate v7 is not installation-qualified)"
-  ],
-  "requiredChecks": [
-    "source-boundary",
-    "editor-host",
-    "packed-consumers",
-    "cms-http-authoring"
-  ],
+  "supportedConsumerContracts": ["cityos.open-flow-authoring.v1 (engine/v5; candidate v7 is not installation-qualified)"],
+  "requiredChecks": ["source-boundary", "editor-host", "packed-consumers", "cms-http-authoring"],
   "changes": [
     {
       "id": "catalog-runtime-distribution",
@@ -98,6 +84,13 @@
         "packages/open-flow/src/workbench/browser/runtime/editor/workflowSection.test.tsx",
         "packages/open-flow/src/canvas/browser/graph/FlowCanvas/exportSvg.test.ts"
       ]
+    },
+    {
+      "id": "distribution-build-memory",
+      "purpose": "Run heavy declaration, browser and command distribution steps sequentially after the pinned compiler exceeded the Windows memory budget.",
+      "invariant": "At most one distribution step runs at a time; a failed step prevents later builds and archive assembly.",
+      "paths": ["packages/open-flow/scripts/build.ts", "packages/open-flow/scripts/buildSequence.ts"],
+      "tests": ["scripts/upstream/build-sequence.test.mjs"]
     }
   ],
   "nonClaims": [
