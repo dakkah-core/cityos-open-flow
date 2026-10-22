@@ -26,6 +26,15 @@ Run every case returned by a factory. Do not skip verification because a deploym
 - The same key and logical operation return the original resource. The same key with a different operation returns the corresponding conflict.
 - Adapters provide authentication and deployment scope. The public contract specifies no Team header, Cookie, or token format.
 
+The Node server's `ServerCapabilities.connectorTeams` port supplies deployment-owned
+Team availability when a hosted Connector client is absent. The server rereads this
+port for each selection, rejects unavailable or duplicate identities, and never
+falls back to another source after a configured port fails. The existing hosted
+Connector client remains the default when no port is configured. This port does
+not grant Connector access, tenant authority, publication or execution permission;
+the deployment owns authentication and scope independently. Listing or starting a
+deployment with this port never assigns its default Team to existing unbound Flows.
+
 Error response:
 
 ```json

@@ -14,6 +14,8 @@ export interface ServerRuntime {
 }
 
 export interface ServerCapabilities {
+  /** Deployment-owned Team availability; does not grant provider access or execution authority. */
+  readonly connectorTeams?: (signal?: AbortSignal) => Promise<readonly { readonly id: string; readonly name: string; readonly systemCreated: boolean }[]>
   readonly connectorAccess?: ConnectorAccessHost
   readonly connector?: () => ConnectorHost | undefined
   readonly connectorConsoleOrigin?: () => URL | undefined

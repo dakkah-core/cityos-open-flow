@@ -14,6 +14,25 @@
   "requiredChecks": ["source-boundary", "editor-host", "packed-consumers", "cms-http-authoring"],
   "changes": [
     {
+      "id": "settings-reference-types",
+      "purpose": "Represent the existing empty and cleared authorization references explicitly under the installed React type contract.",
+      "invariant": "Authorization cancellation and popup cleanup retain undefined as their empty state; the server workspace typecheck checks both references.",
+      "paths": ["apps/server/browser/settings.tsx"],
+      "tests": ["apps/server/tsconfig.json"]
+    },
+    {
+      "id": "deployment-team-source",
+      "purpose": "Allow a deployment host to supply current Team availability without coupling draft authoring to the hosted Connector client.",
+      "invariant": "Selections reread the configured owner; invalid, unavailable or withdrawn Teams reject creation without fallback. No execution or provider authority is granted.",
+      "paths": [
+        "apps/server/node/application/service-options.ts",
+        "apps/server/node/application/service.ts",
+        "apps/server/test/hostTeams.test.ts",
+        "docs/control/contracts/control-api.md"
+      ],
+      "tests": ["apps/server/test/hostTeams.test.ts"]
+    },
+    {
       "id": "catalog-runtime-distribution",
       "purpose": "Preserve the canonical CityOS Node/Bun/TypeScript and dependency catalog, materialized public peers and package compatibility checks.",
       "invariant": "Development and packed dependencies use the owning catalog; no alternate runtime or generated lock side is substituted.",

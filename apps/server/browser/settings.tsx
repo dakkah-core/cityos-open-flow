@@ -110,7 +110,7 @@ function OomolConnectorLogin({
   const [starting, setStarting] = useState(false)
   const [login, setLogin] = useState<{ readonly code: string; readonly url: string }>()
   const [error, setError] = useState<'expired' | 'failed'>()
-  const active = useRef<{ readonly controller: AbortController; readonly popup: Window | null; opened: boolean; id?: string }>()
+  const active = useRef<{ readonly controller: AbortController; readonly popup: Window | null; opened: boolean; id?: string } | undefined>(undefined)
   const heading = useRef<HTMLHeadingElement>(null)
   const primary = useRef<HTMLButtonElement>(null)
   const phase = disabled ? 'saving' : saveFailed ? 'saveFailed' : (error ?? (starting ? 'starting' : login ? 'waiting' : 'idle'))
@@ -611,7 +611,7 @@ function ServiceEditor({
   const [keyCleared, setKeyCleared] = useState(false)
   const [manual, setManual] = useState(false)
   const [authorizedDraft, setAuthorizedDraft] = useState<ServiceProfileDraft>()
-  const cancelAuthorization = useRef<() => void>()
+  const cancelAuthorization = useRef<(() => void) | undefined>(undefined)
   const automatic = mode == 'oomol' && ['https://connector.oomol.com', 'https://connector.oomol.dev'].includes(new URL(draft.connectorOrigin).origin)
   const errors = validateServiceProfile(mode, {
     ...draft,

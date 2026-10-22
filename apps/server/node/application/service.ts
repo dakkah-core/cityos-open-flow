@@ -88,6 +88,7 @@ export class ServerService {
   readonly #listeners: ListenerRuntime
   readonly #receive: (effect: Effect.Effect<IntegrationResponse, unknown>, signal?: AbortSignal) => Promise<IntegrationResponse>
   readonly #resolveConnector: () => ConnectorHost | undefined
+  readonly #resolveConnectorTeams: ServerCapabilities['connectorTeams']
   readonly #resolveConnectorConsoleOrigin: () => URL | undefined
   readonly #resolveIntegration: () => IntegrationOptions | undefined
   readonly #resolveLlm: () => LlmHost | undefined
@@ -123,6 +124,7 @@ export class ServerService {
     this.#clockService = clockService
     this.#logger = logger.child({ component: 'runtime' })
     this.#resolveConnector = capabilities.connector ?? (() => undefined)
+    this.#resolveConnectorTeams = capabilities.connectorTeams
     this.#connectorAccess = capabilities.connectorAccess ?? new ImplicitConnectorAccessHost()
     this.#resolveConnectorConsoleOrigin = capabilities.connectorConsoleOrigin ?? (() => undefined)
     this.#resolveIntegration = capabilities.integration ?? (() => undefined)
@@ -325,27 +327,52 @@ export class ServerService {
     readonly teams: readonly { readonly id: string; readonly name: string; readonly systemCreated: boolean }[]
     readonly version: 1
   }> {
-    const connector = this.#resolveConnector()
-    if (!(connector instanceof ConnectorClient) || !connector.teamSupported())
-      return { bindings: this.#store.connectorTeams.list(), enabled: false, teams: [], version: 1 }
-    const teams = await loadTeams(connector, signal)
+    const teams = await this.#availableConnectorTeams(signal)
+    if (teams == null) return { bindings: this.#store.connectorTeams.list(), enabled: false, teams: [], version: 1 }
     this.#store.connectorTeams.rememberNames(teams)
     const defaultTeam = teams.find((team) => team.systemCreated)
-    if (defaultTeam != null) this.#store.connectorTeams.bindUnassigned(defaultTeam.id)
+    if (defaultTeam != null && !this.#resolveConnectorTeams) this.#store.connectorTeams.bindUnassigned(defaultTeam.id)
     return { bindings: this.#store.connectorTeams.list(), enabled: true, teams, version: 1 }
   }
 
   async #connectorTeam(teamId?: string): Promise<string | undefined> {
-    const connector = this.#resolveConnector()
-    if (!(connector instanceof ConnectorClient) || !connector.teamSupported()) {
+    const teams = await this.#availableConnectorTeams()
+    if (teams == null) {
       if (teamId != null) throw new ControlError(controlErrorCode.flowInvalid, 'Connector Team is not available for this deployment.')
       return
     }
-    const teams = await loadTeams(connector)
     this.#store.connectorTeams.rememberNames(teams)
     const selected = teamId == null ? teams.find((team) => team.systemCreated) : teams.find((team) => team.id == teamId)
     if (selected == null) throw new ControlError(controlErrorCode.flowInvalid, 'The selected OOMOL Team is not available.')
     return selected.id
+  }
+
+  async #availableConnectorTeams(
+    signal?: AbortSignal,
+  ): Promise<readonly { readonly id: string; readonly name: string; readonly systemCreated: boolean }[] | undefined> {
+    if (this.#resolveConnectorTeams) {
+      try {
+        signal?.throwIfAborted()
+        const teams = await this.#resolveConnectorTeams(signal)
+        signal?.throwIfAborted()
+        const text = (value: unknown): value is string =>
+          typeof value == 'string' && value.length > 0 && value.length <= 240 && value.trim() == value && !/[\u0000-\u001f\u007f]/u.test(value)
+        if (
+          !Array.isArray(teams) ||
+          teams.length > 1000 ||
+          teams.some((team) => !team || !text(team.id) || !text(team.name) || typeof team.systemCreated != 'boolean') ||
+          new Set(teams.map((team) => team.id)).size != teams.length ||
+          teams.filter((team) => team.systemCreated).length > 1
+        )
+          throw new Error('Invalid deployment Team source')
+        return teams.map((team) => ({ id: team.id, name: team.name, systemCreated: team.systemCreated }))
+      } catch {
+        throw new ControlError(controlErrorCode.flowInvalid, 'Configured Connector Team source unavailable.')
+      }
+    }
+    const connector = this.#resolveConnector()
+    if (connector instanceof ConnectorClient && connector.teamSupported()) return loadTeams(connector, signal)
+    return undefined
   }
 
   acceptWebhookTarget(
@@ -418,6 +445,7 @@ export class ServerService {
   start(): Effect.Effect<void, never, Scope.Scope> {
     return Effect.gen({ self: this }, function* () {
       yield* Effect.promise(async () => {
+        if (this.#resolveConnectorTeams) return
         try {
           const teamId = await this.#connectorTeam()
           if (teamId != null) this.#store.connectorTeams.bindUnassigned(teamId)
