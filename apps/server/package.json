@@ -21,6 +21,7 @@
     "@mastra/core": "catalog:",
     "@modelcontextprotocol/server": "catalog:",
     "@oomol-lab/open-flow": "workspace:*",
+    "@opentelemetry/api": "catalog:",
     "effect": "catalog:",
     "hono": "catalog:",
     "isolated-vm": "catalog:",
