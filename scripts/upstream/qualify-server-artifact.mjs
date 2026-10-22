@@ -50,9 +50,9 @@ export async function qualifyServerArtifact(cmsRoot) {
     const data = path.join(output, 'data'); mkdirSync(data)
     token = randomBytes(32).toString('hex')
     const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => ['systemroot', 'windir', 'path', 'pathext', 'comspec', 'temp', 'tmp'].includes(key.toLowerCase())))
-    Object.assign(env, { OPEN_FLOW_HOST: '127.0.0.1', OPEN_FLOW_PORT: '0', OPEN_FLOW_DATA_DIR: data, OPEN_FLOW_TOKEN: token })
+    Object.assign(env, { NODE_ENV: 'production', OPEN_FLOW_HOST: '127.0.0.1', OPEN_FLOW_PORT: '0', OPEN_FLOW_DATA_DIR: data, OPEN_FLOW_TOKEN: token })
     child = spawn(process.execPath, ['--no-node-snapshot', 'server/main.js'], { cwd: installed, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
-    exited = new Promise(resolve => child.once('exit', (code, signal) => resolve({ code, signal })))
+    exited = new Promise(resolve => child.once('close', (code, signal) => resolve({ code, signal })))
     let buffer = ''
     const listening = new Promise((resolve, reject) => {
       child.once('error', reject)
@@ -102,11 +102,15 @@ export async function qualifyServerArtifact(cmsRoot) {
       distributionQualified: false, cmsInstallationQualified: false, imageQualified: false, activationQualified: false }
   } finally {
     try {
-      if (child && child.exitCode === null && child.signalCode === null) {
+      if (child?.pid && child.exitCode === null && child.signalCode === null) {
         child.kill('SIGTERM')
         await Promise.race([exited, sleep(10000)])
         if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
       }
+      // Join stream closure as well as process exit before releasing the lease.
+      // A spawn failure also emits close; it must not wait on an exit event.
+      if (exited) await exited
+      if (receipt) receipt.ownedRuntimeJoined = true
       for (const [name, value] of [['stdout', stdout], ['stderr', stderr]]) writeFileSync(path.join(output, name + '.log'), redact(value))
       writeFileSync(path.join(output, 'receipt.json'), JSON.stringify({ ...receipt, observedAt: new Date().toISOString() }, null, 2) + '\n')
     } finally { release() }

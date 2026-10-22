@@ -17,6 +17,7 @@
         "@mastra/core": "catalog:",
         "@modelcontextprotocol/server": "catalog:",
         "@oomol-lab/open-flow": "workspace:*",
+        "@opentelemetry/api": "catalog:",
         "effect": "catalog:",
         "hono": "catalog:",
         "isolated-vm": "catalog:",
@@ -218,6 +219,7 @@
     "@modelcontextprotocol/client": "2.3.1",
     "@modelcontextprotocol/server": "2.3.1",
     "@oomol-lab/resource-cache": "0.1.5",
+    "@opentelemetry/api": "1.10.0",
     "@rc-component/tooltip": "1.5.2",
     "@tailwindcss/vite": "4.3.3",
     "@types/json-schema": "7.0.15",
@@ -600,6 +602,8 @@
     "@oomol-lab/open-flow-server": ["@oomol-lab/open-flow-server@workspace:apps/server"],
 
     "@oomol-lab/resource-cache": ["@oomol-lab/resource-cache@0.1.5", "", { "dependencies": { "idb-keyval": "^6.3.0" } }, "sha512-h3GLhYvJFpVUFlC61R9kY+JGUCHlAyzfMS7oFLqOtKKsb2BqzP5NAo4uLPwU+D2C4cKpiEripU00if+8ls4QAQ=="],
+
+    "@opentelemetry/api": ["@opentelemetry/api@1.10.0", "", {}, "sha512-lMkyes8iHrG+mk6WH7X70MdCLI2RS0FwNBY1PyQ8UemaijE2m5mv5A0Niy3HtbYTFrgkUEQjFMXmSAk2hQDuPQ=="],
 
     "@oxc-project/types": ["@oxc-project/types@0.155.0", "", {}, "sha512-SeE8JPwW1xs1tHeNycjUtUBdhorRa8o4jlvjwk49R7/Z291i+4DQa7JJIgOm/TaYQZx+QrPQbVJ/9c8dMIZN8Q=="],
 
