@@ -1,8 +1,20 @@
 import assert from 'node:assert/strict'
 import path from 'node:path'
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { test } from 'node:test'
 import { dockerQualificationArguments, assertImmutableLinuxImage, dockerDiagnosticSummary } from './docker-image-contract.mjs'
 const image = 'sha256:' + 'a'.repeat(64)
+
+test('the qualification workflow parses without duplicate YAML keys', () => {
+  const require = createRequire(new URL('../../packages/open-flow/package.json', import.meta.url))
+  const { parseDocument } = require('yaml')
+  const source = readFileSync(new URL('../../.github/workflows/ci.yaml', import.meta.url), 'utf8')
+  const document = parseDocument(source, { uniqueKeys: true })
+  assert.deepEqual(document.errors, [])
+  const duplicate = parseDocument('with:\n  fetch-depth: 0\n  fetch-depth: 0\n', { uniqueKeys: true })
+  assert.equal(duplicate.errors.length, 1)
+})
 test('failure diagnostics preserve a log identity without emitting setup credentials', () => {
   const summary = dockerDiagnosticSummary('{"setupCode":"fixture-only-credential","state":"failed"}')
   assert.match(summary.sha256, /^[a-f0-9]{64}$/u)
