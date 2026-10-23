@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { customizationBaseline } from './lineage.mjs'
 
 export const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex')
 const git = (root, args) =>
@@ -90,9 +91,10 @@ export function verifyIntegration(root, { requireIntegrated = true } = {}) {
   const manifest = JSON.parse(readFileSync(resolve(root, 'config/upstream/integration.json'), 'utf8'))
   const errors = validateManifest(manifest)
   if (errors.length) return { errors }
-  let customized
+  let customized, lineage
   try {
-    customized = paths(git(root, ['diff', '--name-only', '-z', `${manifest.upstream.commit}...HEAD`]))
+    lineage = customizationBaseline(root, manifest)
+    customized = paths(git(root, ['diff', '--name-only', '-z', `${lineage.commit}...HEAD`]))
     customized.push(...paths(git(root, ['diff', '--name-only', '-z', 'HEAD'])))
     customized.push(...paths(git(root, ['ls-files', '--others', '--exclude-standard', '-z'])))
     if (requireIntegrated) {
@@ -119,6 +121,8 @@ export function verifyIntegration(root, { requireIntegrated = true } = {}) {
     schemaVersion: 'cityos.upstream-source-check.v1',
     ...captureSourceIdentity(root),
     upstream: manifest.upstream,
+    integratedUpstreamHistory: lineage.history,
+    customizationBaseline: lineage.commit,
     changedPaths: [...new Set(customized)].sort(),
     errors,
   }

@@ -6,6 +6,13 @@
     "commit": "0103070aea74d007660844d965b446664fc6eb52"
   },
   "baselineForkCommit": "227b75c563b37aaf99eb53280298047c2db87c23",
+  "integratedUpstreamHistory": [
+    {
+      "mergeCommit": "15646debbf2daa8c0a1a51b54eef858ef0d33c2f",
+      "upstreamCommit": "c662e5088948603e1a71489b9a49b4e9039599c8",
+      "selectedForInstallation": false
+    }
+  ],
   "ownedDirectories": ["config/upstream", "scripts/upstream"],
   "publicEntries": ["@oomol-lab/open-flow/workbench", "@oomol-lab/open-flow/control-api", "@oomol-lab/open-flow/workbench-host-conformance"],
   "toolchain": "package.json#workspaces.catalog;.node-version;.bun-version",
@@ -13,6 +20,13 @@
   "supportedConsumerContracts": ["cityos.open-flow-authoring.v1 (engine/v5; candidate v7 is not installation-qualified)"],
   "requiredChecks": ["source-boundary", "editor-host", "packed-consumers", "cms-http-authoring"],
   "changes": [
+    {
+      "id": "immutable-linux-image-qualification",
+      "purpose": "Exercise an existing immutable Linux image through the real Docker journeys and retain that same image for later qualification and publication.",
+      "invariant": "Qualified images are not rebuilt or selected by mutable tag; observed source, platform, runtime entry and exact owned cleanup agree. No CMS authority or activation is inferred.",
+      "paths": ["apps/server/scripts/check-docker.ts"],
+      "tests": ["scripts/upstream/docker-image-contract.test.mjs", "apps/server/scripts/check-docker.ts"]
+    },
     {
       "id": "settings-reference-types",
       "purpose": "Represent the existing empty and cleared authorization references explicitly under the installed React type contract.",

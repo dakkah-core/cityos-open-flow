@@ -4,15 +4,21 @@ import { ControlClient } from '@oomol-lab/open-flow/control-api'
 import { currentFlowModelVersion } from '@oomol-lab/open-flow/flow-change'
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
+import { dockerQualificationArguments, assertImmutableLinuxImage, dockerDiagnosticSummary } from '../../../scripts/upstream/docker-image-contract.mjs'
+import { captureSourceIdentity } from '../../../scripts/upstream/integration.mjs'
 
 const execFileAsync = promisify(execFile)
 const workspaceRoot = path.resolve(import.meta.dirname, '../../..')
+const qualification = dockerQualificationArguments(process.argv.slice(2), workspaceRoot)
+const source = qualification.receiptPath ? captureSourceIdentity(workspaceRoot) : undefined
+if (source) assert.equal(source.dirty, false, 'Image qualification requires clean committed source')
 const suffix = randomUUID().replaceAll('-', '')
-const imageName = `open-flow-server:smoke-${suffix}`
+const imageName = qualification.imageId ?? `open-flow-server:smoke-${suffix}`
 const volumeName = `open-flow-server-smoke-${suffix}`
 const firstContainer = `open-flow-server-smoke-first-${suffix}`
 const secondContainer = `open-flow-server-smoke-second-${suffix}`
@@ -21,19 +27,35 @@ const restoredContainer = `open-flow-server-smoke-restored-${suffix}`
 const operatorToken = 'open-flow-server-docker-smoke-token'
 const containers = [firstContainer, secondContainer, setupContainer, restoredContainer]
 let imageBuilt = false
-let volumeCreated = false
+let imageId = ''
+let observedImage: ReturnType<typeof assertImmutableLinuxImage> | undefined
+let journeyPassed = false
+let cleanupComplete = false
+let runtime: { node: string; platform: string; architecture: string; entrySha256: string } | undefined
+const removedContainers: string[] = [], removedVolumes: string[] = []
 
 try {
-  process.stdout.write('Building the Server Docker image.\n')
-  await docker(['build', '--file', 'apps/server/Dockerfile', '--tag', imageName, '.'])
-  imageBuilt = true
+  if (!qualification.imageId) {
+    process.stdout.write('Building the Server Docker image.\n')
+    await docker(['build', '--file', 'apps/server/Dockerfile', '--tag', imageName, '.'])
+    imageBuilt = true
+  }
+  const inspection = JSON.parse(await docker(['image', 'inspect', imageName]))[0]
+  observedImage = assertImmutableLinuxImage(inspection, qualification.imageId ?? inspection.Id)
+  imageId = observedImage.Id
+  if (source) assert.equal(observedImage.Config?.Labels?.['org.opencontainers.image.revision'], source.sourceSha)
 
-  await docker(['volume', 'create', volumeName])
-  volumeCreated = true
+  await docker(['volume', 'create', '--label', `open-flow.smoke.owner=${suffix}`, volumeName])
 
   process.stdout.write('Starting the first container and exercising the runtime.\n')
   await startContainer(firstContainer)
   await waitForHealthy(firstContainer)
+  runtime = JSON.parse(await docker(['exec', firstContainer, 'node', '-e',
+    "console.log(JSON.stringify({node:process.versions.node,platform:process.platform,architecture:process.arch,entrySha256:require('node:crypto').createHash('sha256').update(require('node:fs').readFileSync('/app/server/main.js')).digest('hex')}))"]))
+  assert.ok(runtime)
+  assert.equal(runtime.node, readFileSync(path.join(workspaceRoot, '.node-version'), 'utf8').trim().replace(/^v/u, ''))
+  assert.equal(runtime.platform, 'linux'); assert.match(runtime.entrySha256, /^[a-f0-9]{64}$/u)
+  assert.equal(runtime.architecture, observedImage.Architecture === 'amd64' ? 'x64' : 'arm64')
   const firstOrigin = await containerOrigin(firstContainer)
   const firstCookie = await login(firstOrigin)
 
@@ -273,16 +295,56 @@ try {
   process.stdout.write(
     'Verified the Server image, operator setup, user login and isolation, Workbench, Isolated VM, graceful shutdown, and SQLite volume persistence.\n',
   )
+  journeyPassed = true
 } catch (error) {
   for (const container of containers) {
     const logs = await docker(['logs', container]).catch(() => '')
-    if (logs.trim().length > 0) process.stderr.write(`\n${container} logs:\n${logs}`)
+    if (logs.trim().length > 0) process.stderr.write(`\n${container} log identity: ${JSON.stringify(dockerDiagnosticSummary(logs))}\n`)
   }
   throw error
 } finally {
-  for (const container of containers) await docker(['rm', '--force', container]).catch(() => undefined)
-  if (volumeCreated) await docker(['volume', 'rm', volumeName]).catch(() => undefined)
-  if (imageBuilt) await docker(['image', 'rm', imageName]).catch(() => undefined)
+  try {
+    const ids = (await docker(['ps', '--all', '--quiet', '--no-trunc', '--filter', `label=open-flow.smoke.owner=${suffix}`])).trim().split(/\s+/u).filter(Boolean)
+    for (const id of ids) {
+      assert.match(id, /^[a-f0-9]{64}$/u)
+      const owned = JSON.parse(await docker(['inspect', id]))[0]
+      assert.equal(owned.Id, id); assert.equal(owned.Image, imageId)
+      assert.equal(owned.Config.Labels['open-flow.smoke.owner'], suffix)
+      assert.ok(containers.includes(owned.Name.replace(/^\//u, '')))
+      await docker(['rm', '--force', id])
+      removedContainers.push(id)
+    }
+    const volumes = (await docker(['volume', 'ls', '--quiet', '--filter', `label=open-flow.smoke.owner=${suffix}`])).trim().split(/\s+/u).filter(Boolean)
+    for (const name of volumes) {
+      assert.equal(name, volumeName)
+      const volume = JSON.parse(await docker(['volume', 'inspect', name]))[0]
+      assert.equal(volume.Name, volumeName); assert.equal(volume.Labels['open-flow.smoke.owner'], suffix)
+      await docker(['volume', 'rm', volumeName])
+      removedVolumes.push(name)
+    }
+    assert.equal((await docker(['ps', '--all', '--quiet', '--filter', `label=open-flow.smoke.owner=${suffix}`])).trim(), '')
+    assert.equal((await docker(['volume', 'ls', '--quiet', '--filter', `label=open-flow.smoke.owner=${suffix}`])).trim(), '')
+    if (imageBuilt) {
+      assert.equal(JSON.parse(await docker(['image', 'inspect', imageName]))[0].Id, imageId)
+      await docker(['image', 'rm', imageName])
+    }
+    cleanupComplete = true
+  } finally {
+    if (qualification.receiptPath) {
+      const after = captureSourceIdentity(workspaceRoot)
+      mkdirSync(path.dirname(qualification.receiptPath), { recursive: true })
+      writeFileSync(qualification.receiptPath, JSON.stringify({ schemaVersion: 'cityos.open-flow-linux-image-journey.v1',
+        source, after, runtime, image: observedImage && { id: observedImage.Id, os: observedImage.Os, architecture: observedImage.Architecture },
+        cleanup: { removedContainers, removedVolumes },
+        lockfileSha256: createHash('sha256').update(readFileSync(path.join(workspaceRoot, 'bun.lock'))).digest('hex'),
+        passed: journeyPassed ? 1 : 0, failed: journeyPassed ? 0 : 1, skipped: 0, cleanupComplete,
+        success: journeyPassed && cleanupComplete && JSON.stringify(after) === JSON.stringify(source),
+        cmsInstallationQualified: false, activationQualified: false,
+        nonClaims: ['The real Docker smoke journey qualifies this Linux image. CMS authoring scope and installation qualification remain separate.'],
+      }, null, 2) + '\n', { flag: 'wx' })
+      assert.deepEqual(after, source, 'Source changed during the image journey')
+    }
+  }
 }
 
 function codeFlow(): RevisionContent {
@@ -317,6 +379,8 @@ async function startContainer(name: string, configured = true): Promise<void> {
   await docker([
     'run',
     '--detach',
+    '--label',
+    `open-flow.smoke.owner=${suffix}`,
     ...(configured ? ['--env', `OPEN_FLOW_TOKEN=${operatorToken}`] : []),
     '--name',
     name,
@@ -324,7 +388,7 @@ async function startContainer(name: string, configured = true): Promise<void> {
     '127.0.0.1::3000',
     '--volume',
     `${volumeName}:/data/open-flow`,
-    imageName,
+    imageId,
   ])
 }
 
