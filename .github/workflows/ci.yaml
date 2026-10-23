@@ -79,7 +79,23 @@ jobs:
           node scripts/upstream/integration.mjs
 
       - name: Check
+        id: check
         run: bun run check
+
+      - name: Retain canonical formatting corrections for review
+        if: failure() && steps.check.outcome == 'failure'
+        run: |
+          mkdir -p .build/upstream/format
+          bun run format
+          git diff --binary > .build/upstream/format/canonical-format.patch
+          git rev-parse HEAD > .build/upstream/format/source-commit.txt
+
+      - name: Upload formatting corrections without accepting the failed gate
+        if: failure() && steps.check.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-flow-format-${{ github.sha }}
+          path: .build/upstream/format/
 
       - name: Test CI scope and release gate
         run: node --test .github/scripts/*.test.mjs
