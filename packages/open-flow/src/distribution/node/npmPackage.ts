@@ -10,13 +10,15 @@ interface StageNpmPackageOptions {
 export async function stageNpmPackage(options: StageNpmPackageOptions): Promise<void> {
   const { packageRoot, sourceRoot, version } = options
   const workspace = JSON.parse(await readFile(path.resolve(sourceRoot, '../../package.json'), 'utf8')) as { catalog?: Record<string, unknown> }
-  const peers = Object.fromEntries(['effect', 'zod', 'react', 'react-dom'].map(name => {
-    const selected = workspace.catalog?.[name]
-    if (typeof selected != 'string' || !/^\d+\.\d+\.\d+$/.test(selected)) {
-      throw new Error(`Package staging requires an exact stable catalog entry for ${name}.`)
-    }
-    return [name, selected]
-  }))
+  const peers = Object.fromEntries(
+    ['effect', 'zod', 'react', 'react-dom'].map((name) => {
+      const selected = workspace.catalog?.[name]
+      if (typeof selected != 'string' || !/^\d+\.\d+\.\d+$/.test(selected)) {
+        throw new Error(`Package staging requires an exact stable catalog entry for ${name}.`)
+      }
+      return [name, selected]
+    }),
+  )
   await mkdir(path.join(packageRoot, 'dist'), { recursive: true })
   await Promise.all([
     cp(path.join(sourceRoot, 'skills'), path.join(packageRoot, 'skills'), { recursive: true }),

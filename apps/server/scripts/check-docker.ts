@@ -32,7 +32,8 @@ let observedImage: ReturnType<typeof assertImmutableLinuxImage> | undefined
 let journeyPassed = false
 let cleanupComplete = false
 let runtime: { node: string; platform: string; architecture: string; entrySha256: string } | undefined
-const removedContainers: string[] = [], removedVolumes: string[] = []
+const removedContainers: string[] = [],
+  removedVolumes: string[] = []
 
 try {
   if (!qualification.imageId) {
@@ -50,11 +51,19 @@ try {
   process.stdout.write('Starting the first container and exercising the runtime.\n')
   await startContainer(firstContainer)
   await waitForHealthy(firstContainer)
-  runtime = JSON.parse(await docker(['exec', firstContainer, 'node', '-e',
-    "console.log(JSON.stringify({node:process.versions.node,platform:process.platform,architecture:process.arch,entrySha256:require('node:crypto').createHash('sha256').update(require('node:fs').readFileSync('/app/server/main.js')).digest('hex')}))"]))
+  runtime = JSON.parse(
+    await docker([
+      'exec',
+      firstContainer,
+      'node',
+      '-e',
+      "console.log(JSON.stringify({node:process.versions.node,platform:process.platform,architecture:process.arch,entrySha256:require('node:crypto').createHash('sha256').update(require('node:fs').readFileSync('/app/server/main.js')).digest('hex')}))",
+    ]),
+  )
   assert.ok(runtime)
   assert.equal(runtime.node, readFileSync(path.join(workspaceRoot, '.node-version'), 'utf8').trim().replace(/^v/u, ''))
-  assert.equal(runtime.platform, 'linux'); assert.match(runtime.entrySha256, /^[a-f0-9]{64}$/u)
+  assert.equal(runtime.platform, 'linux')
+  assert.match(runtime.entrySha256, /^[a-f0-9]{64}$/u)
   assert.equal(runtime.architecture, observedImage.Architecture === 'amd64' ? 'x64' : 'arm64')
   const firstOrigin = await containerOrigin(firstContainer)
   const firstCookie = await login(firstOrigin)
@@ -304,11 +313,15 @@ try {
   throw error
 } finally {
   try {
-    const ids = (await docker(['ps', '--all', '--quiet', '--no-trunc', '--filter', `label=open-flow.smoke.owner=${suffix}`])).trim().split(/\s+/u).filter(Boolean)
+    const ids = (await docker(['ps', '--all', '--quiet', '--no-trunc', '--filter', `label=open-flow.smoke.owner=${suffix}`]))
+      .trim()
+      .split(/\s+/u)
+      .filter(Boolean)
     for (const id of ids) {
       assert.match(id, /^[a-f0-9]{64}$/u)
       const owned = JSON.parse(await docker(['inspect', id]))[0]
-      assert.equal(owned.Id, id); assert.equal(owned.Image, imageId)
+      assert.equal(owned.Id, id)
+      assert.equal(owned.Image, imageId)
       assert.equal(owned.Config.Labels['open-flow.smoke.owner'], suffix)
       assert.ok(containers.includes(owned.Name.replace(/^\//u, '')))
       await docker(['rm', '--force', id])
@@ -318,7 +331,8 @@ try {
     for (const name of volumes) {
       assert.equal(name, volumeName)
       const volume = JSON.parse(await docker(['volume', 'inspect', name]))[0]
-      assert.equal(volume.Name, volumeName); assert.equal(volume.Labels['open-flow.smoke.owner'], suffix)
+      assert.equal(volume.Name, volumeName)
+      assert.equal(volume.Labels['open-flow.smoke.owner'], suffix)
       await docker(['volume', 'rm', volumeName])
       removedVolumes.push(name)
     }
@@ -333,15 +347,33 @@ try {
     if (qualification.receiptPath) {
       const after = captureSourceIdentity(workspaceRoot)
       mkdirSync(path.dirname(qualification.receiptPath), { recursive: true })
-      writeFileSync(qualification.receiptPath, JSON.stringify({ schemaVersion: 'cityos.open-flow-linux-image-journey.v1',
-        source, after, runtime, image: observedImage && { id: observedImage.Id, os: observedImage.Os, architecture: observedImage.Architecture },
-        cleanup: { removedContainers, removedVolumes },
-        lockfileSha256: createHash('sha256').update(readFileSync(path.join(workspaceRoot, 'bun.lock'))).digest('hex'),
-        passed: journeyPassed ? 1 : 0, failed: journeyPassed ? 0 : 1, skipped: 0, cleanupComplete,
-        success: journeyPassed && cleanupComplete && JSON.stringify(after) === JSON.stringify(source),
-        cmsInstallationQualified: false, activationQualified: false,
-        nonClaims: ['The real Docker smoke journey qualifies this Linux image. CMS authoring scope and installation qualification remain separate.'],
-      }, null, 2) + '\n', { flag: 'wx' })
+      writeFileSync(
+        qualification.receiptPath,
+        JSON.stringify(
+          {
+            schemaVersion: 'cityos.open-flow-linux-image-journey.v1',
+            source,
+            after,
+            runtime,
+            image: observedImage && { id: observedImage.Id, os: observedImage.Os, architecture: observedImage.Architecture },
+            cleanup: { removedContainers, removedVolumes },
+            lockfileSha256: createHash('sha256')
+              .update(readFileSync(path.join(workspaceRoot, 'bun.lock')))
+              .digest('hex'),
+            passed: journeyPassed ? 1 : 0,
+            failed: journeyPassed ? 0 : 1,
+            skipped: 0,
+            cleanupComplete,
+            success: journeyPassed && cleanupComplete && JSON.stringify(after) === JSON.stringify(source),
+            cmsInstallationQualified: false,
+            activationQualified: false,
+            nonClaims: ['The real Docker smoke journey qualifies this Linux image. CMS authoring scope and installation qualification remain separate.'],
+          },
+          null,
+          2,
+        ) + '\n',
+        { flag: 'wx' },
+      )
       assert.deepEqual(after, source, 'Source changed during the image journey')
     }
   }

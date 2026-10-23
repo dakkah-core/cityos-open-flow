@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 /** Inventory already-published upstream merges without changing the selected
  * installation candidate or pretending upstream source is a CityOS patch. */
 export function customizationBaseline(root, manifest) {
-  const git = args => execFileSync('git', ['--no-optional-locks', '-C', root, ...args], { encoding: 'utf8', windowsHide: true }).trim()
+  const git = (args) => execFileSync('git', ['--no-optional-locks', '-C', root, ...args], { encoding: 'utf8', windowsHide: true }).trim()
   const rows = manifest.integratedUpstreamHistory ?? []
   assert.ok(Array.isArray(rows), 'upstream_history_array_required')
   let commit = manifest.upstream.commit

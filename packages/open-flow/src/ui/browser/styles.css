@@ -104,16 +104,16 @@
 
 /* Field surfaces share hover feedback, regardless of their editor implementation. */
 :is(
-  [data-slot='input'],
-  [data-slot='textarea'],
-  [data-slot='native-select'],
-  [data-slot='select-trigger'],
-  [data-slot='input-group'],
-  [data-field-control],
-  .open-flow-code-editor.cm-editor
-):not(:disabled):not([readonly]):not([aria-disabled='true']):not(.cm-focused):not(:is(input, textarea):focus):not(
-  :has(:disabled, [readonly], input:focus, textarea:focus, .cm-content[contenteditable='false'])
-):hover {
+    [data-slot='input'],
+    [data-slot='textarea'],
+    [data-slot='native-select'],
+    [data-slot='select-trigger'],
+    [data-slot='input-group'],
+    [data-field-control],
+    .open-flow-code-editor.cm-editor
+  ):not(:disabled):not([readonly]):not([aria-disabled='true']):not(.cm-focused):not(:is(input, textarea):focus):not(
+    :has(:disabled, [readonly], input:focus, textarea:focus, .cm-content[contenteditable='false'])
+  ):hover {
   background-color: var(--ui-control-hover-background, var(--ui-muted));
 }
 
@@ -146,8 +146,8 @@
     var(--ui-danger-control-background-default, color-mix(in srgb, var(--ui-destructive) 3%, var(--ui-control-background, var(--ui-background))))
   );
   &:not(:disabled):not([readonly]):not([aria-disabled='true']):not(.cm-focused):not(:is(input, textarea):focus):not(
-    :has(:disabled, [readonly], input:focus, textarea:focus, .cm-content[contenteditable='false'])
-  ):hover {
+      :has(:disabled, [readonly], input:focus, textarea:focus, .cm-content[contenteditable='false'])
+    ):hover {
     background-color: var(
       --ui-danger-control-background-hover,
       color-mix(in srgb, var(--ui-destructive) 8%, var(--ui-control-background, var(--ui-background)))

@@ -109,13 +109,12 @@ export class RunViewStore {
       ...(dispatches.length == 0
         ? {}
         : {
-            errorDispatches: dispatches.map(
-              (dispatch): ErrorDispatch =>
-                dispatch.status == 'pending'
-                  ? { status: 'pending', flowId: dispatch.flowId }
-                  : dispatch.status == 'dispatched'
-                    ? { status: 'dispatched', flowId: dispatch.flowId, runId: dispatch.runId! }
-                    : { status: 'failed', flowId: dispatch.flowId, message: dispatch.message! },
+            errorDispatches: dispatches.map((dispatch): ErrorDispatch =>
+              dispatch.status == 'pending'
+                ? { status: 'pending', flowId: dispatch.flowId }
+                : dispatch.status == 'dispatched'
+                  ? { status: 'dispatched', flowId: dispatch.flowId, runId: dispatch.runId! }
+                  : { status: 'failed', flowId: dispatch.flowId, message: dispatch.message! },
             ),
           }),
     }

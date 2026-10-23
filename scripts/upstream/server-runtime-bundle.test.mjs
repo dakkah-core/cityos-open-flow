@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
-import { test } from 'node:test'
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
@@ -16,10 +16,28 @@ test('the real server dependency graph bundles for Node without borrowing option
   const parent = path.join(root, '.build/upstream')
   mkdirSync(parent, { recursive: true })
   const output = mkdtempSync(path.join(parent, 'server-runtime-bundle-'))
-  const result = spawnSync(bun, ['build', 'node/main.ts', 'node/runtime/isolated-vm.ts', 'node/runtime/isolated-vm-executor.ts',
-    '--target=node', '--splitting', '--packages=bundle', '--external=isolated-vm', '--entry-naming=[name].[ext]', '--outdir=' + path.join(output, 'server')], {
-    cwd: path.join(root, 'apps/server'), encoding: 'utf8', windowsHide: true, timeout: 180000, maxBuffer: 16 * 1024 * 1024,
-  })
+  const result = spawnSync(
+    bun,
+    [
+      'build',
+      'node/main.ts',
+      'node/runtime/isolated-vm.ts',
+      'node/runtime/isolated-vm-executor.ts',
+      '--target=node',
+      '--splitting',
+      '--packages=bundle',
+      '--external=isolated-vm',
+      '--entry-naming=[name].[ext]',
+      '--outdir=' + path.join(output, 'server'),
+    ],
+    {
+      cwd: path.join(root, 'apps/server'),
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 180000,
+      maxBuffer: 16 * 1024 * 1024,
+    },
+  )
   const log = (result.stdout ?? '') + (result.stderr ?? '')
   writeFileSync(path.join(output, 'bundle.log'), log)
   assert.equal(result.error, undefined)

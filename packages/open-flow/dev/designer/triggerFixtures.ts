@@ -98,18 +98,16 @@ const builtins: readonly TriggerNode[] = [
 ]
 
 export const triggerFixtures: readonly TriggerFixture[] = [
-  ...builtins.map(
-    (trigger): TriggerFixture => ({
-      id: trigger.kind,
-      trigger,
-      outputs:
-        trigger.kind === 'start'
-          ? { orderId: 'order_123', note: 'Review delivery instructions', options: { dryRun: false } }
-          : trigger.kind === 'webhook'
-            ? { headers: {}, query: {}, body: { event: 'order.created', orderId: 'order_123' }, webhookUrl: 'https://example.com/webhook' }
-            : Object.fromEntries(triggerOutputDefinitions(trigger).map((port) => [port.handle, sample(port.jsonSchema)])),
-    }),
-  ),
+  ...builtins.map((trigger): TriggerFixture => ({
+    id: trigger.kind,
+    trigger,
+    outputs:
+      trigger.kind === 'start'
+        ? { orderId: 'order_123', note: 'Review delivery instructions', options: { dryRun: false } }
+        : trigger.kind === 'webhook'
+          ? { headers: {}, query: {}, body: { event: 'order.created', orderId: 'order_123' }, webhookUrl: 'https://example.com/webhook' }
+          : Object.fromEntries(triggerOutputDefinitions(trigger).map((port) => [port.handle, sample(port.jsonSchema)])),
+  })),
   ...snapshots.map((definition): TriggerFixture => {
     const fields = definition.configInputs.filter((input) => 'handle' in input)
     const handles = new Set(fields.map((field) => field.handle))

@@ -261,12 +261,10 @@ describe('Server Connector host', () => {
 
   it('checks the selected Connection without treating legacy capability hints as an allowlist', async () => {
     let active = true
-    const listConnections = vi.fn(
-      async (): Promise<readonly ConnectorConnection[]> => [
-        { connectionId: 'work', displayName: 'Work', isDefault: false, serviceId: 'example', status: 'active' },
-        { connectionId: 'home', displayName: 'Home', isDefault: false, serviceId: 'example', status: active ? 'active' : 'disconnected' },
-      ],
-    )
+    const listConnections = vi.fn(async (): Promise<readonly ConnectorConnection[]> => [
+      { connectionId: 'work', displayName: 'Work', isDefault: false, serviceId: 'example', status: 'active' },
+      { connectionId: 'home', displayName: 'Home', isDefault: false, serviceId: 'example', status: active ? 'active' : 'disconnected' },
+    ])
     const service = await open(
       createConnectorHost({
         listConnections,

@@ -129,14 +129,12 @@ function normalizeBuildGraph(metafile: BunBuildMetafile, projectRoot: string): P
       return {
         id: inputIds.get(inputPath)!,
         imports: input.imports
-          .map(
-            (imported): BuildGraphImport => ({
-              external: imported.external ?? false,
-              kind: imported.kind,
-              original: imported.original,
-              path: imported.external ? imported.path : normalizeImportedPath(imported.path, rootPath, knownInputIds),
-            }),
-          )
+          .map((imported): BuildGraphImport => ({
+            external: imported.external ?? false,
+            kind: imported.kind,
+            original: imported.original,
+            path: imported.external ? imported.path : normalizeImportedPath(imported.path, rootPath, knownInputIds),
+          }))
           .toSorted(compareBuildGraphImports),
       }
     })

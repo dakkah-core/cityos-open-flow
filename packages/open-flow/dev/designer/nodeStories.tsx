@@ -345,19 +345,17 @@ const valueModel: FlowCanvasViewModel = {
   edges: [],
   viewport: { x: 46, y: 70, zoom: 0.65 },
   nodes: [
-    ...valueSamples.map(
-      (sample, index): FlowCanvasViewValueNode => ({
-        id: sample.id,
-        title: sample.title,
-        values: sample.values,
-        contentHidden: sample.contentHidden,
-        diagnostics: sample.diagnostics,
-        kind: 'value',
-        inputs: [],
-        outputs: sample.values,
-        position: { x: (index % 3) * 380, y: Math.floor(index / 3) * 280 },
-      }),
-    ),
+    ...valueSamples.map((sample, index): FlowCanvasViewValueNode => ({
+      id: sample.id,
+      title: sample.title,
+      values: sample.values,
+      contentHidden: sample.contentHidden,
+      diagnostics: sample.diagnostics,
+      kind: 'value',
+      inputs: [],
+      outputs: sample.values,
+      position: { x: (index % 3) * 380, y: Math.floor(index / 3) * 280 },
+    })),
     {
       id: 'task-reference',
       kind: 'task',

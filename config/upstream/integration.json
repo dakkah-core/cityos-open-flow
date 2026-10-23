@@ -21,6 +21,28 @@
   "requiredChecks": ["source-boundary", "editor-host", "packed-consumers", "cms-http-authoring"],
   "changes": [
     {
+      "id": "canonical-source-formatting",
+      "purpose": "Apply the maintained Oxfmt output to newly merged upstream source so the existing full-tree quality gate can qualify upgrades.",
+      "invariant": "Only the exact canonical formatter output is adopted; source, package, server and image gates remain required.",
+      "paths": [
+        "apps/server/browser/styles.css",
+        "apps/server/node/storage/run-view-store.ts",
+        "apps/server/node/transport/wait-action-page.ts",
+        "apps/server/test/connector.test.ts",
+        "apps/server/test/controlApiConformance.test.ts",
+        "apps/server/test/local-waits.test.ts",
+        "packages/command/src/build/node/bundle.ts",
+        "packages/open-flow/README.md",
+        "packages/open-flow/dev/designer/nodeStories.tsx",
+        "packages/open-flow/dev/designer/triggerFixtures.ts",
+        "packages/open-flow/dev/designer/triggerStories.tsx",
+        "packages/open-flow/dev/designer/valueNode.tsx",
+        "packages/open-flow/src/form/browser/fieldLayout.scss",
+        "packages/open-flow/src/ui/browser/styles.css"
+      ],
+      "tests": ["scripts/upstream/lineage.test.mjs", "packages/open-flow/test/toolchain.node-test.mjs"]
+    },
+    {
       "id": "immutable-linux-image-qualification",
       "purpose": "Exercise an existing immutable Linux image through the real Docker journeys and retain that same image for later qualification and publication.",
       "invariant": "Qualified images are not rebuilt or selected by mutable tag; observed source, platform, runtime entry and exact owned cleanup agree. No CMS authority or activation is inferred.",

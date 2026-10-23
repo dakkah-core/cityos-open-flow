@@ -789,19 +789,17 @@ export const triggerStories: readonly FrontendStory[] = [
         render: (log, dark, language) => <SidebarStory fixture={fixture} log={log} dark={dark} language={language} />,
       },
     ]),
-  ...(['nodes', 'run', 'sidebar'] as const).map(
-    (view): FrontendStory => ({
-      group: 'Trigger Provider',
-      description:
-        view === 'nodes'
-          ? 'Provider trigger states and configuration.'
-          : view === 'run'
-            ? 'Provider payloads, validation and run states.'
-            : 'Provider properties, permitted default accounts, missing permissions and optional configuration. Compare Gmail, Google Sheets and GitHub: business fields stay visible while technical options start collapsed under Advanced settings. Expand, edit, collapse and reopen to check saved values and keyboard access in editable and read-only panels.',
-      id: `trigger-provider-${view}`,
-      title: view === 'nodes' ? 'Node states' : view === 'run' ? 'Run menu states' : 'Properties',
-      standalone: true,
-      render: (log, dark, language) => <ProviderStory view={view} log={log} dark={dark} language={language} />,
-    }),
-  ),
+  ...(['nodes', 'run', 'sidebar'] as const).map((view): FrontendStory => ({
+    group: 'Trigger Provider',
+    description:
+      view === 'nodes'
+        ? 'Provider trigger states and configuration.'
+        : view === 'run'
+          ? 'Provider payloads, validation and run states.'
+          : 'Provider properties, permitted default accounts, missing permissions and optional configuration. Compare Gmail, Google Sheets and GitHub: business fields stay visible while technical options start collapsed under Advanced settings. Expand, edit, collapse and reopen to check saved values and keyboard access in editable and read-only panels.',
+    id: `trigger-provider-${view}`,
+    title: view === 'nodes' ? 'Node states' : view === 'run' ? 'Run menu states' : 'Properties',
+    standalone: true,
+    render: (log, dark, language) => <ProviderStory view={view} log={log} dark={dark} language={language} />,
+  })),
 ]

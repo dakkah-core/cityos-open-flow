@@ -232,20 +232,22 @@ export async function waitActionPage(
         <main>
           <header>Open Flow</header>
           <h1>${title}</h1>
-          ${status != 200
-            ? html`<p role="alert">${status == 429 ? limited : status == 400 ? invalid : unavailable}</p>
-                ${status == 400 || status == 429 ? html`<a href="${path}">${back}</a>` : ''}`
-            : result?.state == 'waiting'
-              ? html`<p class="prompt">${result.prompt}</p>
-                  <small>${expiry}: ${result.expiresAt}</small>
-                  <form method="post" action="${path}">
-                    <label for="comment">${comment}</label><textarea id="comment" name="comment"></textarea>
-                    <div class="actions">
-                      ${actions.map((action) => html`<button type="submit" formaction="${path.replace(/\/[^/]+$/, `/${action}`)}">${labels[action]}</button>`)}
-                    </div>
-                    <footer><small>${help}</small></footer>
-                  </form>`
-              : html`<p role="status">${result?.state == 'resolved' && result.action != null ? `${resolved} ${labels[result.action]}` : unavailable}</p>`}
+          ${
+            status != 200
+              ? html`<p role="alert">${status == 429 ? limited : status == 400 ? invalid : unavailable}</p>
+                  ${status == 400 || status == 429 ? html`<a href="${path}">${back}</a>` : ''}`
+              : result?.state == 'waiting'
+                ? html`<p class="prompt">${result.prompt}</p>
+                    <small>${expiry}: ${result.expiresAt}</small>
+                    <form method="post" action="${path}">
+                      <label for="comment">${comment}</label><textarea id="comment" name="comment"></textarea>
+                      <div class="actions">
+                        ${actions.map((action) => html`<button type="submit" formaction="${path.replace(/\/[^/]+$/, `/${action}`)}">${labels[action]}</button>`)}
+                      </div>
+                      <footer><small>${help}</small></footer>
+                    </form>`
+                : html`<p role="status">${result?.state == 'resolved' && result.action != null ? `${resolved} ${labels[result.action]}` : unavailable}</p>`
+          }
         </main>
       </body>
     </html>`

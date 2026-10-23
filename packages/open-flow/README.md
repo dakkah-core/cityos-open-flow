@@ -18,8 +18,9 @@ bun add @oomol-lab/open-flow
 Hosts embed the Workbench runtime and styles from the same versioned artifact:
 
 ```ts
-import { OpenFlowWorkbench } from '@oomol-lab/open-flow/workbench'
 import '@oomol-lab/open-flow/workbench.css'
+
+import { OpenFlowWorkbench } from '@oomol-lab/open-flow/workbench'
 ```
 
 Deployment chrome that needs the same light and dark semantic palette without the Workbench styles
@@ -41,8 +42,8 @@ Hosts load external files and open the Flow list before calling the Workbench re
 the text and uses the same confirmation dialog as local file imports. It does not fetch the source URL.
 
 ```tsx
-import { useRef } from 'react'
 import { OpenFlowWorkbench, type OpenFlowWorkbenchHandle, type OpenFlowWorkbenchProps } from '@oomol-lab/open-flow/workbench'
+import { useRef } from 'react'
 
 function Host(props: OpenFlowWorkbenchProps) {
   const workbenchRef = useRef<OpenFlowWorkbenchHandle>(null)
@@ -96,8 +97,9 @@ without its striped canvas background. It includes temporary node movement, layo
 properties. It does not fetch a publication, save changes, or execute a flow.
 
 ```tsx
-import { OpenFlowPreview, type Draft, type Presentation } from '@oomol-lab/open-flow/preview'
 import '@oomol-lab/open-flow/preview.css'
+
+import { OpenFlowPreview, type Draft, type Presentation } from '@oomol-lab/open-flow/preview'
 
 function Example({ draft, presentation }: { draft: Draft; presentation: Presentation | null }) {
   return (

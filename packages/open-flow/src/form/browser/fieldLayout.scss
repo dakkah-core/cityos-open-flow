@@ -44,9 +44,11 @@ $wrap-width: 340px;
     --field-name-track: minmax(
       90px,
       calc(
-        (100% - var(--field-grip-width, 0px) - var(--field-toggle-width, 24px) - var(--field-name-gap) - var(--field-name-type-gap) -
-            var(--field-table-type-width, 56px) - var(--field-type-value-gap) - var(--field-actions-gap) - var(--field-nullable-width) -
-            var(--field-actions-width, 28px)) *
+        (
+            100% - var(--field-grip-width, 0px) - var(--field-toggle-width, 24px) - var(--field-name-gap) - var(--field-name-type-gap) -
+              var(--field-table-type-width, 56px) - var(--field-type-value-gap) - var(--field-actions-gap) - var(--field-nullable-width) -
+              var(--field-actions-width, 28px)
+          ) *
           0.4
       )
     );

@@ -42,18 +42,16 @@ function fixture(autoContinue?: WaitRequest['autoContinue']) {
   const runId = accepted.runId
   expect(store.runs.claim()?.runId).toBe(runId)
   expect(store.runs.start(runId, { kind: 'run.started', payload: { flowId: 'flow', scopeId: runId } })).toBe(true)
-  const waits = ['first', 'second'].map(
-    (waitId): WaitRequest => ({
-      waitId,
-      nodeId: waitId,
-      jobId: waitId,
-      actions: autoContinue != null && waitId == 'first' ? ['continue'] : ['approve', 'reject'],
-      autoContinue: waitId == 'first' ? autoContinue : undefined,
-      prompt: waitId,
-      value: {},
-      notify: true,
-    }),
-  )
+  const waits = ['first', 'second'].map((waitId): WaitRequest => ({
+    waitId,
+    nodeId: waitId,
+    jobId: waitId,
+    actions: autoContinue != null && waitId == 'first' ? ['continue'] : ['approve', 'reject'],
+    autoContinue: waitId == 'first' ? autoContinue : undefined,
+    prompt: waitId,
+    value: {},
+    notify: true,
+  }))
   const checkpoint: FlowRunCheckpoint = {
     version: 6,
     dependencies: {

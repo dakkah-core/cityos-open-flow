@@ -261,34 +261,32 @@ function FlatInputsSample({ log }: { log: LogAction }) {
         title="Inputs"
         disabled={false}
         variables={{ enabled: false, names: [], loaded: true, loading: false, onOpen: () => {} }}
-        entries={handles.map(
-          (handle): NodeInputField => ({
-            definition: {
-              handle,
-              nullable: !['receiveId', 'contentKind', 'fixedEmptyObject'].includes(handle),
-              jsonSchema:
-                handle === 'nullableArray'
-                  ? { type: 'array', items: { type: 'object' } }
-                  : handle === 'nullableObject'
+        entries={handles.map((handle): NodeInputField => ({
+          definition: {
+            handle,
+            nullable: !['receiveId', 'contentKind', 'fixedEmptyObject'].includes(handle),
+            jsonSchema:
+              handle === 'nullableArray'
+                ? { type: 'array', items: { type: 'object' } }
+                : handle === 'nullableObject'
+                  ? { type: 'object' }
+                  : handle === 'unconstrainedObject'
                     ? { type: 'object' }
-                    : handle === 'unconstrainedObject'
-                      ? { type: 'object' }
-                      : handle === 'fixedEmptyObject'
-                        ? { type: 'object', additionalProperties: false }
-                        : handle === 'rawContent'
-                          ? {}
-                          : ['receiveIdType', 'contentKind', 'fileType'].includes(handle)
-                            ? { type: 'string', enum: ['text', 'image', 'file'] }
-                            : { type: 'string' },
-            },
-            value: Object.hasOwn(values, handle)
-              ? values[handle]
-              : ['receiveId', 'contentKind', 'receiveIdType', 'fileType', 'rawContent'].includes(handle)
-                ? undefined
-                : null,
-            connected: false,
-          }),
-        )}
+                    : handle === 'fixedEmptyObject'
+                      ? { type: 'object', additionalProperties: false }
+                      : handle === 'rawContent'
+                        ? {}
+                        : ['receiveIdType', 'contentKind', 'fileType'].includes(handle)
+                          ? { type: 'string', enum: ['text', 'image', 'file'] }
+                          : { type: 'string' },
+          },
+          value: Object.hasOwn(values, handle)
+            ? values[handle]
+            : ['receiveId', 'contentKind', 'receiveIdType', 'fileType', 'rawContent'].includes(handle)
+              ? undefined
+              : null,
+          connected: false,
+        }))}
         onValue={(handle, value) => {
           setValues((previous) => ({ ...previous, [handle]: value }))
           log('Save flat input', { handle, value })

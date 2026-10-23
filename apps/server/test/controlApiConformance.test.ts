@@ -179,9 +179,8 @@ async function createHarness(
 
 it('creates, edits and runs a Leina notification with a team-scoped robot selection', async () => {
   const bot = { leinaId: 'default', name: 'Team assistant', status: 'ready', platforms: ['feishu'] }
-  const execute = vi.fn<ConnectorHost['execute']>(
-    async (action, _connection, input): Promise<JsonValue> =>
-      action == 'leina.list_bots' ? { bots: [bot] } : { leinaId: input.leinaId!, status: 'delivered', requestId: 'delivery-1' },
+  const execute = vi.fn<ConnectorHost['execute']>(async (action, _connection, input): Promise<JsonValue> =>
+    action == 'leina.list_bots' ? { bots: [bot] } : { leinaId: input.leinaId!, status: 'delivered', requestId: 'delivery-1' },
   )
   const field = { jsonSchema: { type: 'string' } as const, nullable: false }
   const action: ConnectorAction = {
