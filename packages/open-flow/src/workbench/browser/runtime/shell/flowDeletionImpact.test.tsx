@@ -7,13 +7,15 @@ import { FlowDeletionImpact } from './flowDeletionDialog.tsx'
 const i18n = createI18n('zh-CN')
 afterAll(() => i18n.dispose())
 
+const renderDeletionImpact = (listeners: readonly [] | undefined, failed: boolean) =>
+  renderToStaticMarkup(
+    <I18nProvider i18n={i18n}>
+      <FlowDeletionImpact listeners={listeners} failed={failed} onRetry={() => {}} />
+    </I18nProvider>,
+  )
+
 it('distinguishes an empty result from loading and failed lookups', () => {
-  const render = (listeners: readonly [] | undefined, failed: boolean) =>
-    renderToStaticMarkup(
-      <I18nProvider i18n={i18n}>
-        <FlowDeletionImpact listeners={listeners} failed={failed} onRetry={() => {}} />
-      </I18nProvider>,
-    )
+  const render = renderDeletionImpact
   expect(render([], false)).toBe('')
   expect(render(undefined, false)).toContain('正在查询工作流错误节点')
   expect(render(undefined, true)).toContain('无法确认哪些工作流错误节点正在监听')

@@ -41,29 +41,30 @@ const group: AddNodeOption = {
   serviceId: 'github',
 }
 
+const renderConcretePicker = (disabled: boolean) =>
+  renderToStaticMarkup(
+    <I18nProvider i18n={createI18n('en')}>
+      <NodePickerContent
+        initialQuery="issue"
+        browseOptions={async () => []}
+        searchOptions={async () => []}
+        disabled={disabled}
+        focusRequest={0}
+        onAdd={async () => undefined}
+        onRegisterDragOption={() => undefined}
+        options={[connector]}
+        provideChoices={async () => []}
+      />
+    </I18nProvider>,
+  )
+
 describe('Context Panel', () => {
   it('indexes nested choices by their session item IDs', () => {
     expect(indexAddNodeOptions([group]).get(connector.id)).toBe(connector)
   })
 
   it('makes concrete picker options draggable while leaving disabled options inert', () => {
-    const renderPicker = (disabled: boolean) =>
-      renderToStaticMarkup(
-        <I18nProvider i18n={createI18n('en')}>
-          <NodePickerContent
-            initialQuery="issue"
-            browseOptions={async () => []}
-            searchOptions={async () => []}
-            disabled={disabled}
-            focusRequest={0}
-            onAdd={async () => undefined}
-            onRegisterDragOption={() => undefined}
-            options={[connector]}
-            provideChoices={async () => []}
-          />
-        </I18nProvider>,
-      )
-
+    const renderPicker = renderConcretePicker
     expect(renderPicker(false)).toContain('draggable="true"')
     expect(renderPicker(true)).toContain('Create issue')
     expect(renderPicker(true)).toContain('draggable="false"')

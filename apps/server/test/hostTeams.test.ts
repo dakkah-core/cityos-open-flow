@@ -43,6 +43,19 @@ it('invalid and throwing deployment Team sources fail closed without disclosing 
   }
 })
 
+it('rejects invalid Team references including embedded control bytes', async () => {
+  for (const id of ['', ' leading', 'trailing ', 'team\nline', 'team\u0000id', 'team\u007fid']) {
+    const service = await openService(':memory:', {
+      capabilities: { connectorTeams: async () => [{ id, name: 'Installed Team', systemCreated: true }] },
+    })
+    try {
+      await expect(service.connectorTeams()).rejects.toThrow('Configured Connector Team source unavailable.')
+    } finally {
+      await closeService(service)
+    }
+  }
+})
+
 it('a deployment Team source never assigns existing unbound Flows during listing or startup', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'open-flow-host-team-'))
   const opened: Awaited<ReturnType<typeof openService>>[] = []
@@ -65,8 +78,8 @@ it('a deployment Team source never assigns existing unbound Flows during listing
     expect(current.control.getFlow(created.flow.flowId).connectorTeamId).toBeUndefined()
   } finally {
     for (const service of opened) await closeService(service)
-    if (path.dirname(path.resolve(directory)) !== path.resolve(tmpdir()) || !path.basename(directory).startsWith('open-flow-host-team-'))
-      throw Error('Disposable Team fixture escaped its parent')
+    expect(path.dirname(path.resolve(directory))).toBe(path.resolve(tmpdir()))
+    expect(path.basename(directory).startsWith('open-flow-host-team-')).toBe(true)
     await rm(directory, { recursive: true, force: true })
   }
 })

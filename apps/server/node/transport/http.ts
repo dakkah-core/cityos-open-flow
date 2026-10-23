@@ -127,6 +127,7 @@ export function createServerApp(service: ServerService, options: ServerAppOption
     }
     return callbackRetryAfter(callbackWindows, key, callbackRequestsPerMinute, now)
   }
+  const admitWaitAction = (digest: string): number | undefined => admitCallback(`wait-action:${digest}`)
   app.all('/v1/event-source-apps/:kind/:appId/events', async (context) => {
     const appId = context.req.param('appId')
     const retry = admitCallback(`event-source-app:${context.req.param('kind')}:${appId}`)
@@ -206,13 +207,12 @@ export function createServerApp(service: ServerService, options: ServerAppOption
     const capability = context.req.param('capability')
     const action = context.req.param('action')
     const requested = action == 'approve' || action == 'continue' || action == 'reject' ? (action satisfies WaitAction) : undefined
-    const admit = (digest: string): number | undefined => admitCallback(`wait-action:${digest}`)
     const result =
       requested == null || !/^[A-Za-z0-9_-]{43}$/.test(capability)
         ? undefined
         : method == 'POST'
-          ? service.resolveWaitAction(capability, requested, admit, comment)
-          : service.inspectWaitAction(capability, requested, admit)
+          ? service.resolveWaitAction(capability, requested, admitWaitAction, comment)
+          : service.inspectWaitAction(capability, requested, admitWaitAction)
     if (result != null && 'retryAfter' in result) {
       const response = page ? await renderPage(429) : json(429, { error: { code: 'wait-action.rate-limited', message: 'Too many requests.' }, version: 1 })
       response.headers.set('retry-after', String(result.retryAfter))

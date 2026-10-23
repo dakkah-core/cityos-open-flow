@@ -73,28 +73,29 @@ const unsupportedComparisonKeywords: ReadonlySet<string> = new Set([
   'unevaluatedProperties',
 ])
 
-function assertComparableSchema(schema: object): void {
-  function visit(value: unknown, path: readonly (string | number)[]): void {
+function visitComparableSchema(value: unknown, path: readonly (string | number)[]): void {
     if (value == null || typeof value != 'object' || Array.isArray(value)) return
     const source = value as Readonly<Record<string, unknown>>
     for (const keyword of unsupportedComparisonKeywords) {
       if (Object.hasOwn(source, keyword)) throw new TypeError(`Unsupported schema comparison keyword at ${schemaPath([...path, keyword])}.`)
     }
-    for (const keyword of ['additionalItems', 'additionalProperties', 'not', 'propertyNames'] as const) visit(source[keyword], [...path, keyword])
+    for (const keyword of ['additionalItems', 'additionalProperties', 'not', 'propertyNames'] as const) visitComparableSchema(source[keyword], [...path, keyword])
     const items = source.items
-    if (Array.isArray(items)) items.forEach((item, index) => visit(item, [...path, 'items', index]))
-    else visit(items, [...path, 'items'])
+    if (Array.isArray(items)) items.forEach((item, index) => visitComparableSchema(item, [...path, 'items', index]))
+    else visitComparableSchema(items, [...path, 'items'])
     for (const keyword of ['allOf', 'anyOf', 'oneOf'] as const) {
       const variants = source[keyword]
-      if (Array.isArray(variants)) variants.forEach((item, index) => visit(item, [...path, keyword, index]))
+      if (Array.isArray(variants)) variants.forEach((item, index) => visitComparableSchema(item, [...path, keyword, index]))
     }
     for (const keyword of ['patternProperties', 'properties'] as const) {
       const entries = source[keyword]
       if (entries == null || typeof entries != 'object' || Array.isArray(entries)) continue
-      for (const [name, child] of Object.entries(entries)) visit(child, [...path, keyword, name])
+      for (const [name, child] of Object.entries(entries)) visitComparableSchema(child, [...path, keyword, name])
     }
-  }
-  visit(schema, [])
+}
+
+function assertComparableSchema(schema: object): void {
+  visitComparableSchema(schema, [])
 }
 
 function schemaPath(path: readonly (string | number)[]): string {

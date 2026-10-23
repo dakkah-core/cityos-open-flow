@@ -74,6 +74,14 @@ it.each([
   expect(writes).toEqual([edit])
   expect(JSON.parse(output.stdout())).toEqual(receipt)
 })
+const fixedRevisionErrorRequest = async (path: string) =>
+  path == '/v1/flows/flow'
+    ? Response.json(flow)
+    : Response.json(
+        { error: { code: 'flow.invalid', message: 'Expected one exact match', details: { reason: 'text.match-count', matches: 2, editIndex: 0 } } },
+        { status: 400 },
+      )
+
 it('replays an identical request after the response is lost and the head advances', async () => {
   const writes: unknown[] = []
   const request = async (path: string, init?: RequestInit) => {
@@ -92,13 +100,7 @@ it('replays an identical request after the response is lost and the head advance
   expect(JSON.parse(second.stdout())).toEqual(receipt)
 })
 it('keeps fixed revision errors and recoverable text edit details', async () => {
-  const request = async (path: string) =>
-    path == '/v1/flows/flow'
-      ? Response.json(flow)
-      : Response.json(
-          { error: { code: 'flow.invalid', message: 'Expected one exact match', details: { reason: 'text.match-count', matches: 2, editIndex: 0 } } },
-          { status: 400 },
-        )
+  const request = fixedRevisionErrorRequest
   const output = io()
   expect(await runCli(['edit', 'flow', '--file', '-', '--json'], { request }, output.value)).toBe(1)
   expect(JSON.parse(output.stderr())).toMatchObject({ error: { details: { reason: 'text.match-count', matches: 2 } } })

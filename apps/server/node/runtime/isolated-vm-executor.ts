@@ -774,49 +774,50 @@ function runExecutor(): Effect.Effect<void> {
       const run = yield* FiberSet.runtime(fibers)()
       const executions = new Map<number, { readonly fiber: Fiber.Fiber<void, never>; readonly pending: Map<number, PendingCapability> }>()
 
-      yield* Effect.callback<void>((resume) => {
-        const close = (): void => resume(Effect.void)
-        const receive = (source: unknown): void => {
-          const message = source as ParentMessage
-          const execution = executions.get(message.executionId)
-          if (message.type == 'cancel') {
-            if (execution != null) run(Fiber.interrupt(execution.fiber))
-            return
-          }
-          if (message.type == 'capability.result') {
-            const capability = execution?.pending.get(message.id)
-            if (capability != null) run(Deferred.succeed(capability.deferred, message).pipe(Effect.asVoid))
-            return
-          }
-          if (execution != null) {
-            run(
-              Effect.sync(() =>
-                writeMessage({
-                  code: 'executor-crashed',
-                  executionId: message.executionId,
-                  message: 'Executor received a duplicate execution ID.',
-                  ok: false,
-                  type: 'result',
-                }),
-              ),
-            )
-            return
-          }
-          const pending = new Map<number, PendingCapability>()
-          const fiber = run(
-            executeWithCapabilities(message, pending, () => {
-              if (completedIsolates < executorIsolateBudget || executions.size != 1) return false
-              return true
-            }).pipe(
-              Effect.ensuring(
-                Effect.sync(() => {
-                  executions.delete(message.executionId)
-                }),
-              ),
+      const receive = (source: unknown): void => {
+        const message = source as ParentMessage
+        const execution = executions.get(message.executionId)
+        if (message.type == 'cancel') {
+          if (execution != null) run(Fiber.interrupt(execution.fiber))
+          return
+        }
+        if (message.type == 'capability.result') {
+          const capability = execution?.pending.get(message.id)
+          if (capability != null) run(Deferred.succeed(capability.deferred, message).pipe(Effect.asVoid))
+          return
+        }
+        if (execution != null) {
+          run(
+            Effect.sync(() =>
+              writeMessage({
+                code: 'executor-crashed',
+                executionId: message.executionId,
+                message: 'Executor received a duplicate execution ID.',
+                ok: false,
+                type: 'result',
+              }),
             ),
           )
-          executions.set(message.executionId, { fiber, pending })
+          return
         }
+        const pending = new Map<number, PendingCapability>()
+        const fiber = run(
+          executeWithCapabilities(message, pending, () => {
+            if (completedIsolates < executorIsolateBudget || executions.size != 1) return false
+            return true
+          }).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                executions.delete(message.executionId)
+              }),
+            ),
+          ),
+        )
+        executions.set(message.executionId, { fiber, pending })
+      }
+
+      yield* Effect.callback<void>((resume) => {
+        const close = (): void => resume(Effect.void)
         process.once('disconnect', close)
         process.on('message', receive)
         return Effect.sync(() => {

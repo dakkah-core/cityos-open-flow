@@ -72,6 +72,11 @@ async function loadTeams(
   }
 }
 
+function connectorTeamText(value: unknown): value is string {
+  return typeof value == 'string' && value.length > 0 && value.length <= 240 && value.trim() == value
+    && !Array.from(value).some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) == 127)
+}
+
 export class ServerService {
   readonly publisher: Publisher
   readonly control: ControlService
@@ -355,12 +360,10 @@ export class ServerService {
         signal?.throwIfAborted()
         const teams = await this.#resolveConnectorTeams(signal)
         signal?.throwIfAborted()
-        const text = (value: unknown): value is string =>
-          typeof value == 'string' && value.length > 0 && value.length <= 240 && value.trim() == value && !/[\u0000-\u001f\u007f]/u.test(value)
         if (
           !Array.isArray(teams) ||
           teams.length > 1000 ||
-          teams.some((team) => !team || !text(team.id) || !text(team.name) || typeof team.systemCreated != 'boolean') ||
+          teams.some((team) => !team || !connectorTeamText(team.id) || !connectorTeamText(team.name) || typeof team.systemCreated != 'boolean') ||
           new Set(teams.map((team) => team.id)).size != teams.length ||
           teams.filter((team) => team.systemCreated).length > 1
         )

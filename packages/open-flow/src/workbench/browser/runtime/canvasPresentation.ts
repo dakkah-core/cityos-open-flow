@@ -32,9 +32,7 @@ export function flowPresentation(value: Readonly<Record<string, JsonValue>>): Re
   return record(designer.flow)
 }
 
-export function savedPositions(value: Readonly<Record<string, JsonValue>>): Readonly<Record<string, { readonly x: number; readonly y: number }>> {
-  const current = flowPresentation(value)
-  const positions = (source: JsonValue | undefined): Readonly<Record<string, { readonly x: number; readonly y: number }>> => {
+function decodeSavedPositions(source: JsonValue | undefined): Readonly<Record<string, { readonly x: number; readonly y: number }>> {
     return Object.fromEntries(
       Object.entries(record(source) ?? {}).flatMap(([nodeId, candidate]) => {
         const position = record(candidate)
@@ -43,8 +41,11 @@ export function savedPositions(value: Readonly<Record<string, JsonValue>>): Read
         return x == null || y == null ? [] : [[nodeId, { x, y }]]
       }),
     )
-  }
-  return positions(current?.nodes)
+}
+
+export function savedPositions(value: Readonly<Record<string, JsonValue>>): Readonly<Record<string, { readonly x: number; readonly y: number }>> {
+  const current = flowPresentation(value)
+  return decodeSavedPositions(current?.nodes)
 }
 
 export function savedOrder(value: Readonly<Record<string, JsonValue>>): readonly string[] {

@@ -51,6 +51,47 @@ function runtime(language: UiLanguage = 'en') {
   }
 }
 
+const invalidCheckRequest = async (path: string) =>
+  Response.json(
+    path.endsWith('/check')
+      ? {
+          waits: [],
+          closureDigest: 'closure',
+          diagnostics: [],
+          engineContract: 'open-flow-engine/v6',
+          flowId: flow.flowId,
+          modelVersion: currentFlowModelVersion,
+          revisionDigest: 'digest',
+          revisionId: 'revision-1',
+          valid: false,
+          version: 1,
+        }
+      : flow,
+  )
+
+const fixedPublicationRequest = async (path: string, init?: RequestInit) => {
+  if (path == '/v1/flows/flow-1') return Response.json(flow)
+  if (path == '/v1/flows/flow-1/authoring/check')
+    return Response.json({
+      waits: [],
+      closureDigest: 'closure',
+      diagnostics: [],
+      engineContract: 'open-flow-engine/v6',
+      flowId: flow.flowId,
+      modelVersion: currentFlowModelVersion,
+      revisionDigest: 'digest',
+      revisionId: 'historical',
+      valid: true,
+      version: 1,
+    })
+  if (path.endsWith('/enabled')) {
+    const body = JSON.parse(String(init?.body))
+    expect(body).toEqual({ expectedPublicationId: 'published', enabled: expect.any(Boolean), version: 1 })
+    return Response.json({ ...flow, live: { hasStart: true, enabled: body.enabled, publicationId: 'published', revisionId: 'historical' } })
+  }
+  throw new Error(path)
+}
+
 describe('CLI', () => {
   it.each([{ type: 'focus', nodeId: 'node' }, { type: 'zoom', zoom: 0.8 }, { type: 'pan', dx: -200, dy: 100 }, { type: 'fit' }])(
     'broadcasts canvas commands through the shared API: %j',
@@ -589,23 +630,7 @@ describe('agent command contract', () => {
 
   it('keeps an invalid check as one structured result with a failure exit code', async () => {
     const output = runtime()
-    const request = async (path: string) =>
-      Response.json(
-        path.endsWith('/check')
-          ? {
-              waits: [],
-              closureDigest: 'closure',
-              diagnostics: [],
-              engineContract: 'open-flow-engine/v6',
-              flowId: flow.flowId,
-              modelVersion: currentFlowModelVersion,
-              revisionDigest: 'digest',
-              revisionId: 'revision-1',
-              valid: false,
-              version: 1,
-            }
-          : flow,
-      )
+    const request = invalidCheckRequest
     expect(await runCli(['check', 'flow-1', '--json'], { request }, output.value)).toBe(1)
     expect(JSON.parse(output.stdout())).toMatchObject({ check: { valid: false } })
     expect(output.stderr()).toBe('')
@@ -817,28 +842,7 @@ it('queries multiple connection Providers in one request and preserves individua
 })
 
 it('checks a fixed Revision and changes only the observed Live publication enablement', async () => {
-  const request = async (path: string, init?: RequestInit) => {
-    if (path == '/v1/flows/flow-1') return Response.json(flow)
-    if (path == '/v1/flows/flow-1/authoring/check')
-      return Response.json({
-        waits: [],
-        closureDigest: 'closure',
-        diagnostics: [],
-        engineContract: 'open-flow-engine/v6',
-        flowId: flow.flowId,
-        modelVersion: currentFlowModelVersion,
-        revisionDigest: 'digest',
-        revisionId: 'historical',
-        valid: true,
-        version: 1,
-      })
-    if (path.endsWith('/enabled')) {
-      const body = JSON.parse(String(init?.body))
-      expect(body).toEqual({ expectedPublicationId: 'published', enabled: expect.any(Boolean), version: 1 })
-      return Response.json({ ...flow, live: { hasStart: true, enabled: body.enabled, publicationId: 'published', revisionId: 'historical' } })
-    }
-    throw new Error(path)
-  }
+  const request = fixedPublicationRequest
   const checked = runtime()
   expect(await runCli(['check', 'flow-1', '--revision', 'historical', '--json'], { request }, checked.value), checked.stderr()).toBe(0)
   expect(JSON.parse(checked.stdout()).revisionId).toBe('historical')

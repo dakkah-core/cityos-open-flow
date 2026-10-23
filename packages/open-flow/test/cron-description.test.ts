@@ -14,7 +14,7 @@ describe('catalog-installed cron description consumer', () => {
 
   it('registers the translations for every supported product language', () => {
     const english = cronDescription(expression, 'en')
-    for (const language of uiLanguages.filter((language) => language !== 'en')) {
+    for (const language of uiLanguages.filter((candidate) => candidate !== 'en')) {
       const description = cronDescription(expression, language)
       expect(description, language).not.toBe(expression)
       expect(description.trim().length, language).toBeGreaterThan(0)
