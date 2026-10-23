@@ -106,9 +106,9 @@ try {
     const headers = new Headers(init.headers)
     headers.set('cookie', firstCookie)
     const response = await fetch(`${firstOrigin}${pathname}`, { ...init, headers })
-    const source = await response.clone().text()
+    const responseBody = await response.clone().text()
     const status = init.method == 'POST' ? 202 : 200
-    assert.equal(response.status, status, `${pathname} returned HTTP ${response.status}: ${source}`)
+    assert.equal(response.status, status, `${pathname} returned HTTP ${response.status}: ${responseBody}`)
     return response
   })
   let operation = await control.publishFlow(flow.flowId, changed.revision.revisionId, null, {
@@ -497,9 +497,9 @@ async function loginUser(baseUrl: string, email: string, password: string): Prom
 
 async function requestJson<Body>(baseUrl: string, pathname: string, init: RequestInit, status: number): Promise<Body> {
   const response = await fetch(`${baseUrl}${pathname}`, init)
-  const source = await response.text()
-  assert.equal(response.status, status, `${pathname} returned HTTP ${response.status}: ${source}`)
-  return JSON.parse(source) as Body
+  const responseBody = await response.text()
+  assert.equal(response.status, status, `${pathname} returned HTTP ${response.status}: ${responseBody}`)
+  return JSON.parse(responseBody) as Body
 }
 
 async function waitForRun(baseUrl: string, runId: string, cookie: string): Promise<{ readonly status: string }> {

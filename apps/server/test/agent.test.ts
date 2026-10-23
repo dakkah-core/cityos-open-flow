@@ -199,7 +199,7 @@ describe('Agent streaming adapter', () => {
     expect(JSON.stringify(prompts[0])).toContain('Final result for the customer.')
     expect(JSON.stringify(prompts[0])).toContain(JSON.stringify(schema).replaceAll('"', '\\"'))
     expect(JSON.stringify(prompts[1])).toContain('Validation errors:')
-    expect(toolOptions[1]).toMatchObject({ tools: undefined, toolChoice: { type: 'none' } })
+    expect(toolOptions[1]).toMatchObject({ tools: [], toolChoice: { type: 'none' } })
     expect(events.filter((event) => event.kind == 'model').map((event) => event.round)).toEqual([1, 2])
   })
 
@@ -222,7 +222,7 @@ describe('Agent streaming adapter', () => {
     expect(execute).toHaveBeenCalledTimes(1)
     expect(prompts).toHaveLength(3)
     expect(JSON.stringify(prompts[2])).toContain('sent')
-    expect(toolOptions[2]).toMatchObject({ tools: undefined, toolChoice: { type: 'none' } })
+    expect(toolOptions[2]).toMatchObject({ tools: [], toolChoice: { type: 'none' } })
   })
 
   it('does not execute a tool requested by a model during output correction', async () => {

@@ -58,7 +58,7 @@ function AutoContinue({
   const [draft, setDraft] = useState(() => timingDraft(config))
   const saved = useRef({ nodeId: selection.id, config })
   const [error, setError] = useState(false)
-  const request = useRef<AbortController>()
+  const request = useRef<AbortController | undefined>(undefined)
   useEffect(() => {
     if (saved.current.nodeId == selection.id && dequal(saved.current.config, config)) return
     saved.current = { nodeId: selection.id, config }

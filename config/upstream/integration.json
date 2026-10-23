@@ -21,6 +21,13 @@
   "requiredChecks": ["source-boundary", "editor-host", "packed-consumers", "cms-http-authoring"],
   "changes": [
     {
+      "id": "current-react-and-agent-contracts",
+      "purpose": "Type the inspector's initially empty cancellation ref under the selected React declarations and characterize the selected SDK's empty correction tool list.",
+      "invariant": "Inspector cancellation retains its undefined initial state; output correction advertises no tools and never repeats approved actions.",
+      "paths": ["packages/open-flow/src/workbench/browser/runtime/editor/resolutionDefinition.tsx", "apps/server/test/agent.test.ts"],
+      "tests": ["packages/open-flow/test/toolchain.node-test.mjs", "apps/server/test/agent.test.ts"]
+    },
+    {
       "id": "canonical-source-formatting",
       "purpose": "Apply the maintained Oxfmt output to newly merged upstream source so the existing full-tree quality gate can qualify upgrades.",
       "invariant": "Only the exact canonical formatter output is adopted; source, package, server and image gates remain required.",
