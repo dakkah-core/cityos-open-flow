@@ -906,35 +906,36 @@ it('retains a remote callback checkpoint rejected by Run capacity and admits its
   }
 })
 
+async function publishListener(service: ServerService, file: string): Promise<string> {
+  const publicationId = await publish(service, 'ready', null)
+  const database = new DatabaseSync(file)
+  try {
+    database
+      .prepare(`INSERT INTO flows (flow_id, name, status, draft_revision_id, create_idempotency_key, create_request_digest, created_at, updated_at)
+      SELECT 'main', 'Listener test', 'active', revision_id, 'create-main', 'create-main', 0, 0 FROM publications WHERE publication_id = ?`)
+      .run(publicationId)
+  } finally {
+    database.close()
+  }
+  return publicationId
+}
+
+function listenerDefinition(read: NonNullable<IntegrationDefinition['listener']>['read']): IntegrationDefinition {
+  return {
+    snapshot,
+    initialState: { checkpoint: null, subscription: {} },
+    listener: { intervalMs: 60_000, read },
+    receive: () => ({ outcome: 'wake' }),
+    reconcile: async ({ active, state, now }) => {
+      if (active && state?.checkpoint == null) await state!.saveCheckpoint(0)
+      if (active) await state!.saveSubscription({}, new Date(now.getTime() + 3_600_000))
+      return { outcome: 'ready' }
+    },
+  }
+}
+
 describe('Server change listener', () => {
-  async function publishListener(service: ServerService, file: string): Promise<string> {
-    const publicationId = await publish(service, 'ready', null)
-    const database = new DatabaseSync(file)
-    try {
-      database
-        .prepare(`INSERT INTO flows (flow_id, name, status, draft_revision_id, create_idempotency_key, create_request_digest, created_at, updated_at)
-        SELECT 'main', 'Listener test', 'active', revision_id, 'create-main', 'create-main', 0, 0 FROM publications WHERE publication_id = ?`)
-        .run(publicationId)
-    } finally {
-      database.close()
-    }
-    return publicationId
-  }
-
-  function listener(read: NonNullable<IntegrationDefinition['listener']>['read']): IntegrationDefinition {
-    return {
-      snapshot,
-      initialState: { checkpoint: null, subscription: {} },
-      listener: { intervalMs: 60_000, read },
-      receive: () => ({ outcome: 'wake' }),
-      reconcile: async ({ active, state, now }) => {
-        if (active && state?.checkpoint == null) await state!.saveCheckpoint(0)
-        if (active) await state!.saveSubscription({}, new Date(now.getTime() + 3_600_000))
-        return { outcome: 'ready' }
-      },
-    }
-  }
-
+  const listener = listenerDefinition
   it('services both readers during Poll continuation and resumes their persisted progress after restart', async () => {
     const file = await databaseFile()
     let now = 0

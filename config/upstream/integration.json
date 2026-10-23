@@ -25,6 +25,7 @@
       "purpose": "Keep static schema, presentation and fixture helpers at their actual owner scope while preserving per-server admission and per-executor state.",
       "invariant": "No lint rule is disabled; schema comparison, wait-action limits, executor cancellation and all fixture assertions retain their behavior.",
       "paths": [
+        "apps/server/test/integration.test.ts",
         "apps/server/node/runtime/isolated-vm-executor.ts",
         "apps/server/node/transport/http.ts",
         "packages/command/src/cli/node/authoring.test.ts",
