@@ -73,8 +73,13 @@ async function loadTeams(
 }
 
 function connectorTeamText(value: unknown): value is string {
-  return typeof value == 'string' && value.length > 0 && value.length <= 240 && value.trim() == value
-    && !Array.from(value).some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) == 127)
+  return (
+    typeof value == 'string' &&
+    value.length > 0 &&
+    value.length <= 240 &&
+    value.trim() == value &&
+    !Array.from(value).some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) == 127)
+  )
 }
 
 export class ServerService {

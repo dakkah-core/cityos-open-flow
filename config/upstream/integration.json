@@ -34,7 +34,11 @@
         "packages/open-flow/src/workbench/browser/runtime/editor/contextPanel.test.tsx",
         "packages/open-flow/src/workbench/browser/runtime/shell/flowDeletionImpact.test.tsx"
       ],
-      "tests": ["packages/command/src/cli/node/authoring.test.ts", "apps/server/test/hostTeams.test.ts", "packages/open-flow/src/workbench/browser/runtime/editor/contextPanel.test.tsx"]
+      "tests": [
+        "packages/command/src/cli/node/authoring.test.ts",
+        "apps/server/test/hostTeams.test.ts",
+        "packages/open-flow/src/workbench/browser/runtime/editor/contextPanel.test.tsx"
+      ]
     },
     {
       "id": "current-react-and-agent-contracts",

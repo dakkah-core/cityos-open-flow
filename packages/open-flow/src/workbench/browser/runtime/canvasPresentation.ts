@@ -33,14 +33,14 @@ export function flowPresentation(value: Readonly<Record<string, JsonValue>>): Re
 }
 
 function decodeSavedPositions(source: JsonValue | undefined): Readonly<Record<string, { readonly x: number; readonly y: number }>> {
-    return Object.fromEntries(
-      Object.entries(record(source) ?? {}).flatMap(([nodeId, candidate]) => {
-        const position = record(candidate)
-        const x = finite(position?.x)
-        const y = finite(position?.y)
-        return x == null || y == null ? [] : [[nodeId, { x, y }]]
-      }),
-    )
+  return Object.fromEntries(
+    Object.entries(record(source) ?? {}).flatMap(([nodeId, candidate]) => {
+      const position = record(candidate)
+      const x = finite(position?.x)
+      const y = finite(position?.y)
+      return x == null || y == null ? [] : [[nodeId, { x, y }]]
+    }),
+  )
 }
 
 export function savedPositions(value: Readonly<Record<string, JsonValue>>): Readonly<Record<string, { readonly x: number; readonly y: number }>> {
