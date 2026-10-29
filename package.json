@@ -142,7 +142,7 @@
       "@jridgewell/gen-mapping": "catalog:"
     }
   },
-  "packageManager": "bun@1.4.3",
+  "packageManager": "bun@1.4.4",
   "private": true,
   "scripts": {
     "build": "bun run --workspaces --if-present build",
