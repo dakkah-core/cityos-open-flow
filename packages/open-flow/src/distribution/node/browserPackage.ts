@@ -1,16 +1,17 @@
-import tailwindcss from '@tailwindcss/vite'
-import UnoCSS from '@unocss/vite'
 import { execFile } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { build, esmExternalRequirePlugin, normalizePath } from 'vite'
-import { generateScopedName } from '../../build/node/cssModules.ts'
-import designerUnoConfig from '../../build/node/designerUnoConfig.ts'
-import { providerIconsPlugin } from '../../build/node/providerIcons.ts'
-import { twemojiCollectionPlugin } from '../../build/node/twemojiCollection.ts'
+import {
+  buildRuntime,
+  eventSourceEntryPath,
+  integrationTriggerEntryPath,
+  pollTriggerEntryPath,
+  previewEntryPath,
+  providerTriggersEntryPath,
+  workbenchEntryPath,
+} from './browserPackageRuntime.ts'
 
 const execFileAsync = promisify(execFile)
 const packageRequire = createRequire(import.meta.url)
@@ -23,10 +24,6 @@ const controlApiConformanceEntryPath = 'src/control/common/conformance.ts'
 const controlApiErrorsEntryPath = 'src/control/common/errors.ts'
 const flowNotificationsEntryPath = 'src/control/common/flowNotifications.ts'
 const cronTriggerEntryPath = 'src/trigger/common/cron.ts'
-const eventSourceEntryPath = 'src/event-source/common/index.ts'
-const integrationTriggerEntryPath = 'src/trigger/common/integration.ts'
-const pollTriggerEntryPath = 'src/trigger/common/poll.ts'
-const providerTriggersEntryPath = 'src/trigger/providers/definitions.ts'
 const flowAuthoringEntryPath = 'src/flow/common/authoring.ts'
 const flowChangeEntryPath = 'src/flow/common/change.ts'
 const flowEncodingEntryPath = 'src/flow/common/encoding.ts'
@@ -40,9 +37,7 @@ const localizationEntryPath = 'src/localization/common/languages.ts'
 const hostConformanceEntryPath = 'src/workbench/browser/runtime/hostConformance.ts'
 const uiEntryPath = 'src/distribution/browser/ui.ts'
 const uiDeclarationEntryPath = 'src/ui/browser/public.ts'
-const previewEntryPath = 'src/distribution/browser/preview.ts'
 const previewDeclarationEntryPath = 'src/workbench/browser/runtime/openFlowPreview.tsx'
-const workbenchEntryPath = 'src/distribution/browser/workbench.ts'
 const workbenchDeclarationEntryPath = 'src/workbench/browser/runtime/openFlowWorkbench.tsx'
 
 interface BuildBrowserPackageOptions {
@@ -84,73 +79,6 @@ export async function buildBrowserPackage(options: BuildBrowserPackageOptions): 
   await buildRuntime(options, browserOutputPath, workbenchEntryPath, 'workbench', false)
   await copyFile(path.join(options.sourceRoot, 'src/ui/browser/theme.css'), path.join(browserOutputPath, 'theme.css'))
   await writeDeclarations(options, browserOutputPath, commonOutputPath)
-}
-
-async function buildRuntime(
-  options: BuildBrowserPackageOptions,
-  outputPath: string,
-  entryPath: string,
-  outputName: string,
-  emptyOutDir: boolean,
-): Promise<void> {
-  const sharedTriggerPaths = new Map([
-    [normalizePath(path.join(options.sourceRoot, integrationTriggerEntryPath)), './integration-trigger.js'],
-    [normalizePath(path.join(options.sourceRoot, pollTriggerEntryPath)), './poll-trigger.js'],
-  ])
-  await build({
-    build: {
-      emptyOutDir,
-      lib: {
-        cssFileName: outputName,
-        entry: path.join(options.sourceRoot, entryPath),
-        fileName: outputName,
-        formats: ['es'],
-      },
-      license: { fileName: 'licenses.md' },
-      // Let consumers minify: pre-minified loop declarations can break Rollup when shared chunks are re-bundled.
-      minify: false,
-      outDir: outputPath,
-      rolldownOptions: {
-        external: entryPath == providerTriggersEntryPath || entryPath == eventSourceEntryPath ? [...sharedTriggerPaths.keys()] : undefined,
-        output: {
-          assetFileNames: '[name][extname]',
-          entryFileNames: `${outputName}.js`,
-          paths: entryPath == providerTriggersEntryPath || entryPath == eventSourceEntryPath ? Object.fromEntries(sharedTriggerPaths) : undefined,
-        },
-      },
-    },
-    configFile: false,
-    css: { modules: { generateScopedName } },
-    define: { 'process.env': '{}' },
-    logLevel: options.quiet ? 'silent' : 'info',
-    plugins: [
-      esmExternalRequirePlugin({ external: [/^effect(?:\/.*)?$/, /^react(?:\/.*)?$/, /^react-dom(?:\/.*)?$/] }),
-      providerIconsPlugin(),
-      twemojiCollectionPlugin(),
-      tailwindcss(),
-      UnoCSS(designerUnoConfig),
-    ],
-    root: options.sourceRoot,
-  })
-  if (entryPath == workbenchEntryPath || entryPath == previewEntryPath) await extractFonts(path.join(outputPath, `${outputName}.css`), outputPath)
-}
-
-async function extractFonts(cssPath: string, outputPath: string): Promise<void> {
-  const fonts = new Map<string, Buffer>()
-  const css = (await readFile(cssPath, 'utf8')).replaceAll(
-    /data:font\/(woff2|woff|ttf);base64,([A-Za-z\d+/=]+)/g,
-    (_match: string, format: string, encoded: string) => {
-      const bytes = Buffer.from(encoded, 'base64')
-      const file = `font-${createHash('sha256').update(bytes).digest('hex').slice(0, 16)}.${format}`
-      fonts.set(file, bytes)
-      return `./assets/${file}`
-    },
-  )
-  if (fonts.size == 0) return
-  const assetsPath = path.join(outputPath, 'assets')
-  await mkdir(assetsPath, { recursive: true })
-  await Promise.all([...fonts].map(([file, bytes]) => writeFile(path.join(assetsPath, file), bytes)))
-  await writeFile(cssPath, css)
 }
 
 async function writeDeclarations(options: BuildBrowserPackageOptions, browserOutputPath: string, commonOutputPath: string): Promise<void> {

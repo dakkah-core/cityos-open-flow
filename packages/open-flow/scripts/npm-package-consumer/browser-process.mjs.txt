@@ -1,0 +1,14 @@
+// Child exit alone does not join inherited pipes or release the phase lifetime.
+export function joinBrowserProcess(child, phase) {
+  return new Promise((resolve, reject) => {
+    let failure
+    child.once('error', (error) => {
+      failure = error
+    })
+    child.once('close', (code, signal) => {
+      if (failure) reject(failure)
+      else if (code !== 0) reject(new Error(`Browser ${phase} failed: code=${code}, signal=${signal}.`))
+      else resolve()
+    })
+  })
+}

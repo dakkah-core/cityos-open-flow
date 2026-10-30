@@ -1,0 +1,29 @@
+import assert from 'node:assert/strict'
+import { readFile, readdir, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
+import path from 'node:path'
+
+// Resolve the same esbuild that Vite uses without loading Vite into this process.
+const viteRequire = createRequire(import.meta.resolve('vite'))
+const { transform, stop } = viteRequire('esbuild')
+const directory = process.argv[2]
+const inventory = JSON.parse(await readFile(path.join(directory, 'inventory.json'), 'utf8'))
+assert.equal(inventory.viteVersion, '7.3.6')
+assert.ok(inventory.chunks.some((chunk) => chunk.isDynamicEntry), 'Missing lazy browser chunks.')
+const actual = (await readdir(directory, { recursive: true }))
+  .filter((file) => /\.(?:c|m)?js$/.test(file))
+  .map((file) => file.split(path.sep).join('/'))
+  .sort()
+assert.deepEqual(actual, inventory.chunks.map((chunk) => chunk.fileName).sort(), 'Incomplete browser JavaScript inventory.')
+
+try {
+  for (const { fileName } of inventory.chunks) {
+    console.log(`[npm-package:browser] chunk:start ${fileName}`)
+    const file = path.join(directory, fileName)
+    const result = await transform(await readFile(file, 'utf8'), { ...inventory.options, sourcefile: fileName })
+    await writeFile(file, result.code)
+    console.log(`[npm-package:browser] chunk:pass ${fileName}`)
+  }
+} finally {
+  stop()
+}

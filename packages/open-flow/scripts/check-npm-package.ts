@@ -1,6 +1,6 @@
 import { unpackTar } from 'modern-tar'
 import assert from 'node:assert/strict'
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { copyFile, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -38,7 +38,10 @@ const sharedUiTokens = [
   '--ui-secondary-foreground',
 ] as const
 
+console.log('[npm-package] build:start')
 await execFileAsync(process.execPath, [path.join(rootPath, 'scripts/build.ts'), '--quiet'], { cwd: rootPath })
+console.log('[npm-package] build:pass')
+console.log('[npm-package] archive:start')
 const entries = await unpackTar(gunzipSync(await readFile(tarballPath)), { strict: true })
 const entryNames = entries.map((entry) => entry.header.name)
 // Documentation and legal notices must ship even though consumers do not import them.
@@ -99,6 +102,7 @@ assert.ok(referencedFonts.length > 0)
 for (const font of referencedFonts) {
   assert.ok(entryNames.includes(font), `Missing Workbench font ${font}.`)
 }
+console.log('[npm-package] archive:pass')
 await verifyConsumer()
 
 console.log('Verified the public npm package, Browser runtime, and bundled command consumer.')
@@ -150,7 +154,20 @@ async function verifyConsumer(): Promise<void> {
         2,
       )}\n`,
     )
+    console.log('[npm-package] install:start')
     await execFileAsync(process.execPath, ['install', '--ignore-scripts'], { cwd: directory })
+    console.log('[npm-package] install:pass')
+    console.log('[npm-package] browser-regressions:start')
+    const regressions = await execFileAsync(process.execPath, ['test', path.join(rootPath, 'scripts/browser-consumer-lifetime.node-test.mjs')], {
+      cwd: directory,
+    })
+    const regressionOutput = regressions.stdout + regressions.stderr
+    assert.match(regressionOutput, /\b6 pass\b/)
+    assert.doesNotMatch(regressionOutput, /\b[1-9]\d* (?:fail|skip|todo)\b/)
+    process.stdout.write(regressions.stdout)
+    process.stderr.write(regressions.stderr)
+    console.log('[npm-package] browser-regressions:pass')
+    console.log('[npm-package] browser-types:start')
     const consumerPath = path.join(directory, 'types.tsx')
     await execFileAsync(
       process.execPath,
@@ -172,11 +189,29 @@ async function verifyConsumer(): Promise<void> {
       ],
       { cwd: directory },
     )
+    console.log('[npm-package] browser-types:pass')
     const runtimePath = path.join(directory, 'runtime.mjs')
+    console.log('[npm-package] runtime:start')
     await execFileAsync(process.execPath, [runtimePath], { cwd: directory })
+    console.log('[npm-package] runtime:pass')
     const browserPath = path.join(directory, 'browser.mjs')
-    await execFileAsync(process.execPath, [browserPath], { cwd: directory })
+    console.log('[npm-package] browser:start')
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(process.execPath, [browserPath], { cwd: directory, stdio: 'inherit', windowsHide: true })
+      let failure: Error | undefined
+      child.once('error', (error) => {
+        failure = error
+      })
+      child.once('close', (code, signal) => {
+        if (failure) reject(failure)
+        else if (code !== 0) reject(new Error(`Browser consumer failed: code=${code}, signal=${signal}.`))
+        else resolve()
+      })
+    })
+    console.log('[npm-package] browser:pass')
+    console.log('[npm-package] command:start')
     await verifyCommandConsumer(directory, manifest.version)
+    console.log('[npm-package] command:pass')
   } finally {
     assertTemporaryConsumerTarget(directory)
     await rm(directory, { force: true, recursive: true })
