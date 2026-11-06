@@ -25,3 +25,6 @@ assets/star-history/star-history.png
 
 # Local upstream qualification evidence.
 .build/
+
+# Local CityOS tooling state
+/.cityos/
